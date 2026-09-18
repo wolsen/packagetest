@@ -91,6 +91,25 @@ def test_plain_cycle_target_ignores_trailing_prerelease():
     assert resolve_release_from_deliverable_yaml(content, openstack_target="2027.1", deliverable_scope="indri").version == "31.1.0"
 
 
+def test_plain_cycle_target_stops_before_next_series_branch():
+    content = SERIES_DELIVERABLE + """
+  - version: 32.0.0.0b1
+    projects:
+      - repo: openstack/glance
+        hash: 5555555555555555555555555555555555555555
+  - version: 32.0.0
+    projects:
+      - repo: openstack/glance
+        hash: 6666666666666666666666666666666666666666
+branches:
+  - name: stable/2027.1
+    location: 31.0.0.0rc1
+  - name: stable/2027.2
+    location: 32.0.0.0b1
+"""
+    assert resolve_release_from_deliverable_yaml(content, openstack_target="2027.1", deliverable_scope="indri").version == "31.1.0"
+
+
 def test_resolver_uses_series_deliverables_and_snapshot_hashes():
     package = PackageDefinition(
         source_package="glance",
@@ -103,7 +122,13 @@ def test_resolver_uses_series_deliverables_and_snapshot_hashes():
         if url.endswith("/data/series_status.yaml"):
             return SERIES_STATUS
         if url.endswith("/deliverables/indri/glance.yaml"):
-            return SERIES_DELIVERABLE
+            return SERIES_DELIVERABLE + """
+branches:
+  - name: stable/2027.1
+    location: 31.0.0.0rc1
+"""
+        if "api.github.com/repos/openstack/glance/commits" in url:
+            return '[{"sha":"snapshotsha"}]'
         raise ReleaseDiscoveryError(f"unexpected url: {url}")
 
     resolver = OpenStackReleaseResolver(base_url="https://example.invalid", fetcher=fetcher)
@@ -112,7 +137,7 @@ def test_resolver_uses_series_deliverables_and_snapshot_hashes():
     assert release.series == "indri"
     assert release.version == "31.0.0.0rc1"
     assert release.project_hash == "2222222222222222222222222222222222222222"
-    assert release.upstream_ref == "2222222222222222222222222222222222222222"
+    assert release.upstream_ref == "snapshotsha"
     assert release.deliverable_path == "deliverables/indri/glance.yaml"
 
 
@@ -178,7 +203,7 @@ def test_resolver_rejects_invalid_snapshot_timestamp():
         resolver.resolve(package=package, openstack_target="2027.1", snapshot_at="not-a-date")
 
 
-def test_snapshot_resolution_requires_project_hash():
+def test_snapshot_resolution_requires_snapshot_commit():
     package = PackageDefinition(
         source_package="glance",
         binary_packages=["glance"],
@@ -190,16 +215,13 @@ def test_snapshot_resolution_requires_project_hash():
         if url.endswith("/data/series_status.yaml"):
             return SERIES_STATUS
         if url.endswith("/deliverables/indri/glance.yaml"):
-            return """
-releases:
-  - version: 31.0.0
-    projects:
-      - repo: openstack/glance
-"""
+            return SERIES_DELIVERABLE
+        if "api.github.com/repos/openstack/glance/commits" in url:
+            return "[]"
         raise ReleaseDiscoveryError(f"unexpected url: {url}")
 
     resolver = OpenStackReleaseResolver(base_url="https://example.invalid", fetcher=fetcher)
-    with pytest.raises(ReleaseDiscoveryError, match="requires a project hash"):
+    with pytest.raises(ReleaseDiscoveryError, match="No upstream commit found"):
         resolver.resolve(package=package, openstack_target="2027.1", snapshot_at="2026-09-18T05:32:15+00:00")
 
 

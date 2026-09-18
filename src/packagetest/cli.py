@@ -41,7 +41,7 @@ def plan_cmd(args: argparse.Namespace) -> int:
         if resolved_release is not None:
             row["resolved_upstream_version"] = resolved_release.version
             row["resolved_upstream_tag_or_sha"] = resolved_release.upstream_ref
-            row["resolved_upstream_sha"] = resolved_release.project_hash
+            row["resolved_upstream_sha"] = resolved_release.upstream_ref if resolved_release.snapshot_at else resolved_release.project_hash
             row["release_series"] = resolved_release.series
             row["release_deliverable_path"] = resolved_release.deliverable_path
         if source in resolution_errors:
@@ -81,7 +81,9 @@ def build_cmd(args: argparse.Namespace) -> int:
             generated_debian_version=upstream_version_to_debian_version(
                 resolved_release.version if resolved_release else openstack_target_to_upstream_version(plan.openstack_target)
             ),
-            source_hashes=[f"git:{resolved_release.project_hash}"] if resolved_release and resolved_release.project_hash else [],
+            source_hashes=[f"git:{resolved_release.upstream_ref if resolved_release.snapshot_at else resolved_release.project_hash}"]
+            if resolved_release and (resolved_release.upstream_ref if resolved_release.snapshot_at else resolved_release.project_hash)
+            else [],
         )
         package_metadata[item.source_package] = metadata
         if item.source_package in release_resolution_errors:

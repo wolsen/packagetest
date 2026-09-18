@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 from urllib.request import Request, build_opener
 
 from .models import PackageDefinition
 
 DEFAULT_OPENSTACK_RELEASES_BASE_URL = "https://raw.githubusercontent.com/openstack/releases/master"
+DEFAULT_GITHUB_API_BASE_URL = "https://api.github.com"
 
 _VERSION_RE = re.compile(r"^\s*-\s+version:\s+(.+?)\s*$")
 _REPO_RE = re.compile(r"^\s*-\s+repo:\s+(.+?)\s*$")
@@ -17,6 +20,8 @@ _HASH_RE = re.compile(r"^\s+hash:\s+([0-9A-Fa-f]{7,40})\s*$")
 _SERIES_NAME_RE = re.compile(r"^\s*-\s+name:\s+(.+?)\s*$")
 _SERIES_RELEASE_ID_RE = re.compile(r"^\s+release-id:\s+(.+?)\s*$")
 _SERIES_STATUS_RE = re.compile(r"^\s+status:\s+(.+?)\s*$")
+_BRANCH_NAME_RE = re.compile(r"^\s*-\s+name:\s+(.+?)\s*$")
+_BRANCH_LOCATION_RE = re.compile(r"^\s+location:\s+(.+?)\s*$")
 _OPENSTACK_TARGET_RE = re.compile(r"^(?P<release_id>\d+\.\d+)(?:-(?P<stage>b\d+|rc\d+|final))?$")
 _PRERELEASE_RE = re.compile(r"(b\d+|rc\d+)$", re.IGNORECASE)
 
@@ -77,6 +82,12 @@ class ResolvedRelease:
     upstream_ref: str
     snapshot_at: str | None
     deliverable_path: str
+
+
+@dataclass(frozen=True)
+class ParsedOpenStackTarget:
+    release_id: str
+    stage: str | None
 
 
 def read_text_from_url(url: str) -> str:
@@ -148,6 +159,13 @@ def releases_from_deliverable_yaml(content: str) -> list[OpenStackRelease]:
     return releases
 
 
+def parse_openstack_target(openstack_target: str) -> ParsedOpenStackTarget:
+    match = _OPENSTACK_TARGET_RE.fullmatch(openstack_target)
+    if not match:
+        raise ReleaseDiscoveryError(f"Unsupported OpenStack target: {openstack_target}")
+    return ParsedOpenStackTarget(release_id=match.group("release_id"), stage=match.group("stage"))
+
+
 def resolve_series(series: list[OpenStackSeries], openstack_target: str) -> OpenStackSeries:
     target = parse_openstack_target(openstack_target)
     for entry in series:
@@ -156,17 +174,53 @@ def resolve_series(series: list[OpenStackSeries], openstack_target: str) -> Open
     raise ReleaseDiscoveryError(f"Unknown OpenStack series target: {target.release_id}")
 
 
-@dataclass(frozen=True)
-class ParsedOpenStackTarget:
-    release_id: str
-    stage: str | None
+def branch_locations_from_deliverable_yaml(content: str) -> dict[str, str]:
+    branches: dict[str, str] = {}
+    in_branches = False
+    current_branch: str | None = None
+    for line in content.splitlines():
+        if line.startswith("branches:"):
+            in_branches = True
+            current_branch = None
+            continue
+        if not in_branches:
+            continue
+        if line and not line.startswith(" ") and not line.startswith("-"):
+            break
+        branch_match = _BRANCH_NAME_RE.match(line)
+        if branch_match:
+            current_branch = branch_match.group(1).strip()
+            continue
+        location_match = _BRANCH_LOCATION_RE.match(line)
+        if location_match and current_branch is not None:
+            branches[current_branch] = location_match.group(1).strip()
+    return branches
 
 
-def parse_openstack_target(openstack_target: str) -> ParsedOpenStackTarget:
-    match = _OPENSTACK_TARGET_RE.fullmatch(openstack_target)
-    if not match:
-        raise ReleaseDiscoveryError(f"Unsupported OpenStack target: {openstack_target}")
-    return ParsedOpenStackTarget(release_id=match.group("release_id"), stage=match.group("stage"))
+def _release_index_by_version(releases: list[OpenStackRelease]) -> dict[str, int]:
+    return {release.version: index for index, release in enumerate(releases)}
+
+
+def _candidate_releases_for_series(content: str, releases: list[OpenStackRelease], release_id: str) -> list[OpenStackRelease]:
+    branch_locations = branch_locations_from_deliverable_yaml(content)
+    start_index = 0
+    end_index = len(releases)
+    version_indexes = _release_index_by_version(releases)
+    current_branch = f"stable/{release_id}"
+    if current_branch in branch_locations and branch_locations[current_branch] in version_indexes:
+        start_index = version_indexes[branch_locations[current_branch]]
+    future_branch_indexes = sorted(
+        index
+        for branch_name, location in branch_locations.items()
+        if branch_name.startswith("stable/")
+        and branch_name != current_branch
+        and location in version_indexes
+        and version_indexes[location] > start_index
+        for index in [version_indexes[location]]
+    )
+    if future_branch_indexes:
+        end_index = future_branch_indexes[0]
+    return releases[start_index:end_index]
 
 
 def resolve_release_from_deliverable_yaml(
@@ -182,16 +236,13 @@ def resolve_release_from_deliverable_yaml(
         return releases[-1]
 
     parsed_target = parse_openstack_target(openstack_target)
-    stable_releases = [release for release in releases if not _PRERELEASE_RE.search(release.version)]
-    if parsed_target.stage is None:
+    candidate_releases = _candidate_releases_for_series(content, releases, parsed_target.release_id)
+    stable_releases = [release for release in candidate_releases if not _PRERELEASE_RE.search(release.version)]
+    if parsed_target.stage is None or parsed_target.stage == "final":
         if stable_releases:
             return stable_releases[-1]
         raise ReleaseDiscoveryError(f"No stable release found for target: {openstack_target}")
-    if parsed_target.stage == "final":
-        if stable_releases:
-            return stable_releases[-1]
-        raise ReleaseDiscoveryError(f"No final release found for target: {openstack_target}")
-    for release in releases:
+    for release in candidate_releases:
         if release.version.lower().endswith(parsed_target.stage.lower()):
             return release
     raise ReleaseDiscoveryError(f"No matching release found for target: {openstack_target}")
@@ -219,9 +270,11 @@ class OpenStackReleaseResolver:
         self,
         *,
         base_url: str = DEFAULT_OPENSTACK_RELEASES_BASE_URL,
+        github_api_base_url: str = DEFAULT_GITHUB_API_BASE_URL,
         fetcher: Callable[[str], str] = read_text_from_url,
     ) -> None:
         self.base_url = base_url.rstrip("/")
+        self.github_api_base_url = github_api_base_url.rstrip("/")
         self.fetcher = fetcher
         self._series_status: list[OpenStackSeries] | None = None
         self._deliverable_cache: dict[str, str] = {}
@@ -233,17 +286,24 @@ class OpenStackReleaseResolver:
         cache_key = (deliverable_name, openstack_target, snapshot_at)
         if cache_key in self._resolved_cache:
             return self._resolved_cache[cache_key]
-        series = self._series_status_entries()
-        resolved_series = resolve_series(series, openstack_target)
+        resolved_series = resolve_series(self._series_status_entries(), openstack_target)
         deliverable_path, content = self._fetch_deliverable(resolved_series.name, deliverable_name)
         release = resolve_release_from_deliverable_yaml(
             content,
             openstack_target=openstack_target,
             deliverable_scope=deliverable_path.split("/")[-2],
         )
-        if snapshot_at and not release.project_hash:
-            raise ReleaseDiscoveryError(f"Snapshot resolution requires a project hash for {deliverable_name}")
-        upstream_ref = release.project_hash if snapshot_at else release.version
+        upstream_ref = release.version
+        if snapshot_at:
+            if release.project_repo is None:
+                raise ReleaseDiscoveryError(f"Snapshot resolution requires a project repo for {deliverable_name}")
+            upstream_ref = self._resolve_snapshot_ref(
+                project_repo=release.project_repo,
+                release_id=resolved_series.release_id,
+                deliverable_scope=deliverable_path.split("/")[-2],
+                snapshot_at=snapshot_at,
+                deliverable_content=content,
+            )
         resolved_release = ResolvedRelease(
             series=resolved_series.name,
             release_id=resolved_series.release_id,
@@ -259,8 +319,7 @@ class OpenStackReleaseResolver:
 
     def _series_status_entries(self) -> list[OpenStackSeries]:
         if self._series_status is None:
-            content = self.fetcher(f"{self.base_url}/data/series_status.yaml")
-            self._series_status = parse_series_status_yaml(content)
+            self._series_status = parse_series_status_yaml(self.fetcher(f"{self.base_url}/data/series_status.yaml"))
         return self._series_status
 
     def _fetch_deliverable(self, series_name: str, deliverable_name: str) -> tuple[str, str]:
@@ -275,3 +334,27 @@ class OpenStackReleaseResolver:
             self._deliverable_cache[path] = content
             return path, content
         raise ReleaseDiscoveryError(f"Deliverable not found for {deliverable_name} in series {series_name}")
+
+    def _resolve_snapshot_ref(
+        self,
+        *,
+        project_repo: str,
+        release_id: str | None,
+        deliverable_scope: str,
+        snapshot_at: str,
+        deliverable_content: str,
+    ) -> str:
+        branch = "master"
+        if deliverable_scope != "_independent" and release_id is not None:
+            branch_locations = branch_locations_from_deliverable_yaml(deliverable_content)
+            if f"stable/{release_id}" in branch_locations:
+                branch = f"stable/{release_id}"
+        query = urlencode({"sha": branch, "until": snapshot_at, "per_page": 1})
+        payload = self.fetcher(f"{self.github_api_base_url}/repos/{project_repo}/commits?{query}")
+        commits = json.loads(payload)
+        if not commits:
+            raise ReleaseDiscoveryError(f"No upstream commit found for {project_repo} at {snapshot_at}")
+        sha = commits[0].get("sha")
+        if not sha:
+            raise ReleaseDiscoveryError(f"Snapshot resolution requires a project hash for {project_repo}")
+        return sha
