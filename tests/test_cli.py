@@ -2,7 +2,7 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-from packagetest.cli import _run_package, build_cmd, plan_cmd
+from packagetest.cli import _publish_run_outputs, _run_package, build_cmd, plan_cmd
 from packagetest.commands import CommandRunner
 from packagetest.config import load_package_definitions
 from packagetest.models import BuildState, CommandResult, PackageExecutionMetadata
@@ -272,3 +272,29 @@ def test_build_cmd_skips_publish_without_outputs(tmp_path: Path, monkeypatch, ca
     assert build_cmd(args) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["states"]["pbr"] == "BUILD_SUCCEEDED"
+
+
+def test_publish_run_outputs_publishes_only_packages_with_outputs(tmp_path: Path):
+    repo_root = Path(__file__).resolve().parents[1]
+    definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
+    plan = build_plan(
+        definitions=definitions,
+        requested_sources=["pbr", "glance"],
+        openstack_target="2027.1",
+        ubuntu_release="noble",
+        include_dependency_closure=False,
+    )
+    args = Namespace(dry_run=True)
+    runner = CommandRunner(log_path=tmp_path / "commands.jsonl")
+    states = {"pbr": BuildState.BUILD_SUCCEEDED, "glance": BuildState.BUILD_SUCCEEDED}
+    metadata = {
+        "pbr": PackageExecutionMetadata(upstream_tag_or_sha="5.7.0", upstream_version="5.7.0", packaging_branch="master"),
+        "glance": PackageExecutionMetadata(upstream_tag_or_sha="31.1.0", upstream_version="31.1.0", packaging_branch="master"),
+    }
+    (tmp_path / "pbr").mkdir(parents=True)
+    (tmp_path / "pbr" / "pbr_5.7.0.dsc").write_text("", encoding="utf-8")
+
+    _publish_run_outputs(plan, args, tmp_path, runner, states, metadata)
+
+    assert states["pbr"] == BuildState.PUBLISHED
+    assert states["glance"] == BuildState.BUILD_SUCCEEDED

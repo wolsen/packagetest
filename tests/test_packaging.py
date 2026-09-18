@@ -117,3 +117,4 @@ def test_classify_packaging_failure_detects_patch_and_build_failures():
     assert classify_packaging_failure(["bash", "-lc", "sbuild --dist=noble ../x.dsc"], "", "Unmet build dependency: foo") == "MISSING_BUILD_DEPENDENCY"
     assert classify_packaging_failure(["bash", "-lc", "sbuild --dist=noble ../x.dsc"], "", "compiler error") == "COMPILATION_FAILURE"
     assert classify_packaging_failure(["gpg", "--clearsign"], "", "gpg failed") == "REPOSITORY_PUBLISH_FAILURE"
+    assert classify_packaging_failure(["gpgconf", "--kill", "gpg-agent"], "", "gpgconf failed") == "REPOSITORY_PUBLISH_FAILURE"

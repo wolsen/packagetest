@@ -175,7 +175,7 @@ def classify_packaging_failure(command: list[str], stdout: str, stderr: str) -> 
         return "PACKAGING_POLICY_FAILURE"
     if "gbp import-orig" in command_text or " archive --format=tar.gz " in command_text:
         return "SOURCE_GENERATION_FAILURE"
-    if "apt-ftparchive" in command_text or command[:1] == ["gpg"] or "gpgconf --kill gpg-agent" in command_text:
+    if "apt-ftparchive" in command_text or command[:1] == ["gpg"] or command[:3] == ["gpgconf", "--kill", "gpg-agent"]:
         return "REPOSITORY_PUBLISH_FAILURE"
     if "sbuild" in command_text:
         if "unmet build dependency" in output_lower or "build dependency" in output_lower:

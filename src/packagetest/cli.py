@@ -314,8 +314,8 @@ def _publish_run_outputs(
         return
     if not states or not all(state == BuildState.BUILD_SUCCEEDED for state in states.values()):
         return
-    publishable_sources = list(states.keys())
-    if not all(_package_has_publishable_outputs(run_dir, source) for source in publishable_sources):
+    publishable_sources = [source for source in states if _package_has_publishable_outputs(run_dir, source)]
+    if not publishable_sources:
         return
 
     for source in publishable_sources:
