@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -314,6 +315,8 @@ def _publish_run_outputs(
     if not states or not all(state == BuildState.BUILD_SUCCEEDED for state in states.values()):
         return
     publishable_sources = list(states.keys())
+    if not all(_package_has_publishable_outputs(run_dir, source) for source in publishable_sources):
+        return
 
     for source in publishable_sources:
         states[source] = BuildState.PUBLISHING
@@ -372,6 +375,10 @@ def _write_package_failure(
     )
 
 
+def _package_has_publishable_outputs(run_dir: Path, source: str) -> bool:
+    return any((run_dir / source).glob("*.dsc"))
+
+
 def _resolve_package_releases(
     plan: BuildPlan,
     args: argparse.Namespace,
@@ -379,15 +386,23 @@ def _resolve_package_releases(
     resolver = OpenStackReleaseResolver()
     resolved_releases: dict[str, ResolvedRelease] = {}
     errors: dict[str, str] = {}
-    for item in plan.planned_builds:
-        try:
-            resolved_releases[item.source_package] = resolver.resolve(
+    max_workers = min(4, max(1, len(plan.planned_builds)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(
+                resolver.resolve,
                 package=item.package,
                 openstack_target=plan.openstack_target,
                 snapshot_at=args.snapshot_at,
-            )
-        except ReleaseDiscoveryError as exc:
-            errors[item.source_package] = str(exc)
+            ): item.source_package
+            for item in plan.planned_builds
+        }
+        for future in as_completed(futures):
+            source_package = futures[future]
+            try:
+                resolved_releases[source_package] = future.result()
+            except ReleaseDiscoveryError as exc:
+                errors[source_package] = str(exc)
     return resolved_releases, errors
 
 

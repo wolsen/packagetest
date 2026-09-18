@@ -51,4 +51,6 @@ def test_openstack_target_to_debian_version_appends_ubuntu_revision():
 def test_upstream_version_to_debian_version_rewrites_prereleases():
     assert upstream_version_to_debian_version("31.0.0.0b1") == "31.0.0~b1-0ubuntu1"
     assert upstream_version_to_debian_version("31.0.0.0rc1") == "31.0.0~rc1-0ubuntu1"
+    assert upstream_version_to_debian_version("31.0.0b1") == "31.0.0~b1-0ubuntu1"
+    assert upstream_version_to_debian_version("31.0.0rc1") == "31.0.0~rc1-0ubuntu1"
     assert upstream_version_to_debian_version("31.1.0") == "31.1.0-0ubuntu1"

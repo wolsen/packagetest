@@ -102,13 +102,13 @@ def test_resolve_release_from_deliverable_yaml_supports_stage_targets():
     assert resolve_release_from_deliverable_yaml(SERIES_DELIVERABLE, openstack_target="2027.1", deliverable_scope="indri").version == "31.1.0"
 
 
-def test_independent_deliverable_rejects_stage_specific_targets():
-    with pytest.raises(ReleaseDiscoveryError, match="Stage-specific targets are not supported"):
-        resolve_release_from_deliverable_yaml(
-            INDEPENDENT_DELIVERABLE,
-            openstack_target="2027.1-b1",
-            deliverable_scope="_independent",
-        )
+def test_independent_deliverable_accepts_stage_specific_target_fallback():
+    release = resolve_release_from_deliverable_yaml(
+        INDEPENDENT_DELIVERABLE,
+        openstack_target="2027.1-b1",
+        deliverable_scope="_independent",
+    )
+    assert release.version == "5.7.0"
 
 
 def test_plain_cycle_target_ignores_trailing_prerelease():
@@ -157,6 +157,8 @@ branches:
   - name: stable/2027.1
     location: 31.0.0.0rc1
 """
+        if url.endswith("/api/v1/repos/openstack/glance"):
+            return '{"default_branch":"main"}'
         if "opendev.org/api/v1/repos/openstack/glance/commits" in url:
             return '[{"sha":"snapshotsha"}]'
         raise ReleaseDiscoveryError(f"unexpected url: {url}")
@@ -279,6 +281,8 @@ def test_snapshot_resolution_requires_snapshot_commit():
             return SERIES_STATUS
         if url.endswith("/deliverables/indri/glance.yaml"):
             return SERIES_DELIVERABLE
+        if url.endswith("/api/v1/repos/openstack/glance"):
+            return '{"default_branch":"main"}'
         if "opendev.org/api/v1/repos/openstack/glance/commits" in url:
             return "[]"
         raise ReleaseDiscoveryError(f"unexpected url: {url}")
@@ -317,6 +321,8 @@ def test_snapshot_resolution_wraps_invalid_commit_api_payload():
             return SERIES_STATUS
         if url.endswith("/deliverables/indri/glance.yaml"):
             return SERIES_DELIVERABLE
+        if url.endswith("/api/v1/repos/openstack/glance"):
+            return '{"default_branch":"main"}'
         if "opendev.org/api/v1/repos/openstack/glance/commits" in url:
             return "not-json"
         raise ReleaseDiscoveryError(f"unexpected url: {url}")

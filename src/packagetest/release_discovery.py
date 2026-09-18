@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from threading import Lock
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
@@ -232,8 +233,6 @@ def resolve_release_from_deliverable_yaml(
         raise ReleaseDiscoveryError("No releases found in deliverable YAML")
     parsed_target = parse_openstack_target(openstack_target)
     if deliverable_scope == "_independent":
-        if parsed_target.stage is not None:
-            raise ReleaseDiscoveryError(f"Stage-specific targets are not supported for independent deliverables: {openstack_target}")
         return releases[-1]
 
     candidate_releases = _candidate_releases_for_series(content, releases, parsed_target.release_id)
@@ -276,19 +275,26 @@ class OpenStackReleaseResolver:
         self.fetcher = fetcher
         self._series_status: list[OpenStackSeries] | None = None
         self._deliverable_cache: dict[str, str] = {}
+        self._repo_metadata_cache: dict[str, dict] = {}
         self._resolved_cache: dict[tuple[str, str, str, str, str | None], ResolvedRelease] = {}
+        self._cache_lock = Lock()
 
     def resolve(self, *, package: PackageDefinition, openstack_target: str, snapshot_at: str | None = None) -> ResolvedRelease:
         snapshot_at = validate_snapshot_at(snapshot_at)
         deliverable_name = derive_deliverable_name(package)
         cache_key = (package.source_package, package.upstream_repo, deliverable_name, openstack_target, snapshot_at)
-        if cache_key in self._resolved_cache:
-            return self._resolved_cache[cache_key]
+        with self._cache_lock:
+            cached = self._resolved_cache.get(cache_key)
+        if cached is not None:
+            return cached
         resolved_series = resolve_series(self._series_status_entries(), openstack_target)
         deliverable_path, content = self._fetch_deliverable(resolved_series.name, deliverable_name)
+        deliverable_target = resolved_series.release_id or openstack_target
+        if deliverable_path.split("/")[-2] != "_independent":
+            deliverable_target = openstack_target
         release = resolve_release_from_deliverable_yaml(
             content,
-            openstack_target=openstack_target,
+            openstack_target=deliverable_target,
             deliverable_scope=deliverable_path.split("/")[-2],
         )
         upstream_ref = release.version
@@ -313,12 +319,16 @@ class OpenStackReleaseResolver:
             snapshot_at=snapshot_at,
             deliverable_path=deliverable_path,
         )
-        self._resolved_cache[cache_key] = resolved_release
+        with self._cache_lock:
+            self._resolved_cache[cache_key] = resolved_release
         return resolved_release
 
     def _series_status_entries(self) -> list[OpenStackSeries]:
         if self._series_status is None:
-            self._series_status = parse_series_status_yaml(self.fetcher(f"{self.base_url}/data/series_status.yaml"))
+            parsed = parse_series_status_yaml(self.fetcher(f"{self.base_url}/data/series_status.yaml"))
+            with self._cache_lock:
+                if self._series_status is None:
+                    self._series_status = parsed
         return self._series_status
 
     def _fetch_deliverable(self, series_name: str, deliverable_name: str) -> tuple[str, str]:
@@ -330,7 +340,8 @@ class OpenStackReleaseResolver:
                 content = self.fetcher(f"{self.base_url}/{path}")
             except ReleaseNotFoundError:
                 continue
-            self._deliverable_cache[path] = content
+            with self._cache_lock:
+                self._deliverable_cache[path] = content
             return path, content
         raise ReleaseDiscoveryError(f"Deliverable not found for {deliverable_name} in series {series_name}")
 
@@ -344,7 +355,7 @@ class OpenStackReleaseResolver:
         snapshot_at: str,
         deliverable_content: str,
     ) -> str:
-        branch = "master"
+        branch = self._default_branch_for_upstream_repo(upstream_repo)
         if deliverable_scope != "_independent" and release_id is not None:
             branch_locations = branch_locations_from_deliverable_yaml(deliverable_content)
             if f"stable/{release_id}" in branch_locations:
@@ -362,6 +373,22 @@ class OpenStackReleaseResolver:
             raise ReleaseDiscoveryError(f"Snapshot response did not include a commit SHA for {project_repo}")
         return sha
 
+    def _default_branch_for_upstream_repo(self, upstream_repo: str) -> str:
+        with self._cache_lock:
+            cached = self._repo_metadata_cache.get(upstream_repo)
+        if cached is None:
+            payload = self.fetcher(_canonical_repo_api_url(upstream_repo))
+            try:
+                cached = json.loads(payload)
+            except json.JSONDecodeError as exc:
+                raise ReleaseDiscoveryError(f"Invalid repository API response for {upstream_repo}") from exc
+            with self._cache_lock:
+                self._repo_metadata_cache[upstream_repo] = cached
+        default_branch = cached.get("default_branch")
+        if not default_branch:
+            raise ReleaseDiscoveryError(f"Repository API response did not include a default branch for {upstream_repo}")
+        return default_branch
+
 
 def _canonical_commit_api_url(upstream_repo: str, query: str) -> str:
     parsed = urlparse(upstream_repo)
@@ -369,3 +396,11 @@ def _canonical_commit_api_url(upstream_repo: str, query: str) -> str:
         raise ReleaseDiscoveryError(f"Unsupported upstream repository URL: {upstream_repo}")
     repo_path = parsed.path.strip("/")
     return f"{parsed.scheme}://{parsed.netloc}/api/v1/repos/{repo_path}/commits?{query}"
+
+
+def _canonical_repo_api_url(upstream_repo: str) -> str:
+    parsed = urlparse(upstream_repo)
+    if not parsed.scheme or not parsed.netloc or not parsed.path:
+        raise ReleaseDiscoveryError(f"Unsupported upstream repository URL: {upstream_repo}")
+    repo_path = parsed.path.strip("/")
+    return f"{parsed.scheme}://{parsed.netloc}/api/v1/repos/{repo_path}"

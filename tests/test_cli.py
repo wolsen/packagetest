@@ -237,7 +237,7 @@ def test_build_cmd_records_release_resolution_failure(tmp_path: Path, monkeypatc
     assert failure["category"] == "SOURCE_GENERATION_FAILURE"
 
 
-def test_build_cmd_publishes_after_successful_plan(tmp_path: Path, monkeypatch, capsys):
+def test_build_cmd_skips_publish_without_outputs(tmp_path: Path, monkeypatch, capsys):
     repo_root = Path(__file__).resolve().parents[1]
 
     def fake_resolve(plan, args):
@@ -271,4 +271,4 @@ def test_build_cmd_publishes_after_successful_plan(tmp_path: Path, monkeypatch, 
 
     assert build_cmd(args) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["states"]["pbr"] == "PUBLISHED"
+    assert payload["states"]["pbr"] == "BUILD_SUCCEEDED"
