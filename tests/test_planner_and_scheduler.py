@@ -51,6 +51,24 @@ def test_scheduler_blocks_when_dependency_failed(tmp_path):
     assert states["python-oslo.serialization"] == BuildState.BLOCKED_BY_FAILED_DEPENDENCY
 
 
+def test_scheduler_blocks_when_dependency_publish_failed(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
+    plan = build_plan(
+        definitions=definitions,
+        requested_sources=["glance"],
+        openstack_target="2027.1-b1",
+        ubuntu_release="noble",
+    )
+    states = {b.source_package: BuildState.WAITING_FOR_DEPENDENCY for b in plan.planned_builds}
+    states["pbr"] = BuildState.PUBLISH_FAILED
+
+    ready = next_ready_packages(plan, states)
+    assert ready == []
+    assert states["python-oslo.i18n"] == BuildState.BLOCKED_BY_FAILED_DEPENDENCY
+    assert states["python-oslo.serialization"] == BuildState.BLOCKED_BY_FAILED_DEPENDENCY
+
+
 def test_scheduler_considers_root_node_ready(tmp_path):
     repo_root = Path(__file__).resolve().parents[1]
     definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
@@ -65,6 +83,38 @@ def test_scheduler_considers_root_node_ready(tmp_path):
     assert ready == ["pbr"]
 
 
+def test_scheduler_treats_built_dependencies_as_ready(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
+    plan = build_plan(
+        definitions=definitions,
+        requested_sources=["glance"],
+        openstack_target="2027.1-b1",
+        ubuntu_release="noble",
+    )
+    states = {b.source_package: BuildState.WAITING_FOR_DEPENDENCY for b in plan.planned_builds}
+    states["pbr"] = BuildState.BUILD_SUCCEEDED
+
+    ready = next_ready_packages(plan, states)
+    assert ready == ["python-oslo.i18n", "python-oslo.serialization"]
+
+
+def test_scheduler_does_not_treat_publishing_dependencies_as_ready(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
+    plan = build_plan(
+        definitions=definitions,
+        requested_sources=["glance"],
+        openstack_target="2027.1-b1",
+        ubuntu_release="noble",
+    )
+    states = {b.source_package: BuildState.WAITING_FOR_DEPENDENCY for b in plan.planned_builds}
+    states["pbr"] = BuildState.PUBLISHING
+
+    ready = next_ready_packages(plan, states)
+    assert ready == []
+
+
 def test_plan_can_skip_dependency_closure(tmp_path):
     repo_root = Path(__file__).resolve().parents[1]
     definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
@@ -77,3 +127,16 @@ def test_plan_can_skip_dependency_closure(tmp_path):
     )
     assert [b.source_package for b in plan.planned_builds] == ["glance"]
     assert plan.planned_builds[0].depends_on_sources == []
+
+
+def test_plan_records_snapshot_timestamp(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
+    plan = build_plan(
+        definitions=definitions,
+        requested_sources=["pbr"],
+        openstack_target="2027.1",
+        ubuntu_release="noble",
+        snapshot_at="2026-09-18T05:32:15+00:00",
+    )
+    assert plan.snapshot_at == "2026-09-18T05:32:15+00:00"

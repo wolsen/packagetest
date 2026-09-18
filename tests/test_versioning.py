@@ -1,6 +1,11 @@
 from unittest.mock import Mock, patch
 
-from packagetest.versioning import debian_compare
+from packagetest.versioning import (
+    debian_compare,
+    openstack_target_to_debian_version,
+    openstack_target_to_upstream_version,
+    upstream_version_to_debian_version,
+)
 
 
 def _completed(code: int):
@@ -29,3 +34,23 @@ def test_debian_compare_gt(mock_run):
 def test_debian_compare_eq(mock_run):
     mock_run.side_effect = [_completed(1), _completed(1)]
     assert debian_compare("1.0-1", "1.0-1") == 0
+
+
+def test_openstack_target_to_upstream_version_maps_pre_releases():
+    assert openstack_target_to_upstream_version("2027.1-b1") == "2027.1~b1"
+    assert openstack_target_to_upstream_version("2027.1-rc1") == "2027.1~rc1"
+    assert openstack_target_to_upstream_version("2027.1-final") == "2027.1"
+    assert openstack_target_to_upstream_version("2027.1") == "2027.1"
+
+
+def test_openstack_target_to_debian_version_appends_ubuntu_revision():
+    assert openstack_target_to_debian_version("2027.1-b1") == "2027.1~b1-0ubuntu1"
+    assert openstack_target_to_debian_version("2027.1-final") == "2027.1-0ubuntu1"
+
+
+def test_upstream_version_to_debian_version_rewrites_prereleases():
+    assert upstream_version_to_debian_version("31.0.0.0b1") == "31.0.0~b1-0ubuntu1"
+    assert upstream_version_to_debian_version("31.0.0.0rc1") == "31.0.0~rc1-0ubuntu1"
+    assert upstream_version_to_debian_version("31.0.0b1") == "31.0.0~b1-0ubuntu1"
+    assert upstream_version_to_debian_version("31.0.0rc1") == "31.0.0~rc1-0ubuntu1"
+    assert upstream_version_to_debian_version("31.1.0") == "31.1.0-0ubuntu1"

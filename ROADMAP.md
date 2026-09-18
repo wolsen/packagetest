@@ -10,16 +10,16 @@
 
 ## Milestone 1 — Release discovery and source selection
 
-- [ ] Pull release metadata from `openstack/releases` deliverables and series status.
-- [ ] Resolve targets (`2027.1`, `-b1`, `-rc1`, `-final`, snapshots) into project versions/SHAs.
-- [ ] Add reproducible snapshot mode (`snapshot-at=<timestamp>`) with recorded upstream SHAs.
+- [x] Pull release metadata from `openstack/releases` deliverables and series status.
+- [x] Resolve targets (`2027.1`, `-b1`, `-rc1`, `-final`, snapshots) into project versions/SHAs.
+- [x] Add reproducible snapshot mode (`snapshot-at=<timestamp>`) with recorded upstream SHAs.
 
 ## Milestone 2 — Real packaging repository operations
 
-- [ ] Clone Ubuntu packaging repositories and checkout correct packaging/upstream/pristine-tar branches.
-- [ ] Execute `gbp import-orig` with branch-aware options.
-- [ ] Execute `gbp pq import` and classify patch failures.
-- [ ] Update `debian/changelog` and package metadata with Debian version semantics.
+- [x] Clone Ubuntu packaging repositories and checkout correct packaging/upstream/pristine-tar branches.
+- [x] Execute `gbp import-orig` with branch-aware options.
+- [x] Execute `gbp pq import` and classify patch failures.
+- [x] Update `debian/changelog` and package metadata with Debian version semantics.
 
 ## Milestone 3 — Real source and binary builds
 

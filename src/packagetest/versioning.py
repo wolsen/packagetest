@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 
 
@@ -8,6 +9,10 @@ _OPERATORS = {
     0: "eq",
     1: "gt",
 }
+
+_OPENSTACK_TARGET_RE = re.compile(r"^(?P<base>\d+\.\d+)(?:-(?P<stage>b\d+|rc\d+|final))?$")
+_UPSTREAM_DOT_ZERO_PRERELEASE_RE = re.compile(r"^(?P<base>\d+(?:\.\d+){2,})\.0(?P<stage>b\d+|rc\d+)$")
+_UPSTREAM_PLAIN_PRERELEASE_RE = re.compile(r"^(?P<base>.+\d)(?P<stage>b\d+|rc\d+)$")
 
 
 def debian_compare(left: str, right: str) -> int:
@@ -29,3 +34,31 @@ def assert_debian_order(left: str, right: str, expected: int) -> None:
     if actual != expected:
         op = _OPERATORS[expected]
         raise ValueError(f"Expected {left} {op} {right}, got {actual}")
+
+
+def openstack_target_to_upstream_version(target: str) -> str:
+    match = _OPENSTACK_TARGET_RE.fullmatch(target)
+    if not match:
+        return target
+    base = match.group("base")
+    stage = match.group("stage")
+    if stage in {None, "final"}:
+        return base
+    return f"{base}~{stage}"
+
+
+def openstack_target_to_debian_version(target: str, *, ubuntu_revision: str = "0ubuntu1") -> str:
+    upstream_version = openstack_target_to_upstream_version(target)
+    return upstream_version_to_debian_version(upstream_version, ubuntu_revision=ubuntu_revision)
+
+
+def upstream_version_to_debian_version(upstream_version: str, *, ubuntu_revision: str = "0ubuntu1") -> str:
+    if "~b" not in upstream_version and "~rc" not in upstream_version:
+        prerelease_match = _UPSTREAM_DOT_ZERO_PRERELEASE_RE.fullmatch(upstream_version)
+        if prerelease_match:
+            upstream_version = f"{prerelease_match.group('base')}~{prerelease_match.group('stage')}"
+        else:
+            prerelease_match = _UPSTREAM_PLAIN_PRERELEASE_RE.fullmatch(upstream_version)
+            if prerelease_match:
+                upstream_version = f"{prerelease_match.group('base')}~{prerelease_match.group('stage')}"
+    return f"{upstream_version}-{ubuntu_revision}"

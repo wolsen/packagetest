@@ -13,6 +13,7 @@ def build_plan(
     openstack_target: str,
     ubuntu_release: str,
     include_dependency_closure: bool = True,
+    snapshot_at: str | None = None,
 ) -> BuildPlan:
     selected: set[str] = set()
     if include_dependency_closure:
@@ -46,6 +47,7 @@ def build_plan(
         openstack_target=openstack_target,
         ubuntu_release=ubuntu_release,
         planned_builds=planned,
+        snapshot_at=snapshot_at,
     )
 
 

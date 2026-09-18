@@ -11,6 +11,7 @@ def test_generation_manifest_written(tmp_path: Path):
         generation_id="gen-1",
         openstack_release_target="2027.1-b1",
         ubuntu_release="noble",
+        snapshot_at="2026-09-18T05:32:15+00:00",
         package_manifests=[
             PackageManifest(
                 source_package="pbr",
@@ -36,6 +37,7 @@ def test_generation_manifest_written(tmp_path: Path):
     write_generation_manifest(out, manifest)
     loaded = json.loads(out.read_text(encoding="utf-8"))
     assert loaded["generation_id"] == "gen-1"
+    assert loaded["snapshot_at"] == "2026-09-18T05:32:15+00:00"
     assert loaded["package_manifests"][0]["build_result"] == "PUBLISHED"
 
 

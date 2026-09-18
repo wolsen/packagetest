@@ -10,7 +10,9 @@ class BuildState(str, Enum):
     BUILDING = "BUILDING"
     BUILD_FAILED = "BUILD_FAILED"
     BUILD_SUCCEEDED = "BUILD_SUCCEEDED"
+    PUBLISHING = "PUBLISHING"
     PUBLISHED = "PUBLISHED"
+    PUBLISH_FAILED = "PUBLISH_FAILED"
     BLOCKED_BY_FAILED_DEPENDENCY = "BLOCKED_BY_FAILED_DEPENDENCY"
 
 
@@ -23,6 +25,7 @@ class PackageDefinition:
     build_depends_on_sources: list[str] = field(default_factory=list)
     branch_mapping: dict[str, str] = field(default_factory=dict)
     source_creation_method: str = "opendev-tarball"
+    openstack_deliverable: str | None = None
 
 
 @dataclass
@@ -52,12 +55,14 @@ class BuildPlan:
     openstack_target: str
     ubuntu_release: str
     planned_builds: list[PlannedBuild]
+    snapshot_at: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "generation_id": self.generation_id,
             "openstack_target": self.openstack_target,
             "ubuntu_release": self.ubuntu_release,
+            "snapshot_at": self.snapshot_at,
             "planned_builds": [
                 {
                     "source_package": p.source_package,
@@ -98,6 +103,7 @@ class GenerationManifest:
     openstack_release_target: str
     ubuntu_release: str
     package_manifests: list[PackageManifest]
+    snapshot_at: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         package_manifests = []
@@ -109,5 +115,21 @@ class GenerationManifest:
             "generation_id": self.generation_id,
             "openstack_release_target": self.openstack_release_target,
             "ubuntu_release": self.ubuntu_release,
+            "snapshot_at": self.snapshot_at,
             "package_manifests": package_manifests,
         }
+
+
+@dataclass
+class PackageExecutionMetadata:
+    upstream_tag_or_sha: str
+    upstream_version: str
+    packaging_branch: str
+    build_output_dir: str = "unknown"
+    packaging_base_sha: str = "unknown"
+    generated_debian_version: str = "unknown"
+    source_hashes: list[str] = field(default_factory=list)
+    build_dependency_versions: dict[str, str] = field(default_factory=dict)
+    generated_binary_hashes: list[str] = field(default_factory=list)
+    build_started_at: str = "unknown"
+    build_finished_at: str = "unknown"
