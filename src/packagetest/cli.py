@@ -219,7 +219,6 @@ def _run_package(
             )
             return
 
-    states[source] = BuildState.BUILD_SUCCEEDED
     if not args.dry_run and not _package_has_publishable_outputs(operation_plan.packaging_checkout_dir.parent):
         states[source] = BuildState.BUILD_FAILED
         metadata.build_finished_at = datetime.now(UTC).isoformat()

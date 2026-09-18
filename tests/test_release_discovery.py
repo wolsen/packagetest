@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import pytest
 from urllib.error import URLError
 
@@ -223,6 +224,25 @@ releases:
         resolve_release_from_deliverable_yaml(content, openstack_target="2027.1-b1", deliverable_scope="indri")
 
 
+def test_series_target_without_matching_stable_branch_errors():
+    content = """
+releases:
+  - version: 31.0.0.0b1
+    projects:
+      - repo: openstack/glance
+        hash: 1111111111111111111111111111111111111111
+  - version: 31.0.0
+    projects:
+      - repo: openstack/glance
+        hash: 2222222222222222222222222222222222222222
+branches:
+  - name: stable/2026.2
+    location: 31.0.0.0b1
+"""
+    with pytest.raises(ReleaseDiscoveryError, match="Missing stable branch metadata for series 2027.1"):
+        resolve_release_from_deliverable_yaml(content, openstack_target="2027.1", deliverable_scope="indri")
+
+
 def test_resolver_uses_series_deliverables_and_snapshot_hashes():
     package = PackageDefinition(
         source_package="glance",
@@ -335,6 +355,32 @@ def test_resolver_cache_distinguishes_packages_sharing_deliverable():
     second = resolver.resolve(package=second_package, openstack_target="2027.1")
 
     assert first == second
+    assert calls.count("https://example.invalid/deliverables/indri/glance.yaml") == 1
+
+
+def test_resolver_parallel_calls_share_cached_fetches():
+    package = PackageDefinition(
+        source_package="glance",
+        binary_packages=["glance"],
+        upstream_repo="https://opendev.org/openstack/glance",
+        packaging_repo="https://example.invalid/glance",
+    )
+    calls: list[str] = []
+
+    def fetcher(url: str) -> str:
+        calls.append(url)
+        if url.endswith("/data/series_status.yaml"):
+            return SERIES_STATUS
+        if url.endswith("/deliverables/indri/glance.yaml"):
+            return SERIES_DELIVERABLE
+        raise ReleaseDiscoveryError(f"unexpected url: {url}")
+
+    resolver = OpenStackReleaseResolver(base_url="https://example.invalid", fetcher=fetcher)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first, second = executor.map(lambda _: resolver.resolve(package=package, openstack_target="2027.1"), range(2))
+
+    assert first == second
+    assert calls.count("https://example.invalid/data/series_status.yaml") == 1
     assert calls.count("https://example.invalid/deliverables/indri/glance.yaml") == 1
 
 

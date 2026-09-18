@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from threading import Lock
+from threading import RLock
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
@@ -208,6 +208,8 @@ def _candidate_releases_for_series(content: str, releases: list[OpenStackRelease
         for branch_name, location in branch_locations.items()
         if branch_name.startswith("stable/") and location in version_indexes
     )
+    if stable_branch_indexes and f"stable/{release_id}" not in {branch_name for _, branch_name in stable_branch_indexes}:
+        raise ReleaseDiscoveryError(f"Missing stable branch metadata for series {release_id}")
     start_index = 0
     end_index = len(releases)
     current_branch = f"stable/{release_id}"
@@ -307,7 +309,7 @@ class OpenStackReleaseResolver:
         self._deliverable_cache: dict[str, str] = {}
         self._repo_metadata_cache: dict[str, dict] = {}
         self._resolved_cache: dict[tuple[str, str, str, str, str | None], ResolvedRelease] = {}
-        self._cache_lock = Lock()
+        self._cache_lock = RLock()
 
     def resolve(self, *, package: PackageDefinition, openstack_target: str, snapshot_at: str | None = None) -> ResolvedRelease:
         snapshot_at = validate_snapshot_at(snapshot_at)
@@ -315,64 +317,61 @@ class OpenStackReleaseResolver:
         cache_key = (package.source_package, package.upstream_repo, deliverable_name, openstack_target, snapshot_at)
         with self._cache_lock:
             cached = self._resolved_cache.get(cache_key)
-        if cached is not None:
-            return cached
-        resolved_series = resolve_series(self._series_status_entries(), openstack_target)
-        deliverable_path, content = self._fetch_deliverable(resolved_series.name, deliverable_name)
-        deliverable_target = resolved_series.release_id or openstack_target
-        if deliverable_path.split("/")[-2] != "_independent":
-            deliverable_target = openstack_target
-        release = resolve_release_from_deliverable_yaml(
-            content,
-            openstack_target=deliverable_target,
-            deliverable_scope=deliverable_path.split("/")[-2],
-        )
-        upstream_ref = release.version
-        if snapshot_at:
-            if release.project_repo is None:
-                raise ReleaseDiscoveryError(f"Snapshot resolution requires a project repo for {deliverable_name}")
-            upstream_ref = self._resolve_snapshot_ref(
-                upstream_repo=package.upstream_repo,
-                project_repo=release.project_repo,
-                release_id=resolved_series.release_id,
+            if cached is not None:
+                return cached
+            resolved_series = resolve_series(self._series_status_entries(), openstack_target)
+            deliverable_path, content = self._fetch_deliverable(resolved_series.name, deliverable_name)
+            deliverable_target = resolved_series.release_id or openstack_target
+            if deliverable_path.split("/")[-2] != "_independent":
+                deliverable_target = openstack_target
+            release = resolve_release_from_deliverable_yaml(
+                content,
+                openstack_target=deliverable_target,
                 deliverable_scope=deliverable_path.split("/")[-2],
-                snapshot_at=snapshot_at,
-                deliverable_content=content,
             )
-        resolved_release = ResolvedRelease(
-            series=resolved_series.name,
-            release_id=resolved_series.release_id,
-            version=release.version,
-            project_repo=release.project_repo,
-            project_hash=upstream_ref if snapshot_at else release.project_hash,
-            upstream_ref=upstream_ref,
-            snapshot_at=snapshot_at,
-            deliverable_path=deliverable_path,
-        )
-        with self._cache_lock:
+            upstream_ref = release.version
+            if snapshot_at:
+                if release.project_repo is None:
+                    raise ReleaseDiscoveryError(f"Snapshot resolution requires a project repo for {deliverable_name}")
+                upstream_ref = self._resolve_snapshot_ref(
+                    upstream_repo=package.upstream_repo,
+                    project_repo=release.project_repo,
+                    release_id=resolved_series.release_id,
+                    deliverable_scope=deliverable_path.split("/")[-2],
+                    snapshot_at=snapshot_at,
+                    deliverable_content=content,
+                )
+            resolved_release = ResolvedRelease(
+                series=resolved_series.name,
+                release_id=resolved_series.release_id,
+                version=release.version,
+                project_repo=release.project_repo,
+                project_hash=upstream_ref if snapshot_at else release.project_hash,
+                upstream_ref=upstream_ref,
+                snapshot_at=snapshot_at,
+                deliverable_path=deliverable_path,
+            )
             self._resolved_cache[cache_key] = resolved_release
-        return resolved_release
+            return resolved_release
 
     def _series_status_entries(self) -> list[OpenStackSeries]:
-        if self._series_status is None:
-            parsed = parse_series_status_yaml(self.fetcher(f"{self.base_url}/data/series_status.yaml"))
-            with self._cache_lock:
-                if self._series_status is None:
-                    self._series_status = parsed
-        return self._series_status
+        with self._cache_lock:
+            if self._series_status is None:
+                self._series_status = parse_series_status_yaml(self.fetcher(f"{self.base_url}/data/series_status.yaml"))
+            return self._series_status
 
     def _fetch_deliverable(self, series_name: str, deliverable_name: str) -> tuple[str, str]:
         for scope in (series_name, "_independent"):
             path = f"deliverables/{scope}/{deliverable_name}.yaml"
-            if path in self._deliverable_cache:
-                return path, self._deliverable_cache[path]
-            try:
-                content = self.fetcher(f"{self.base_url}/{path}")
-            except ReleaseNotFoundError:
-                continue
             with self._cache_lock:
+                if path in self._deliverable_cache:
+                    return path, self._deliverable_cache[path]
+                try:
+                    content = self.fetcher(f"{self.base_url}/{path}")
+                except ReleaseNotFoundError:
+                    continue
                 self._deliverable_cache[path] = content
-            return path, content
+                return path, content
         raise ReleaseDiscoveryError(f"Deliverable not found for {deliverable_name} in series {series_name}")
 
     def _resolve_snapshot_ref(
@@ -406,13 +405,12 @@ class OpenStackReleaseResolver:
     def _default_branch_for_upstream_repo(self, upstream_repo: str) -> str:
         with self._cache_lock:
             cached = self._repo_metadata_cache.get(upstream_repo)
-        if cached is None:
-            payload = self.fetcher(_canonical_repo_api_url(upstream_repo))
-            try:
-                cached = json.loads(payload)
-            except json.JSONDecodeError as exc:
-                raise ReleaseDiscoveryError(f"Invalid repository API response for {upstream_repo}") from exc
-            with self._cache_lock:
+            if cached is None:
+                payload = self.fetcher(_canonical_repo_api_url(upstream_repo))
+                try:
+                    cached = json.loads(payload)
+                except json.JSONDecodeError as exc:
+                    raise ReleaseDiscoveryError(f"Invalid repository API response for {upstream_repo}") from exc
                 self._repo_metadata_cache[upstream_repo] = cached
         default_branch = cached.get("default_branch")
         if not default_branch:
