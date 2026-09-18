@@ -68,41 +68,7 @@ jobs:
             pbr
       - name: Summarize packaging failures
         if: always()
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          failure_files = sorted(Path("artifacts").glob("gen-*/failures/*/failure.json"))
-          if not failure_files:
-              print("No packaging failure bundles found.")
-              raise SystemExit(0)
-
-          print(f"Found {len(failure_files)} packaging failure bundle(s).")
-          for failure_file in failure_files:
-              try:
-                  payload = json.loads(failure_file.read_text(encoding="utf-8"))
-              except json.JSONDecodeError as exc:
-                  print(f"- failure_json: {failure_file}")
-                  print(f"  parse_error: {exc}")
-                  continue
-              command = payload.get("command", {})
-              print(f"- package: {payload.get('source_package')}")
-              print(f"  category: {payload.get('category')}")
-              print(f"  failed_command: {' '.join(payload.get('failed_command', []))}")
-              print(f"  exit_code: {payload.get('command_exit_code')}")
-              print(f"  failure_json: {failure_file}")
-              stderr = str(command.get("stderr", "")).strip()
-              stdout = str(command.get("stdout", "")).strip()
-              if stderr:
-                  print("  stderr_tail:")
-                  for line in stderr.splitlines()[-30:]:
-                      print(f"    {line}")
-              elif stdout:
-                  print("  stdout_tail:")
-                  for line in stdout.splitlines()[-30:]:
-                      print(f"    {line}")
-          PY
+        run: python scripts/summarize_packaging_failures.py artifacts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -152,41 +118,7 @@ jobs:
             python-oslo.serialization
       - name: Summarize packaging failures
         if: always()
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          failure_files = sorted(Path("artifacts").glob("gen-*/failures/*/failure.json"))
-          if not failure_files:
-              print("No packaging failure bundles found.")
-              raise SystemExit(0)
-
-          print(f"Found {len(failure_files)} packaging failure bundle(s).")
-          for failure_file in failure_files:
-              try:
-                  payload = json.loads(failure_file.read_text(encoding="utf-8"))
-              except json.JSONDecodeError as exc:
-                  print(f"- failure_json: {failure_file}")
-                  print(f"  parse_error: {exc}")
-                  continue
-              command = payload.get("command", {})
-              print(f"- package: {payload.get('source_package')}")
-              print(f"  category: {payload.get('category')}")
-              print(f"  failed_command: {' '.join(payload.get('failed_command', []))}")
-              print(f"  exit_code: {payload.get('command_exit_code')}")
-              print(f"  failure_json: {failure_file}")
-              stderr = str(command.get("stderr", "")).strip()
-              stdout = str(command.get("stdout", "")).strip()
-              if stderr:
-                  print("  stderr_tail:")
-                  for line in stderr.splitlines()[-30:]:
-                      print(f"    {line}")
-              elif stdout:
-                  print("  stdout_tail:")
-                  for line in stdout.splitlines()[-30:]:
-                      print(f"    {line}")
-          PY
+        run: python scripts/summarize_packaging_failures.py artifacts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -230,41 +162,7 @@ jobs:
             glance
       - name: Summarize packaging failures
         if: always()
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          failure_files = sorted(Path("artifacts").glob("gen-*/failures/*/failure.json"))
-          if not failure_files:
-              print("No packaging failure bundles found.")
-              raise SystemExit(0)
-
-          print(f"Found {len(failure_files)} packaging failure bundle(s).")
-          for failure_file in failure_files:
-              try:
-                  payload = json.loads(failure_file.read_text(encoding="utf-8"))
-              except json.JSONDecodeError as exc:
-                  print(f"- failure_json: {failure_file}")
-                  print(f"  parse_error: {exc}")
-                  continue
-              command = payload.get("command", {})
-              print(f"- package: {payload.get('source_package')}")
-              print(f"  category: {payload.get('category')}")
-              print(f"  failed_command: {' '.join(payload.get('failed_command', []))}")
-              print(f"  exit_code: {payload.get('command_exit_code')}")
-              print(f"  failure_json: {failure_file}")
-              stderr = str(command.get("stderr", "")).strip()
-              stdout = str(command.get("stdout", "")).strip()
-              if stderr:
-                  print("  stderr_tail:")
-                  for line in stderr.splitlines()[-30:]:
-                      print(f"    {line}")
-              elif stdout:
-                  print("  stdout_tail:")
-                  for line in stdout.splitlines()[-30:]:
-                      print(f"    {line}")
-          PY
+        run: python scripts/summarize_packaging_failures.py artifacts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
