@@ -313,6 +313,50 @@ def test_build_cmd_skips_publish_without_outputs(tmp_path: Path, monkeypatch, ca
     assert payload["states"]["pbr"] == "BUILD_SUCCEEDED"
 
 
+def test_build_cmd_dry_run_resolves_relative_run_dir_to_absolute(tmp_path: Path, monkeypatch, capsys):
+    repo_root = Path(__file__).resolve().parents[1]
+
+    def fake_resolve(plan, args):
+        return (
+            {
+                "pbr": ResolvedRelease(
+                    series="indri",
+                    release_id="2027.1",
+                    version="5.7.0",
+                    project_repo="openstack/pbr",
+                    project_hash="abc123",
+                    upstream_ref="5.7.0",
+                    snapshot_at=None,
+                    deliverable_path="deliverables/_independent/pbr.yaml",
+                )
+            },
+            {},
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("packagetest.cli._resolve_package_releases", fake_resolve)
+    args = Namespace(
+        config=str(repo_root / "config" / "vertical_slice.json"),
+        openstack_target="2027.1",
+        ubuntu_release="noble",
+        snapshot_at=None,
+        no_dependency_closure=True,
+        run_dir="artifacts",
+        dry_run=True,
+        dependency_repo=[],
+        sources=["pbr"],
+    )
+
+    assert build_cmd(args) == 0
+    run_dirs = list((tmp_path / "artifacts").glob("gen-*"))
+    assert len(run_dirs) == 1
+    command_lines = (run_dirs[0] / "logs" / "commands.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    assert command_lines
+    assert all(Path(json.loads(line)["cwd"]).is_absolute() for line in command_lines)
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["states"]["pbr"] == "BUILD_SUCCEEDED"
+
+
 def test_publish_run_outputs_publishes_only_packages_with_outputs(tmp_path: Path):
     repo_root = Path(__file__).resolve().parents[1]
     definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")

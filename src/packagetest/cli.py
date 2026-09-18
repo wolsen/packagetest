@@ -68,7 +68,7 @@ def build_cmd(args: argparse.Namespace) -> int:
         snapshot_at=args.snapshot_at,
     )
 
-    run_dir = Path(args.run_dir) / plan.generation_id
+    run_dir = Path(args.run_dir).resolve() / plan.generation_id
     logs_dir = run_dir / "logs"
     artifacts_dir = run_dir / "artifacts"
     logs_dir.mkdir(parents=True, exist_ok=True)
