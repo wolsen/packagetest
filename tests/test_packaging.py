@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from packagetest.models import PackageDefinition
 from packagetest.packaging import build_package_operation_plan, classify_packaging_failure, package_operation_commands
 
@@ -26,6 +28,21 @@ def test_build_package_operation_plan_uses_branch_and_debian_version(tmp_path: P
     assert plan.upstream_version == "2027.1~rc1"
     assert plan.generated_debian_version == "2027.1~rc1-0ubuntu1"
     assert plan.orig_tarball == tmp_path / "glance" / "glance_2027.1~rc1.orig.tar.gz"
+
+
+def test_build_package_operation_plan_requires_branch_mapping(tmp_path: Path):
+    with pytest.raises(ValueError, match="No packaging branch configured"):
+        build_package_operation_plan(
+            package=PackageDefinition(
+                source_package="glance",
+                binary_packages=["glance"],
+                upstream_repo="https://opendev.org/openstack/glance",
+                packaging_repo="https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/glance",
+            ),
+            openstack_target="2027.1-b1",
+            ubuntu_release="noble",
+            run_dir=tmp_path,
+        )
 
 
 def test_package_operation_commands_cover_milestone_two_steps(tmp_path: Path):

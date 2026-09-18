@@ -171,7 +171,7 @@ def _run_package(
             return
 
     states[source] = BuildState.BUILD_SUCCEEDED
-    publish_commands = [(command, run_dir) for command in apt_repository_commands(run_dir / "apt-repo", plan.ubuntu_release)]
+    publish_commands = [(command, run_dir) for command in apt_repository_commands(run_dir / "apt-repo" / source, plan.ubuntu_release)]
     for command, cwd in publish_commands:
         planned_command = command
         if args.dry_run:

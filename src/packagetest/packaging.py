@@ -28,13 +28,16 @@ def build_package_operation_plan(
     ubuntu_release: str,
     run_dir: Path,
 ) -> PackageOperationPlan:
+    packaging_branch = package.branch_mapping.get(ubuntu_release)
+    if packaging_branch is None:
+        raise ValueError(f"No packaging branch configured for {package.source_package} on Ubuntu release {ubuntu_release}")
     workspace_dir = run_dir / package.source_package
     packaging_checkout_dir = workspace_dir / "packaging"
     upstream_checkout_dir = workspace_dir / "upstream"
     upstream_version = openstack_target_to_upstream_version(openstack_target)
     return PackageOperationPlan(
         source_package=package.source_package,
-        packaging_branch=package.branch_mapping.get(ubuntu_release, "master"),
+        packaging_branch=packaging_branch,
         upstream_ref=openstack_target,
         upstream_version=upstream_version,
         generated_debian_version=openstack_target_to_debian_version(openstack_target),
@@ -108,6 +111,7 @@ def package_operation_commands(
         (["git", "clone", package.upstream_repo, str(operation_plan.upstream_checkout_dir)], operation_plan.workspace_dir.parent),
         (["git", "-C", str(operation_plan.upstream_checkout_dir), "checkout", operation_plan.upstream_ref], operation_plan.workspace_dir.parent),
         (["bash", "-lc", archive_cmd], operation_plan.workspace_dir.parent),
+        (["git", "rev-parse", "HEAD"], operation_plan.packaging_checkout_dir),
         (
             [
                 "gbp",
@@ -121,7 +125,6 @@ def package_operation_commands(
             ],
             operation_plan.packaging_checkout_dir,
         ),
-        (["git", "rev-parse", "HEAD"], operation_plan.packaging_checkout_dir),
         (["gbp", "pq", "import"], operation_plan.packaging_checkout_dir),
         (
             [
