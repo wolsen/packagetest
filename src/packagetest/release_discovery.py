@@ -233,6 +233,10 @@ def resolve_release_from_deliverable_yaml(
         raise ReleaseDiscoveryError("No releases found in deliverable YAML")
     parsed_target = parse_openstack_target(openstack_target)
     if deliverable_scope == "_independent":
+        if parsed_target.stage is not None:
+            for release in releases:
+                if release.version.lower().endswith(parsed_target.stage.lower()):
+                    return release
         return releases[-1]
 
     candidate_releases = _candidate_releases_for_series(content, releases, parsed_target.release_id)

@@ -111,6 +111,26 @@ def test_independent_deliverable_accepts_stage_specific_target_fallback():
     assert release.version == "5.7.0"
 
 
+def test_independent_deliverable_prefers_matching_stage_when_available():
+    content = """
+releases:
+  - version: 5.7.0b1
+    projects:
+      - repo: openstack/pbr
+        hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  - version: 5.7.0
+    projects:
+      - repo: openstack/pbr
+        hash: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+"""
+    release = resolve_release_from_deliverable_yaml(
+        content,
+        openstack_target="2027.1-b1",
+        deliverable_scope="_independent",
+    )
+    assert release.version == "5.7.0b1"
+
+
 def test_plain_cycle_target_ignores_trailing_prerelease():
     content = SERIES_DELIVERABLE + """
   - version: 31.2.0.0rc1

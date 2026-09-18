@@ -83,6 +83,22 @@ def test_scheduler_considers_root_node_ready(tmp_path):
     assert ready == ["pbr"]
 
 
+def test_scheduler_treats_built_dependencies_as_ready(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
+    plan = build_plan(
+        definitions=definitions,
+        requested_sources=["glance"],
+        openstack_target="2027.1-b1",
+        ubuntu_release="noble",
+    )
+    states = {b.source_package: BuildState.WAITING_FOR_DEPENDENCY for b in plan.planned_builds}
+    states["pbr"] = BuildState.BUILD_SUCCEEDED
+
+    ready = next_ready_packages(plan, states)
+    assert ready == ["python-oslo.i18n", "python-oslo.serialization"]
+
+
 def test_plan_can_skip_dependency_closure(tmp_path):
     repo_root = Path(__file__).resolve().parents[1]
     definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
