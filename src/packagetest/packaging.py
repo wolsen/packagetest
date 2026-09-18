@@ -59,9 +59,21 @@ def package_operation_commands(
         f"> {quote(str(operation_plan.orig_tarball))}"
     )
     return [
+        (["rm", "-rf", str(operation_plan.workspace_dir)], operation_plan.workspace_dir.parent),
         (["mkdir", "-p", str(operation_plan.workspace_dir)], operation_plan.workspace_dir.parent),
         (["git", "clone", package.packaging_repo, str(operation_plan.packaging_checkout_dir)], operation_plan.workspace_dir.parent),
-        (["git", "-C", str(operation_plan.packaging_checkout_dir), "checkout", operation_plan.packaging_branch], operation_plan.workspace_dir.parent),
+        (
+            [
+                "git",
+                "-C",
+                str(operation_plan.packaging_checkout_dir),
+                "checkout",
+                "-B",
+                operation_plan.packaging_branch,
+                f"origin/{operation_plan.packaging_branch}",
+            ],
+            operation_plan.workspace_dir.parent,
+        ),
         (
             ["git", "-C", str(operation_plan.packaging_checkout_dir), "checkout", "-B", "upstream", "origin/upstream"],
             operation_plan.workspace_dir.parent,
@@ -70,7 +82,18 @@ def package_operation_commands(
             ["git", "-C", str(operation_plan.packaging_checkout_dir), "checkout", "-B", "pristine-tar", "origin/pristine-tar"],
             operation_plan.workspace_dir.parent,
         ),
-        (["git", "-C", str(operation_plan.packaging_checkout_dir), "checkout", operation_plan.packaging_branch], operation_plan.workspace_dir.parent),
+        (
+            [
+                "git",
+                "-C",
+                str(operation_plan.packaging_checkout_dir),
+                "checkout",
+                "-B",
+                operation_plan.packaging_branch,
+                f"origin/{operation_plan.packaging_branch}",
+            ],
+            operation_plan.workspace_dir.parent,
+        ),
         (["git", "clone", package.upstream_repo, str(operation_plan.upstream_checkout_dir)], operation_plan.workspace_dir.parent),
         (["git", "-C", str(operation_plan.upstream_checkout_dir), "checkout", operation_plan.upstream_ref], operation_plan.workspace_dir.parent),
         (["bash", "-lc", archive_cmd], operation_plan.workspace_dir.parent),
