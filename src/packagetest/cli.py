@@ -108,7 +108,15 @@ def build_cmd(args: argparse.Namespace) -> int:
         for source in ready:
             mark_state(states, source, BuildState.BUILDING)
             if source in operation_plan_errors:
-                _record_preparation_failure(source, plan, run_dir, states, package_metadata[source], operation_plan_errors[source])
+                _record_preparation_failure(
+                    source,
+                    plan,
+                    run_dir,
+                    states,
+                    package_metadata[source],
+                    operation_plan_errors[source],
+                    _classify_preparation_failure(operation_plan_errors[source]),
+                )
                 continue
             _run_package(source, plan, args, run_dir, runner, states, package_metadata[source], operation_plans[source])
 
@@ -250,6 +258,7 @@ def _record_preparation_failure(
     states: dict[str, BuildState],
     metadata: PackageExecutionMetadata,
     message: str,
+    category: str,
 ) -> None:
     metadata.build_started_at = datetime.now(UTC).isoformat()
     metadata.build_finished_at = datetime.now(UTC).isoformat()
@@ -266,7 +275,7 @@ def _record_preparation_failure(
     write_failure_bundle(
         out_dir=run_dir / "failures" / source,
         bundle=FailureBundle(
-            category="SOURCE_GENERATION_FAILURE",
+            category=category,
             source_package=source,
             generation_id=plan.generation_id,
             upstream_sha=None,
@@ -282,6 +291,12 @@ def _record_preparation_failure(
             "debian/patches/series": "",
         },
     )
+
+
+def _classify_preparation_failure(message: str) -> str:
+    if "No packaging branch configured" in message:
+        return "PACKAGING_POLICY_FAILURE"
+    return "SOURCE_GENERATION_FAILURE"
 
 
 def _resolve_package_releases(

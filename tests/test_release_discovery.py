@@ -1,7 +1,9 @@
 import pytest
+from urllib.error import URLError
 
 from packagetest.models import PackageDefinition
 from packagetest.release_discovery import (
+    HTTPTextClient,
     OpenStackReleaseResolver,
     ReleaseDiscoveryError,
     ReleaseNotFoundError,
@@ -174,3 +176,44 @@ def test_resolver_rejects_invalid_snapshot_timestamp():
     resolver = OpenStackReleaseResolver(base_url="https://example.invalid", fetcher=lambda _: SERIES_STATUS)
     with pytest.raises(ReleaseDiscoveryError, match="Invalid snapshot timestamp"):
         resolver.resolve(package=package, openstack_target="2027.1", snapshot_at="not-a-date")
+
+
+def test_snapshot_resolution_requires_project_hash():
+    package = PackageDefinition(
+        source_package="glance",
+        binary_packages=["glance"],
+        upstream_repo="https://opendev.org/openstack/glance",
+        packaging_repo="https://example.invalid/glance",
+    )
+
+    def fetcher(url: str) -> str:
+        if url.endswith("/data/series_status.yaml"):
+            return SERIES_STATUS
+        if url.endswith("/deliverables/indri/glance.yaml"):
+            return """
+releases:
+  - version: 31.0.0
+    projects:
+      - repo: openstack/glance
+"""
+        raise ReleaseDiscoveryError(f"unexpected url: {url}")
+
+    resolver = OpenStackReleaseResolver(base_url="https://example.invalid", fetcher=fetcher)
+    with pytest.raises(ReleaseDiscoveryError, match="requires a project hash"):
+        resolver.resolve(package=package, openstack_target="2027.1", snapshot_at="2026-09-18T05:32:15+00:00")
+
+
+def test_http_text_client_retries_plus_initial_attempt(monkeypatch):
+    attempts = {"count": 0}
+
+    class FakeOpener:
+        def open(self, request, timeout):
+            attempts["count"] += 1
+            raise URLError("temporary")
+
+    client = HTTPTextClient(retries=2)
+    client.opener = FakeOpener()
+
+    with pytest.raises(ReleaseDiscoveryError, match="temporary"):
+        client.fetch("https://example.invalid/data/series_status.yaml")
+    assert attempts["count"] == 3

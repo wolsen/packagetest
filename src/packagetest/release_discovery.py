@@ -39,7 +39,7 @@ class HTTPTextClient:
     def fetch(self, url: str) -> str:
         request = Request(url, headers={"User-Agent": self.user_agent})
         last_error: URLError | None = None
-        for _ in range(self.retries):
+        for _ in range(self.retries + 1):
             try:
                 with self.opener.open(request, timeout=self.timeout) as response:
                     return response.read().decode("utf-8")
@@ -241,7 +241,9 @@ class OpenStackReleaseResolver:
             openstack_target=openstack_target,
             deliverable_scope=deliverable_path.split("/")[-2],
         )
-        upstream_ref = release.project_hash if snapshot_at and release.project_hash else release.version
+        if snapshot_at and not release.project_hash:
+            raise ReleaseDiscoveryError(f"Snapshot resolution requires a project hash for {deliverable_name}")
+        upstream_ref = release.project_hash if snapshot_at else release.version
         resolved_release = ResolvedRelease(
             series=resolved_series.name,
             release_id=resolved_series.release_id,
