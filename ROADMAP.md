@@ -16,10 +16,10 @@
 
 ## Milestone 2 — Real packaging repository operations
 
-- [ ] Clone Ubuntu packaging repositories and checkout correct packaging/upstream/pristine-tar branches.
-- [ ] Execute `gbp import-orig` with branch-aware options.
-- [ ] Execute `gbp pq import` and classify patch failures.
-- [ ] Update `debian/changelog` and package metadata with Debian version semantics.
+- [x] Clone Ubuntu packaging repositories and checkout correct packaging/upstream/pristine-tar branches.
+- [x] Execute `gbp import-orig` with branch-aware options.
+- [x] Execute `gbp pq import` and classify patch failures.
+- [x] Update `debian/changelog` and package metadata with Debian version semantics.
 
 ## Milestone 3 — Real source and binary builds
 

@@ -4,7 +4,7 @@ from pathlib import Path
 from packagetest.cli import _run_package
 from packagetest.commands import CommandRunner
 from packagetest.config import load_package_definitions
-from packagetest.models import BuildState, CommandResult
+from packagetest.models import BuildState, CommandResult, PackageExecutionMetadata
 from packagetest.planner import build_plan
 
 
@@ -37,11 +37,19 @@ def test_run_package_dry_run_marks_published(tmp_path: Path):
     states = {"pbr": BuildState.BUILDING}
     args = Namespace(dry_run=True)
     runner = CommandRunner(log_path=tmp_path / "commands.jsonl")
+    metadata = PackageExecutionMetadata(
+        upstream_tag_or_sha="2027.1-b1",
+        upstream_version="unknown",
+        packaging_branch="master",
+    )
 
-    _run_package("pbr", plan, args, tmp_path, runner, states)
+    _run_package("pbr", plan, args, tmp_path, runner, states, metadata)
 
     assert states["pbr"] == BuildState.PUBLISHED
     assert (tmp_path / "commands.jsonl").exists()
+    assert metadata.generated_debian_version == "2027.1~b1-0ubuntu1"
+    assert metadata.build_started_at != "unknown"
+    assert metadata.build_finished_at != "unknown"
 
 
 def test_run_package_failure_writes_bundle(tmp_path: Path):
@@ -56,9 +64,15 @@ def test_run_package_failure_writes_bundle(tmp_path: Path):
     states = {"pbr": BuildState.BUILDING}
     args = Namespace(dry_run=False)
     runner = FailingRunner()
+    metadata = PackageExecutionMetadata(
+        upstream_tag_or_sha="2027.1-b1",
+        upstream_version="unknown",
+        packaging_branch="master",
+    )
 
-    _run_package("pbr", plan, args, tmp_path, runner, states)
+    _run_package("pbr", plan, args, tmp_path, runner, states, metadata)
 
     assert states["pbr"] == BuildState.BUILD_FAILED
     assert (tmp_path / "failures" / "pbr" / "failure.json").exists()
     assert runner.calls == 1
+    assert metadata.build_finished_at != "unknown"

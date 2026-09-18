@@ -17,6 +17,8 @@ This demonstrates:
 
 - dependency-aware planning (DAG)
 - blocked/ready/build/publish state transitions
+- branch-aware packaging repository orchestration (`packaging`, `upstream`, `pristine-tar`)
+- Debian-versioned changelog update commands for OpenStack targets
 - command-level execution logs
 - generation manifest output
 - failure bundle output (`failure.json`, `analysis.md`, `proposed-fix.patch`)

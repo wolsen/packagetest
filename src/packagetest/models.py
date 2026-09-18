@@ -111,3 +111,17 @@ class GenerationManifest:
             "ubuntu_release": self.ubuntu_release,
             "package_manifests": package_manifests,
         }
+
+
+@dataclass
+class PackageExecutionMetadata:
+    upstream_tag_or_sha: str
+    upstream_version: str
+    packaging_branch: str
+    packaging_base_sha: str = "unknown"
+    generated_debian_version: str = "unknown"
+    source_hashes: list[str] = field(default_factory=list)
+    build_dependency_versions: dict[str, str] = field(default_factory=dict)
+    generated_binary_hashes: list[str] = field(default_factory=list)
+    build_started_at: str = "unknown"
+    build_finished_at: str = "unknown"

@@ -3,13 +3,15 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .commands import CommandRunner
 from .config import load_package_definitions
 from .failures import FailureBundle, write_failure_bundle
 from .manifest import write_generation_manifest
-from .models import BuildPlan, BuildState, GenerationManifest, PackageManifest
+from .models import BuildPlan, BuildState, GenerationManifest, PackageExecutionMetadata, PackageManifest
+from .packaging import build_package_operation_plan, classify_packaging_failure, package_operation_commands
 from .planner import build_plan, initial_states
 from .repository import apt_repository_commands
 from .scheduler import mark_state, next_ready_packages
@@ -49,6 +51,23 @@ def build_cmd(args: argparse.Namespace) -> int:
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     states = initial_states(plan)
+    package_metadata = {
+        item.source_package: PackageExecutionMetadata(
+            upstream_tag_or_sha=plan.openstack_target,
+            upstream_version=item.source_package,
+            packaging_branch=item.package.branch_mapping.get(args.ubuntu_release, "master"),
+        )
+        for item in plan.planned_builds
+    }
+    for item in plan.planned_builds:
+        operation_plan = build_package_operation_plan(
+            package=item.package,
+            openstack_target=plan.openstack_target,
+            ubuntu_release=plan.ubuntu_release,
+            run_dir=run_dir,
+        )
+        package_metadata[item.source_package].upstream_version = operation_plan.upstream_version
+        package_metadata[item.source_package].generated_debian_version = operation_plan.generated_debian_version
 
     runner = CommandRunner(log_path=logs_dir / "commands.jsonl")
     while any(state == BuildState.WAITING_FOR_DEPENDENCY for state in states.values()):
@@ -57,27 +76,28 @@ def build_cmd(args: argparse.Namespace) -> int:
             break
         for source in ready:
             mark_state(states, source, BuildState.BUILDING)
-            _run_package(source, plan, args, run_dir, runner, states)
+            _run_package(source, plan, args, run_dir, runner, states, package_metadata[source])
 
     manifests: list[PackageManifest] = []
     for item in plan.planned_builds:
+        metadata = package_metadata[item.source_package]
         manifests.append(
             PackageManifest(
                 source_package=item.source_package,
                 upstream_repo=item.package.upstream_repo,
-                upstream_tag_or_sha=args.openstack_target,
-                upstream_version="unknown",
+                upstream_tag_or_sha=metadata.upstream_tag_or_sha,
+                upstream_version=metadata.upstream_version,
                 packaging_repo=item.package.packaging_repo,
-                packaging_branch=item.package.branch_mapping.get(args.ubuntu_release, "master"),
-                packaging_base_sha="unknown",
-                generated_debian_version="unknown",
-                source_hashes=[],
-                build_dependency_versions={},
+                packaging_branch=metadata.packaging_branch,
+                packaging_base_sha=metadata.packaging_base_sha,
+                generated_debian_version=metadata.generated_debian_version,
+                source_hashes=metadata.source_hashes,
+                build_dependency_versions=metadata.build_dependency_versions,
                 generated_binary_packages=item.package.binary_packages,
-                generated_binary_hashes=[],
+                generated_binary_hashes=metadata.generated_binary_hashes,
                 runner_environment={"github_actions": str(bool(Path("/home/runner").exists())).lower()},
-                build_started_at="unknown",
-                build_finished_at="unknown",
+                build_started_at=metadata.build_started_at,
+                build_finished_at=metadata.build_finished_at,
                 build_result=states[item.source_package],
             )
         )
@@ -103,36 +123,44 @@ def _run_package(
     run_dir: Path,
     runner: CommandRunner,
     states: dict[str, BuildState],
+    metadata: PackageExecutionMetadata,
 ) -> None:
     package = next(p.package for p in plan.planned_builds if p.source_package == source)
-    package_dir = run_dir / source
-    package_dir.mkdir(parents=True, exist_ok=True)
+    operation_plan = build_package_operation_plan(
+        package=package,
+        openstack_target=plan.openstack_target,
+        ubuntu_release=plan.ubuntu_release,
+        run_dir=run_dir,
+    )
+    metadata.upstream_version = operation_plan.upstream_version
+    metadata.generated_debian_version = operation_plan.generated_debian_version
+    metadata.packaging_branch = operation_plan.packaging_branch
+    metadata.build_started_at = datetime.now(UTC).isoformat()
 
-    commands = [
-        ["echo", f"git clone {package.packaging_repo} {source}"],
-        ["echo", f"git clone {package.upstream_repo} {source}-upstream"],
-        ["echo", f"gbp import-orig --pristine-tar --upstream-version=<resolved> ../{source}_<resolved>.orig.tar.gz"],
-        ["echo", "gbp pq import"],
-        ["echo", "dch -v <debian-version> \"Automated OpenStack package update\""],
-        ["echo", "gbp buildpackage --git-pristine-tar --git-builder='debuild -S -sa'"],
-        ["echo", "sbuild --dist=<ubuntu-release> --build=source,all,any ../*.dsc"],
-    ]
-    commands.extend(apt_repository_commands(run_dir / "apt-repo", plan.ubuntu_release))
+    commands = package_operation_commands(
+        package=package,
+        operation_plan=operation_plan,
+        ubuntu_release=plan.ubuntu_release,
+    )
+    commands.extend((command, run_dir) for command in apt_repository_commands(run_dir / "apt-repo", plan.ubuntu_release))
 
-    for command in commands:
+    for command, cwd in commands:
         if args.dry_run:
             command = ["echo", "DRY-RUN:", *command]
-        result = runner.run(command=command, cwd=package_dir)
+        result = runner.run(command=command, cwd=cwd)
+        if not args.dry_run and result.exit_code == 0 and result.command == ["git", "rev-parse", "HEAD"]:
+            metadata.packaging_base_sha = result.stdout.strip() or metadata.packaging_base_sha
         if result.exit_code != 0:
             states[source] = BuildState.BUILD_FAILED
+            metadata.build_finished_at = datetime.now(UTC).isoformat()
             write_failure_bundle(
                 out_dir=run_dir / "failures" / source,
                 bundle=FailureBundle(
-                    category="UNKNOWN",
+                    category=classify_packaging_failure(result.command, result.stderr),
                     source_package=source,
                     generation_id=plan.generation_id,
                     upstream_sha=None,
-                    packaging_sha=None,
+                    packaging_sha=metadata.packaging_base_sha if metadata.packaging_base_sha != "unknown" else None,
                     failed_command=result.command,
                     command_exit_code=result.exit_code,
                 ),
@@ -147,6 +175,7 @@ def _run_package(
             return
 
     states[source] = BuildState.BUILD_SUCCEEDED
+    metadata.build_finished_at = datetime.now(UTC).isoformat()
     states[source] = BuildState.PUBLISHED
 
 
