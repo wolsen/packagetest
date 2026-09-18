@@ -24,3 +24,19 @@ releases:
 def test_release_discovery_raises_without_release_entries():
     with pytest.raises(ValueError, match="No releases found"):
         latest_release_from_deliverable_yaml("team: sample\n")
+
+
+def test_release_discovery_keeps_repo_hash_pair_together():
+    content = """
+releases:
+  - version: 2.0.0
+    projects:
+      - repo: openstack/alpha
+        hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      - repo: openstack/beta
+        hash: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+"""
+    release = latest_release_from_deliverable_yaml(content)
+    assert release.version == "2.0.0"
+    assert release.project_repo == "openstack/alpha"
+    assert release.project_hash == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

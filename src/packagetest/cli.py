@@ -10,7 +10,7 @@ from .config import load_package_definitions
 from .failures import FailureBundle, write_failure_bundle
 from .manifest import write_generation_manifest
 from .models import BuildPlan, BuildState, GenerationManifest, PackageManifest
-from .planner import build_plan
+from .planner import build_plan, initial_states
 from .repository import apt_repository_commands
 from .scheduler import mark_state, next_ready_packages
 
@@ -46,10 +46,7 @@ def build_cmd(args: argparse.Namespace) -> int:
     logs_dir.mkdir(parents=True, exist_ok=True)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-    states = {b.source_package: BuildState.WAITING_FOR_DEPENDENCY for b in plan.planned_builds}
-    for b in plan.planned_builds:
-        if not b.depends_on_sources:
-            states[b.source_package] = BuildState.BUILDING
+    states = initial_states(plan)
 
     runner = CommandRunner(log_path=logs_dir / "commands.jsonl")
     for source in [b.source_package for b in plan.planned_builds if states[b.source_package] == BuildState.BUILDING]:
