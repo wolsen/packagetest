@@ -11,7 +11,7 @@ from .versioning import upstream_version_to_debian_version
 @dataclass(frozen=True)
 class PackageOperationPlan:
     source_package: str
-    packaging_branch: str
+    packaging_branch: str | None
     upstream_ref: str
     upstream_version: str
     generated_debian_version: str
@@ -19,6 +19,7 @@ class PackageOperationPlan:
     packaging_checkout_dir: Path
     upstream_checkout_dir: Path
     orig_tarball: Path
+    packaging_branch_file: Path
 
 
 def _orig_tarball_basename(source_package: str) -> str:
@@ -35,9 +36,7 @@ def build_package_operation_plan(
     ubuntu_release: str,
     run_dir: Path,
 ) -> PackageOperationPlan:
-    packaging_branch = package.branch_mapping.get(ubuntu_release)
-    if packaging_branch is None:
-        raise ValueError(f"No packaging branch configured for {package.source_package} on Ubuntu release {ubuntu_release}")
+    packaging_branch = package.packaging_branch
     workspace_dir = run_dir / package.source_package
     packaging_checkout_dir = workspace_dir / "packaging"
     upstream_checkout_dir = workspace_dir / "upstream"
@@ -51,6 +50,7 @@ def build_package_operation_plan(
         packaging_checkout_dir=packaging_checkout_dir,
         upstream_checkout_dir=upstream_checkout_dir,
         orig_tarball=workspace_dir / f"{_orig_tarball_basename(package.source_package)}_{upstream_version}.orig.tar.gz",
+        packaging_branch_file=workspace_dir / "packaging-branch.txt",
     )
 
 
@@ -62,8 +62,25 @@ def package_operation_commands(
     dependency_repository_paths: list[Path] | None = None,
 ) -> list[tuple[list[str], Path]]:
     packaging_checkout_q = quote(str(operation_plan.packaging_checkout_dir))
+    packaging_branch_file_q = quote(str(operation_plan.packaging_branch_file))
     archive_prefix = f"{_orig_tarball_basename(package.source_package)}-{operation_plan.upstream_version}/"
     dependency_repository_paths = dependency_repository_paths or []
+    if operation_plan.packaging_branch is None:
+        resolve_packaging_branch_cmd = (
+            "branch=$(git ls-remote --symref "
+            f"{quote(package.packaging_repo)} HEAD | "
+            "sed -n 's#^ref: refs/heads/\\([^[:space:]]*\\)[[:space:]]*HEAD$#\\1#p' | head -n1); "
+            "if [ -z \"$branch\" ]; then echo 'Unable to determine packaging default branch' >&2; exit 1; fi; "
+            f"printf '%s\\n' \"$branch\" > {packaging_branch_file_q}"
+        )
+    else:
+        resolve_packaging_branch_cmd = (
+            f"printf '%s\\n' {quote(operation_plan.packaging_branch)} > {packaging_branch_file_q}"
+        )
+    checkout_packaging_branch_cmd = (
+        f"branch=$(cat {packaging_branch_file_q}); "
+        f"git -C {packaging_checkout_q} checkout \"$branch\""
+    )
     archive_cmd = (
         "git -C "
         f"{quote(str(operation_plan.upstream_checkout_dir))} "
@@ -88,21 +105,31 @@ def package_operation_commands(
     if extra_repo_args:
         sbuild_command = f"{sbuild_command} {extra_repo_args}"
     sbuild_command = f"{sbuild_command} ../*.dsc"
+    gbp_import_orig_cmd = (
+        f"branch=$(cat {packaging_branch_file_q}); "
+        "gbp import-orig "
+        "--upstream-branch=upstream "
+        "--pristine-tar "
+        "--no-interactive "
+        f"--debian-branch=\"$branch\" "
+        f"--upstream-version={quote(operation_plan.upstream_version)} "
+        f"{quote(str(operation_plan.orig_tarball))}"
+    )
+    gbp_buildpackage_cmd = (
+        f"branch=$(cat {packaging_branch_file_q}); "
+        "gbp buildpackage "
+        "--git-upstream-branch=upstream "
+        "--git-pristine-tar "
+        "--git-builder='debuild -S -sa' "
+        "--git-debian-branch=\"$branch\""
+    )
 
     return [
         (["rm", "-rf", str(operation_plan.workspace_dir)], operation_plan.workspace_dir.parent),
         (["mkdir", "-p", str(operation_plan.workspace_dir)], operation_plan.workspace_dir.parent),
         (["git", "clone", package.packaging_repo, str(operation_plan.packaging_checkout_dir)], operation_plan.workspace_dir.parent),
-        (
-            [
-                "git",
-                "-C",
-                str(operation_plan.packaging_checkout_dir),
-                "checkout",
-                operation_plan.packaging_branch,
-            ],
-            operation_plan.workspace_dir.parent,
-        ),
+        (["bash", "-lc", resolve_packaging_branch_cmd], operation_plan.workspace_dir.parent),
+        (["bash", "-lc", checkout_packaging_branch_cmd], operation_plan.workspace_dir.parent),
         (["git", "-C", str(operation_plan.packaging_checkout_dir), "rev-parse", "HEAD"], operation_plan.workspace_dir.parent),
         (
             ["bash", "-lc", upstream_branch_cmd],
@@ -113,31 +140,13 @@ def package_operation_commands(
             operation_plan.workspace_dir.parent,
         ),
         (
-            [
-                "git",
-                "-C",
-                str(operation_plan.packaging_checkout_dir),
-                "checkout",
-                operation_plan.packaging_branch,
-            ],
+            ["bash", "-lc", checkout_packaging_branch_cmd],
             operation_plan.workspace_dir.parent,
         ),
         (["git", "clone", package.upstream_repo, str(operation_plan.upstream_checkout_dir)], operation_plan.workspace_dir.parent),
         (["git", "-C", str(operation_plan.upstream_checkout_dir), "checkout", operation_plan.upstream_ref], operation_plan.workspace_dir.parent),
         (["bash", "-lc", archive_cmd], operation_plan.workspace_dir.parent),
-        (
-            [
-                "gbp",
-                "import-orig",
-                f"--debian-branch={operation_plan.packaging_branch}",
-                "--upstream-branch=upstream",
-                "--pristine-tar",
-                "--no-interactive",
-                f"--upstream-version={operation_plan.upstream_version}",
-                str(operation_plan.orig_tarball),
-            ],
-            operation_plan.packaging_checkout_dir,
-        ),
+        (["bash", "-lc", gbp_import_orig_cmd], operation_plan.packaging_checkout_dir),
         (["gbp", "pq", "import"], operation_plan.packaging_checkout_dir),
         (
             [
@@ -150,17 +159,7 @@ def package_operation_commands(
             ],
             operation_plan.packaging_checkout_dir,
         ),
-        (
-            [
-                "gbp",
-                "buildpackage",
-                f"--git-debian-branch={operation_plan.packaging_branch}",
-                "--git-upstream-branch=upstream",
-                "--git-pristine-tar",
-                "--git-builder=debuild -S -sa",
-            ],
-            operation_plan.packaging_checkout_dir,
-        ),
+        (["bash", "-lc", gbp_buildpackage_cmd], operation_plan.packaging_checkout_dir),
         (
             [
                 "bash",
@@ -176,6 +175,12 @@ def classify_packaging_failure(command: list[str], stdout: str, stderr: str) -> 
     command_text = " ".join(command)
     output_lower = "\n".join((stdout, stderr)).lower()
     if "missing origin/upstream branch" in output_lower or "missing origin/pristine-tar branch" in output_lower:
+        return "PACKAGING_POLICY_FAILURE"
+    if (
+        "ls-remote --symref" in command_text
+        or (" checkout " in command_text and "did not match any file" in output_lower)
+        or "unable to determine packaging default branch" in output_lower
+    ):
         return "PACKAGING_POLICY_FAILURE"
     if "gbp pq import" in command_text:
         if any(
