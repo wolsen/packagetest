@@ -40,3 +40,18 @@ releases:
     assert release.version == "2.0.0"
     assert release.project_repo == "openstack/alpha"
     assert release.project_hash == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+
+def test_release_discovery_uses_first_complete_repo_hash_pair():
+    content = """
+releases:
+  - version: 3.0.0
+    projects:
+      - repo: openstack/alpha
+      - repo: openstack/beta
+        hash: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+"""
+    release = latest_release_from_deliverable_yaml(content)
+    assert release.version == "3.0.0"
+    assert release.project_repo == "openstack/beta"
+    assert release.project_hash == "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"

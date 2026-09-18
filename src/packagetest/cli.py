@@ -39,6 +39,7 @@ def build_cmd(args: argparse.Namespace) -> int:
         requested_sources=args.sources,
         openstack_target=args.openstack_target,
         ubuntu_release=args.ubuntu_release,
+        include_dependency_closure=not args.no_dependency_closure,
     )
 
     run_dir = Path(args.run_dir) / plan.generation_id
@@ -166,6 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_plan.add_argument("--config", default=str(_default_config_path()))
     p_plan.add_argument("--openstack-target", required=True)
     p_plan.add_argument("--ubuntu-release", required=True)
+    p_plan.add_argument("--no-dependency-closure", action="store_true", default=False)
     p_plan.add_argument("sources", nargs="+")
     p_plan.set_defaults(func=plan_cmd)
 
