@@ -9,6 +9,7 @@ def apt_repository_commands(repo_dir: Path, distribution: str, key_name: str = "
     packages_file = quote(str(repo_dir / "Packages"))
     release_file = quote(str(repo_dir / "Release"))
     repo_dir_q = quote(str(repo_dir))
+    distribution_q = quote(distribution)
     return [
         ["mkdir", "-p", str(repo_dir / "pool")],
         ["bash", "-lc", f"apt-ftparchive packages {pool_dir} > {packages_file}"],
@@ -18,8 +19,8 @@ def apt_repository_commands(repo_dir: Path, distribution: str, key_name: str = "
             "-lc",
             (
                 "apt-ftparchive "
-                f"-o APT::FTPArchive::Release::Suite={distribution} "
-                f"-o APT::FTPArchive::Release::Codename={distribution} "
+                f"-o APT::FTPArchive::Release::Suite={distribution_q} "
+                f"-o APT::FTPArchive::Release::Codename={distribution_q} "
                 f"release {repo_dir_q} > {release_file}"
             ),
         ],
