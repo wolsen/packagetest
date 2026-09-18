@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       openstack_target:
-        description: "OpenStack target (e.g. 2027.1-b1)"
+        description: "OpenStack target (e.g. 2026.1)"
         required: true
-        default: "2027.1-b1"
+        default: "2026.1"
       ubuntu_release:
         description: "Ubuntu release codename"
         required: true

@@ -41,13 +41,13 @@ python -m pip install -e .
 
 # Create a build plan
 packaging plan \
-  --openstack-target 2027.1-b1 \
+  --openstack-target 2026.1 \
   --ubuntu-release noble \
   glance
 
 # Record a reproducible snapshot using resolved upstream SHAs
 packaging plan \
-  --openstack-target 2027.1 \
+  --openstack-target 2026.1 \
   --snapshot-at 2026-09-18T05:32:15+00:00 \
   --ubuntu-release noble \
   glance
@@ -55,7 +55,7 @@ packaging plan \
 # Execute orchestrated commands as dry-run (safe in local/dev environments)
 packaging build \
   --dry-run \
-  --openstack-target 2027.1-b1 \
+  --openstack-target 2026.1 \
   --ubuntu-release noble \
   glance
 ```
