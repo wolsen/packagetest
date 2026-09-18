@@ -33,6 +33,23 @@ class FailingRunner:
         )
 
 
+class SuccessfulRunner:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def run(self, command, cwd, env_diff=None):
+        self.calls += 1
+        return CommandResult(
+            command=command,
+            cwd=str(cwd),
+            env_diff=env_diff or {},
+            stdout="abc123\n" if command[-2:] == ["rev-parse", "HEAD"] else "",
+            stderr="",
+            exit_code=0,
+            duration_seconds=0.1,
+        )
+
+
 def test_run_package_dry_run_marks_published(tmp_path: Path):
     repo_root = Path(__file__).resolve().parents[1]
     definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
@@ -63,6 +80,36 @@ def test_run_package_dry_run_marks_published(tmp_path: Path):
     assert (tmp_path / "commands.jsonl").exists()
     assert metadata.generated_debian_version == "2027.1~b1-0ubuntu1"
     assert metadata.build_started_at != "unknown"
+    assert metadata.build_finished_at != "unknown"
+
+
+def test_run_package_without_artifacts_stops_at_build_succeeded(tmp_path: Path):
+    repo_root = Path(__file__).resolve().parents[1]
+    definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
+    plan = build_plan(
+        definitions=definitions,
+        requested_sources=["pbr"],
+        openstack_target="2027.1-b1",
+        ubuntu_release="noble",
+    )
+    states = {"pbr": BuildState.BUILDING}
+    args = Namespace(dry_run=False)
+    runner = SuccessfulRunner()
+    metadata = PackageExecutionMetadata(
+        upstream_tag_or_sha="2027.1-b1",
+        upstream_version="unknown",
+        packaging_branch="master",
+    )
+    operation_plan = build_package_operation_plan(
+        package=plan.planned_builds[0].package,
+        openstack_target=plan.openstack_target,
+        ubuntu_release=plan.ubuntu_release,
+        run_dir=tmp_path,
+    )
+
+    _run_package("pbr", plan, args, tmp_path, runner, states, metadata, operation_plan)
+
+    assert states["pbr"] == BuildState.BUILD_SUCCEEDED
     assert metadata.build_finished_at != "unknown"
 
 

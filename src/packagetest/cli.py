@@ -178,6 +178,9 @@ def _run_package(
             return
 
     states[source] = BuildState.BUILD_SUCCEEDED
+    if not args.dry_run and not any(operation_plan.workspace_dir.glob("*.dsc")):
+        metadata.build_finished_at = datetime.now(UTC).isoformat()
+        return
     publish_dir = run_dir / "apt-repo"
     publish_dir.mkdir(parents=True, exist_ok=True)
     publish_commands = [(command, publish_dir) for command in apt_repository_commands(publish_dir, plan.ubuntu_release)]
