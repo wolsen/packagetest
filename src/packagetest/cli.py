@@ -96,7 +96,7 @@ def build_cmd(args: argparse.Namespace) -> int:
         metadata = PackageExecutionMetadata(
             upstream_tag_or_sha=resolved_release.upstream_ref if resolved_release else plan.openstack_target,
             upstream_version=resolved_release.version if resolved_release else openstack_target_to_upstream_version(plan.openstack_target),
-            packaging_branch=item.package.branch_mapping.get(args.ubuntu_release, "unknown"),
+            packaging_branch=item.package.packaging_branch or "unknown",
             generated_debian_version=upstream_version_to_debian_version(
                 resolved_release.version if resolved_release else openstack_target_to_upstream_version(plan.openstack_target)
             ),
@@ -229,6 +229,10 @@ def _run_package(
         if args.dry_run:
             command = ["echo", "DRY-RUN:", *command]
         result = runner.run(command=command, cwd=run_dir if args.dry_run else cwd)
+        if not args.dry_run and operation_plan.packaging_branch_file.exists():
+            resolved_packaging_branch = operation_plan.packaging_branch_file.read_text(encoding="utf-8").strip()
+            if resolved_packaging_branch:
+                metadata.packaging_branch = resolved_packaging_branch
         if not args.dry_run and result.exit_code == 0 and planned_command[0:2] == ["git", "-C"] and planned_command[-2:] == ["rev-parse", "HEAD"]:
             metadata.packaging_base_sha = result.stdout.strip() or metadata.packaging_base_sha
         if result.exit_code != 0:

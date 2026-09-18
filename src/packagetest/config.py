@@ -16,7 +16,7 @@ def load_package_definitions(path: Path) -> dict[str, PackageDefinition]:
             upstream_repo=row["upstream_repo"],
             packaging_repo=row["packaging_repo"],
             build_depends_on_sources=row.get("build_depends_on_sources", []),
-            branch_mapping=row.get("branch_mapping", {}),
+            packaging_branch=row.get("packaging_branch"),
             source_creation_method=row.get("source_creation_method", "opendev-tarball"),
             openstack_deliverable=row.get("openstack_deliverable"),
         )

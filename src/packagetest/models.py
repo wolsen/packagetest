@@ -39,7 +39,7 @@ class PackageDefinition:
     upstream_repo: str
     packaging_repo: str
     build_depends_on_sources: list[str] = field(default_factory=list)
-    branch_mapping: dict[str, str] = field(default_factory=dict)
+    packaging_branch: str | None = None
     source_creation_method: str = "opendev-tarball"
     openstack_deliverable: str | None = None
 
