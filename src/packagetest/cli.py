@@ -13,7 +13,15 @@ from .commands import CommandRunner
 from .config import load_package_definitions
 from .failures import FailureBundle, write_failure_bundle
 from .manifest import write_generation_manifest
-from .models import BuildPlan, BuildState, CommandResult, GenerationManifest, PackageExecutionMetadata, PackageManifest
+from .models import (
+    TERMINAL_FAILURE_STATES,
+    BuildPlan,
+    BuildState,
+    CommandResult,
+    GenerationManifest,
+    PackageExecutionMetadata,
+    PackageManifest,
+)
 from .packaging import PackageOperationPlan, build_package_operation_plan, classify_packaging_failure, package_operation_commands
 from .planner import build_plan, initial_states
 from .release_discovery import OpenStackReleaseResolver, ReleaseDiscoveryError, ResolvedRelease
@@ -339,14 +347,9 @@ def _classify_preparation_failure(message: str) -> str:
 
 
 def _collect_failures(run_dir: Path, states: dict[str, BuildState]) -> list[dict[str, object]]:
-    failed_states = {
-        BuildState.BUILD_FAILED,
-        BuildState.PUBLISH_FAILED,
-        BuildState.BLOCKED_BY_FAILED_DEPENDENCY,
-    }
     failures: list[dict[str, object]] = []
     for source, state in sorted(states.items()):
-        if state not in failed_states:
+        if state not in TERMINAL_FAILURE_STATES:
             continue
         failure: dict[str, object] = {
             "source_package": source,

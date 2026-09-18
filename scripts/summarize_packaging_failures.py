@@ -15,11 +15,13 @@ def summarize(root: Path) -> int:
         print("No packaging failure bundles found.")
         return 0
 
+    parse_errors = 0
     print(f"Found {len(failure_files)} packaging failure bundle(s).")
     for failure_file in failure_files:
         try:
             payload = json.loads(failure_file.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
+            parse_errors += 1
             print(f"- failure_json: {failure_file}")
             print(f"  parse_error: {exc}")
             continue
@@ -46,6 +48,9 @@ def summarize(root: Path) -> int:
             print("  stdout_tail:")
             for line in _tail_lines(stdout):
                 print(f"    {line}")
+    if parse_errors:
+        print(f"Encountered {parse_errors} unreadable failure bundle(s).", file=sys.stderr)
+        return 1
     return 0
 
 
