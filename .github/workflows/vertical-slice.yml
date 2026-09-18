@@ -74,6 +74,7 @@ jobs:
         with:
           name: generation-pbr
           path: artifacts/
+          if-no-files-found: ignore
 
   build-oslo:
     needs: [build-pbr]
@@ -124,6 +125,7 @@ jobs:
         with:
           name: generation-python-oslo
           path: artifacts/
+          if-no-files-found: ignore
 
   build-glance:
     needs: [build-oslo]
@@ -168,3 +170,4 @@ jobs:
         with:
           name: generation-glance
           path: artifacts/
+          if-no-files-found: ignore
