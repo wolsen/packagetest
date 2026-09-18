@@ -1,3 +1,4 @@
+import json
 from argparse import Namespace
 from pathlib import Path
 
@@ -9,18 +10,24 @@ from packagetest.planner import build_plan
 
 
 class FailingRunner:
-    def __init__(self) -> None:
+    def __init__(self, *, fail_on: list[str] | None = None, stdout: str = "", stderr: str = "failed") -> None:
         self.calls = 0
+        self.fail_on = fail_on
+        self.stdout = stdout
+        self.stderr = stderr
 
     def run(self, command, cwd, env_diff=None):
         self.calls += 1
+        exit_code = 1 if self.fail_on is None or command == self.fail_on else 0
+        stdout = self.stdout if exit_code else ("abc123\n" if command == ["git", "rev-parse", "HEAD"] else "")
+        stderr = self.stderr if exit_code else ""
         return CommandResult(
             command=command,
             cwd=str(cwd),
             env_diff=env_diff or {},
-            stdout="",
-            stderr="failed",
-            exit_code=1,
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=exit_code,
             duration_seconds=0.1,
         )
 
@@ -63,7 +70,7 @@ def test_run_package_failure_writes_bundle(tmp_path: Path):
     )
     states = {"pbr": BuildState.BUILDING}
     args = Namespace(dry_run=False)
-    runner = FailingRunner()
+    runner = FailingRunner(fail_on=["gbp", "pq", "import"], stdout="patch does not apply", stderr="")
     metadata = PackageExecutionMetadata(
         upstream_tag_or_sha="2027.1-b1",
         upstream_version="unknown",
@@ -74,5 +81,7 @@ def test_run_package_failure_writes_bundle(tmp_path: Path):
 
     assert states["pbr"] == BuildState.BUILD_FAILED
     assert (tmp_path / "failures" / "pbr" / "failure.json").exists()
-    assert runner.calls == 1
+    failure = json.loads((tmp_path / "failures" / "pbr" / "failure.json").read_text(encoding="utf-8"))
+    assert failure["category"] == "PATCH_APPLY_FAILURE"
+    assert runner.calls > 1
     assert metadata.build_finished_at != "unknown"

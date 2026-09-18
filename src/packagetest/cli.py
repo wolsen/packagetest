@@ -139,8 +139,6 @@ def _run_package(
         operation_plan=operation_plan,
         ubuntu_release=plan.ubuntu_release,
     )
-    commands.extend((command, run_dir) for command in apt_repository_commands(run_dir / "apt-repo", plan.ubuntu_release))
-
     for command, cwd in commands:
         planned_command = command
         if args.dry_run:
@@ -154,7 +152,7 @@ def _run_package(
             write_failure_bundle(
                 out_dir=run_dir / "failures" / source,
                 bundle=FailureBundle(
-                    category=classify_packaging_failure(result.command, result.stderr),
+                    category=classify_packaging_failure(planned_command, result.stdout, result.stderr),
                     source_package=source,
                     generation_id=plan.generation_id,
                     upstream_sha=None,
@@ -173,6 +171,35 @@ def _run_package(
             return
 
     states[source] = BuildState.BUILD_SUCCEEDED
+    publish_commands = [(command, run_dir) for command in apt_repository_commands(run_dir / "apt-repo", plan.ubuntu_release)]
+    for command, cwd in publish_commands:
+        planned_command = command
+        if args.dry_run:
+            command = ["echo", "DRY-RUN:", *command]
+        result = runner.run(command=command, cwd=run_dir if args.dry_run else cwd)
+        if result.exit_code != 0:
+            states[source] = BuildState.BUILD_FAILED
+            metadata.build_finished_at = datetime.now(UTC).isoformat()
+            write_failure_bundle(
+                out_dir=run_dir / "failures" / source,
+                bundle=FailureBundle(
+                    category=classify_packaging_failure(planned_command, result.stdout, result.stderr),
+                    source_package=source,
+                    generation_id=plan.generation_id,
+                    upstream_sha=None,
+                    packaging_sha=metadata.packaging_base_sha if metadata.packaging_base_sha != "unknown" else None,
+                    failed_command=result.command,
+                    command_exit_code=result.exit_code,
+                ),
+                command_result=result,
+                files={
+                    "debian/control": "",
+                    "debian/rules": "",
+                    "debian/changelog": "",
+                    "debian/patches/series": "",
+                },
+            )
+            return
     metadata.build_finished_at = datetime.now(UTC).isoformat()
     states[source] = BuildState.PUBLISHED
 
