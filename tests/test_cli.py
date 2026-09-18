@@ -6,6 +6,7 @@ from packagetest.cli import _run_package
 from packagetest.commands import CommandRunner
 from packagetest.config import load_package_definitions
 from packagetest.models import BuildState, CommandResult, PackageExecutionMetadata
+from packagetest.packaging import build_package_operation_plan
 from packagetest.planner import build_plan
 
 
@@ -49,8 +50,14 @@ def test_run_package_dry_run_marks_published(tmp_path: Path):
         upstream_version="unknown",
         packaging_branch="master",
     )
+    operation_plan = build_package_operation_plan(
+        package=plan.planned_builds[0].package,
+        openstack_target=plan.openstack_target,
+        ubuntu_release=plan.ubuntu_release,
+        run_dir=tmp_path,
+    )
 
-    _run_package("pbr", plan, args, tmp_path, runner, states, metadata)
+    _run_package("pbr", plan, args, tmp_path, runner, states, metadata, operation_plan)
 
     assert states["pbr"] == BuildState.PUBLISHED
     assert (tmp_path / "commands.jsonl").exists()
@@ -76,8 +83,14 @@ def test_run_package_failure_writes_bundle(tmp_path: Path):
         upstream_version="unknown",
         packaging_branch="master",
     )
+    operation_plan = build_package_operation_plan(
+        package=plan.planned_builds[0].package,
+        openstack_target=plan.openstack_target,
+        ubuntu_release=plan.ubuntu_release,
+        run_dir=tmp_path,
+    )
 
-    _run_package("pbr", plan, args, tmp_path, runner, states, metadata)
+    _run_package("pbr", plan, args, tmp_path, runner, states, metadata, operation_plan)
 
     assert states["pbr"] == BuildState.BUILD_FAILED
     assert (tmp_path / "failures" / "pbr" / "failure.json").exists()

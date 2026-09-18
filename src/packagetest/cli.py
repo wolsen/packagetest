@@ -10,11 +10,12 @@ from .commands import CommandRunner
 from .config import load_package_definitions
 from .failures import FailureBundle, write_failure_bundle
 from .manifest import write_generation_manifest
-from .models import BuildPlan, BuildState, GenerationManifest, PackageExecutionMetadata, PackageManifest
-from .packaging import build_package_operation_plan, classify_packaging_failure, package_operation_commands
+from .models import BuildPlan, BuildState, CommandResult, GenerationManifest, PackageExecutionMetadata, PackageManifest
+from .packaging import PackageOperationPlan, build_package_operation_plan, classify_packaging_failure, package_operation_commands
 from .planner import build_plan, initial_states
 from .repository import apt_repository_commands
 from .scheduler import mark_state, next_ready_packages
+from .versioning import openstack_target_to_debian_version, openstack_target_to_upstream_version
 
 
 def _default_config_path() -> Path:
@@ -51,20 +52,28 @@ def build_cmd(args: argparse.Namespace) -> int:
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     states = initial_states(plan)
+    operation_plans: dict[str, PackageOperationPlan] = {}
+    operation_plan_errors: dict[str, str] = {}
     package_metadata = {}
     for item in plan.planned_builds:
-        operation_plan = build_package_operation_plan(
-            package=item.package,
-            openstack_target=plan.openstack_target,
-            ubuntu_release=plan.ubuntu_release,
-            run_dir=run_dir,
-        )
-        package_metadata[item.source_package] = PackageExecutionMetadata(
+        metadata = PackageExecutionMetadata(
             upstream_tag_or_sha=plan.openstack_target,
-            upstream_version=operation_plan.upstream_version,
-            packaging_branch=operation_plan.packaging_branch,
-            generated_debian_version=operation_plan.generated_debian_version,
+            upstream_version=openstack_target_to_upstream_version(plan.openstack_target),
+            packaging_branch=item.package.branch_mapping.get(args.ubuntu_release, "unknown"),
+            generated_debian_version=openstack_target_to_debian_version(plan.openstack_target),
         )
+        package_metadata[item.source_package] = metadata
+        try:
+            operation_plans[item.source_package] = build_package_operation_plan(
+                package=item.package,
+                openstack_target=plan.openstack_target,
+                ubuntu_release=plan.ubuntu_release,
+                run_dir=run_dir,
+            )
+        except ValueError as exc:
+            operation_plan_errors[item.source_package] = str(exc)
+        else:
+            metadata.packaging_branch = operation_plans[item.source_package].packaging_branch
 
     runner = CommandRunner(log_path=logs_dir / "commands.jsonl")
     while any(state == BuildState.WAITING_FOR_DEPENDENCY for state in states.values()):
@@ -73,7 +82,10 @@ def build_cmd(args: argparse.Namespace) -> int:
             break
         for source in ready:
             mark_state(states, source, BuildState.BUILDING)
-            _run_package(source, plan, args, run_dir, runner, states, package_metadata[source])
+            if source in operation_plan_errors:
+                _record_operation_plan_failure(source, plan, run_dir, states, package_metadata[source], operation_plan_errors[source])
+                continue
+            _run_package(source, plan, args, run_dir, runner, states, package_metadata[source], operation_plans[source])
 
     manifests: list[PackageManifest] = []
     for item in plan.planned_builds:
@@ -121,14 +133,9 @@ def _run_package(
     runner: CommandRunner,
     states: dict[str, BuildState],
     metadata: PackageExecutionMetadata,
+    operation_plan: PackageOperationPlan,
 ) -> None:
     package = next(p.package for p in plan.planned_builds if p.source_package == source)
-    operation_plan = build_package_operation_plan(
-        package=package,
-        openstack_target=plan.openstack_target,
-        ubuntu_release=plan.ubuntu_release,
-        run_dir=run_dir,
-    )
     metadata.upstream_version = operation_plan.upstream_version
     metadata.generated_debian_version = operation_plan.generated_debian_version
     metadata.packaging_branch = operation_plan.packaging_branch
@@ -171,7 +178,9 @@ def _run_package(
             return
 
     states[source] = BuildState.BUILD_SUCCEEDED
-    publish_commands = [(command, run_dir) for command in apt_repository_commands(run_dir / "apt-repo" / source, plan.ubuntu_release)]
+    publish_dir = run_dir / "apt-repo" / source
+    publish_dir.mkdir(parents=True, exist_ok=True)
+    publish_commands = [(command, publish_dir) for command in apt_repository_commands(publish_dir, plan.ubuntu_release)]
     for command, cwd in publish_commands:
         planned_command = command
         if args.dry_run:
@@ -202,6 +211,47 @@ def _run_package(
             return
     metadata.build_finished_at = datetime.now(UTC).isoformat()
     states[source] = BuildState.PUBLISHED
+
+
+def _record_operation_plan_failure(
+    source: str,
+    plan: BuildPlan,
+    run_dir: Path,
+    states: dict[str, BuildState],
+    metadata: PackageExecutionMetadata,
+    message: str,
+) -> None:
+    metadata.build_started_at = datetime.now(UTC).isoformat()
+    metadata.build_finished_at = datetime.now(UTC).isoformat()
+    states[source] = BuildState.BUILD_FAILED
+    result = CommandResult(
+        command=["plan-package-operation"],
+        cwd=str(run_dir),
+        env_diff={},
+        stdout="",
+        stderr=message,
+        exit_code=1,
+        duration_seconds=0.0,
+    )
+    write_failure_bundle(
+        out_dir=run_dir / "failures" / source,
+        bundle=FailureBundle(
+            category="PACKAGING_POLICY_FAILURE",
+            source_package=source,
+            generation_id=plan.generation_id,
+            upstream_sha=None,
+            packaging_sha=None,
+            failed_command=result.command,
+            command_exit_code=result.exit_code,
+        ),
+        command_result=result,
+        files={
+            "debian/control": "",
+            "debian/rules": "",
+            "debian/changelog": "",
+            "debian/patches/series": "",
+        },
+    )
 
 
 def status_cmd(args: argparse.Namespace) -> int:

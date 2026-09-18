@@ -65,12 +65,12 @@ def package_operation_commands(
     upstream_branch_cmd = (
         f"if git -C {packaging_checkout_q} show-ref --verify --quiet refs/remotes/origin/upstream; then "
         f"git -C {packaging_checkout_q} checkout -B upstream origin/upstream; "
-        f"else git -C {packaging_checkout_q} checkout --orphan upstream && git -C {packaging_checkout_q} reset --hard; fi"
+        f"else echo 'Missing origin/upstream branch' >&2; exit 1; fi"
     )
     pristine_tar_branch_cmd = (
         f"if git -C {packaging_checkout_q} show-ref --verify --quiet refs/remotes/origin/pristine-tar; then "
         f"git -C {packaging_checkout_q} checkout -B pristine-tar origin/pristine-tar; "
-        f"else git -C {packaging_checkout_q} checkout --orphan pristine-tar && git -C {packaging_checkout_q} reset --hard; fi"
+        f"else echo 'Missing origin/pristine-tar branch' >&2; exit 1; fi"
     )
     return [
         (["rm", "-rf", str(operation_plan.workspace_dir)], operation_plan.workspace_dir.parent),
@@ -88,6 +88,7 @@ def package_operation_commands(
             ],
             operation_plan.workspace_dir.parent,
         ),
+        (["git", "rev-parse", "HEAD"], operation_plan.packaging_checkout_dir),
         (
             ["bash", "-lc", upstream_branch_cmd],
             operation_plan.workspace_dir.parent,
@@ -111,7 +112,6 @@ def package_operation_commands(
         (["git", "clone", package.upstream_repo, str(operation_plan.upstream_checkout_dir)], operation_plan.workspace_dir.parent),
         (["git", "-C", str(operation_plan.upstream_checkout_dir), "checkout", operation_plan.upstream_ref], operation_plan.workspace_dir.parent),
         (["bash", "-lc", archive_cmd], operation_plan.workspace_dir.parent),
-        (["git", "rev-parse", "HEAD"], operation_plan.packaging_checkout_dir),
         (
             [
                 "gbp",
@@ -170,6 +170,8 @@ def classify_packaging_failure(command: list[str], stdout: str, stderr: str) -> 
             return "PATCH_APPLY_FAILURE"
         return "PACKAGING_POLICY_FAILURE"
     if "gbp import-orig" in command_text or " archive --format=tar.gz " in command_text:
+        return "SOURCE_GENERATION_FAILURE"
+    if "apt-ftparchive" in command_text or command[:1] == ["gpg"] or "gpgconf --kill gpg-agent" in command_text:
         return "SOURCE_GENERATION_FAILURE"
     if "sbuild" in command_text:
         if "unmet build dependency" in output_lower or "build dependency" in output_lower:
