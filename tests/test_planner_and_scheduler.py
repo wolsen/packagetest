@@ -63,3 +63,17 @@ def test_scheduler_considers_root_node_ready(tmp_path):
     states = {"pbr": BuildState.WAITING_FOR_DEPENDENCY}
     ready = next_ready_packages(plan, states)
     assert ready == ["pbr"]
+
+
+def test_plan_can_skip_dependency_closure(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
+    plan = build_plan(
+        definitions=definitions,
+        requested_sources=["glance"],
+        openstack_target="2027.1-b1",
+        ubuntu_release="noble",
+        include_dependency_closure=False,
+    )
+    assert [b.source_package for b in plan.planned_builds] == ["glance"]
+    assert plan.planned_builds[0].depends_on_sources == []

@@ -41,6 +41,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: packaging-plan
+          path: inputs
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -51,6 +55,7 @@ jobs:
           packaging build --dry-run \
             --openstack-target "${{ inputs.openstack_target }}" \
             --ubuntu-release "${{ inputs.ubuntu_release }}" \
+            --no-dependency-closure \
             pbr
       - uses: actions/upload-artifact@v4
         with:
@@ -66,6 +71,14 @@ jobs:
         source_package: [python-oslo.i18n, python-oslo.serialization]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: packaging-plan
+          path: inputs
+      - uses: actions/download-artifact@v4
+        with:
+          name: generation-pbr
+          path: upstream-generation
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -76,6 +89,7 @@ jobs:
           packaging build --dry-run \
             --openstack-target "${{ inputs.openstack_target }}" \
             --ubuntu-release "${{ inputs.ubuntu_release }}" \
+            --no-dependency-closure \
             "${{ matrix.source_package }}"
       - uses: actions/upload-artifact@v4
         with:
@@ -87,6 +101,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: packaging-plan
+          path: inputs
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: generation-python-oslo.*
+          path: upstream-generation
+          merge-multiple: true
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -97,6 +120,7 @@ jobs:
           packaging build --dry-run \
             --openstack-target "${{ inputs.openstack_target }}" \
             --ubuntu-release "${{ inputs.ubuntu_release }}" \
+            --no-dependency-closure \
             glance
       - uses: actions/upload-artifact@v4
         with:

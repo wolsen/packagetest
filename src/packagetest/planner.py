@@ -12,23 +12,30 @@ def build_plan(
     requested_sources: list[str],
     openstack_target: str,
     ubuntu_release: str,
+    include_dependency_closure: bool = True,
 ) -> BuildPlan:
-    to_visit = deque(requested_sources)
     selected: set[str] = set()
-    while to_visit:
-        source = to_visit.popleft()
-        if source in selected:
-            continue
-        if source not in definitions:
-            raise KeyError(f"Unknown source package: {source}")
-        selected.add(source)
-        to_visit.extend(definitions[source].build_depends_on_sources)
+    if include_dependency_closure:
+        to_visit = deque(requested_sources)
+        while to_visit:
+            source = to_visit.popleft()
+            if source in selected:
+                continue
+            if source not in definitions:
+                raise KeyError(f"Unknown source package: {source}")
+            selected.add(source)
+            to_visit.extend(definitions[source].build_depends_on_sources)
+    else:
+        for source in requested_sources:
+            if source not in definitions:
+                raise KeyError(f"Unknown source package: {source}")
+            selected.add(source)
 
     order = _topological_order(definitions, selected)
     planned = [
         PlannedBuild(
             source_package=source,
-            depends_on_sources=list(definitions[source].build_depends_on_sources),
+            depends_on_sources=[d for d in definitions[source].build_depends_on_sources if d in selected],
             package=definitions[source],
         )
         for source in order
@@ -66,9 +73,4 @@ def _topological_order(definitions: dict[str, PackageDefinition], selected: set[
 
 
 def initial_states(plan: BuildPlan) -> dict[str, BuildState]:
-    return {
-        p.source_package: (
-            BuildState.WAITING_FOR_DEPENDENCY if p.depends_on_sources else BuildState.BUILDING
-        )
-        for p in plan.planned_builds
-    }
+    return {p.source_package: BuildState.WAITING_FOR_DEPENDENCY for p in plan.planned_builds}

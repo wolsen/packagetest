@@ -26,6 +26,7 @@ def plan_cmd(args: argparse.Namespace) -> int:
         requested_sources=args.sources,
         openstack_target=args.openstack_target,
         ubuntu_release=args.ubuntu_release,
+        include_dependency_closure=not args.no_dependency_closure,
     )
     print(json.dumps(plan.as_dict(), indent=2, sort_keys=True))
     return 0
@@ -49,10 +50,7 @@ def build_cmd(args: argparse.Namespace) -> int:
     states = initial_states(plan)
 
     runner = CommandRunner(log_path=logs_dir / "commands.jsonl")
-    for source in [b.source_package for b in plan.planned_builds if states[b.source_package] == BuildState.BUILDING]:
-        _run_package(source, plan, args, run_dir, runner, states)
-
-    while True:
+    while any(state == BuildState.WAITING_FOR_DEPENDENCY for state in states.values()):
         ready = next_ready_packages(plan, states)
         if not ready:
             break
@@ -177,6 +175,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_build.add_argument("--ubuntu-release", required=True)
     p_build.add_argument("--run-dir", default="artifacts")
     p_build.add_argument("--dry-run", action="store_true", default=False)
+    p_build.add_argument(
+        "--no-dependency-closure",
+        action="store_true",
+        default=False,
+        help="Build only explicitly requested source packages (used by dependency-layer workflow jobs).",
+    )
     p_build.add_argument("sources", nargs="+")
     p_build.set_defaults(func=build_cmd)
 

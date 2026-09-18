@@ -13,7 +13,7 @@ class OpenStackRelease:
 
 _VERSION_RE = re.compile(r"^\s*-\s+version:\s+(.+?)\s*$")
 _REPO_RE = re.compile(r"^\s*-\s+repo:\s+(.+?)\s*$")
-_HASH_RE = re.compile(r"^\s+hash:\s+([0-9a-f]{7,40})\s*$")
+_HASH_RE = re.compile(r"^\s+hash:\s+([0-9A-Fa-f]{7,40})\s*$")
 
 
 def latest_release_from_deliverable_yaml(content: str) -> OpenStackRelease:
