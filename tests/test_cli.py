@@ -51,7 +51,7 @@ class SuccessfulRunner:
         )
 
 
-def test_run_package_dry_run_marks_published(tmp_path: Path):
+def test_run_package_dry_run_marks_build_succeeded(tmp_path: Path):
     repo_root = Path(__file__).resolve().parents[1]
     definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
     plan = build_plan(
@@ -78,7 +78,7 @@ def test_run_package_dry_run_marks_published(tmp_path: Path):
 
     _run_package("pbr", plan, args, tmp_path, runner, states, metadata, operation_plan)
 
-    assert states["pbr"] == BuildState.PUBLISHED
+    assert states["pbr"] == BuildState.BUILD_SUCCEEDED
     assert (tmp_path / "commands.jsonl").exists()
     assert metadata.generated_debian_version == "5.7.0-0ubuntu1"
     assert metadata.build_started_at != "unknown"
@@ -235,3 +235,40 @@ def test_build_cmd_records_release_resolution_failure(tmp_path: Path, monkeypatc
     assert len(failure_files) == 1
     failure = json.loads(failure_files[0].read_text(encoding="utf-8"))
     assert failure["category"] == "SOURCE_GENERATION_FAILURE"
+
+
+def test_build_cmd_publishes_after_successful_plan(tmp_path: Path, monkeypatch, capsys):
+    repo_root = Path(__file__).resolve().parents[1]
+
+    def fake_resolve(plan, args):
+        return (
+            {
+                "pbr": ResolvedRelease(
+                    series="indri",
+                    release_id="2027.1",
+                    version="5.7.0",
+                    project_repo="openstack/pbr",
+                    project_hash="abc123",
+                    upstream_ref="5.7.0",
+                    snapshot_at=None,
+                    deliverable_path="deliverables/_independent/pbr.yaml",
+                )
+            },
+            {},
+        )
+
+    monkeypatch.setattr("packagetest.cli._resolve_package_releases", fake_resolve)
+    args = Namespace(
+        config=str(repo_root / "config" / "vertical_slice.json"),
+        openstack_target="2027.1",
+        ubuntu_release="noble",
+        snapshot_at=None,
+        no_dependency_closure=True,
+        run_dir=str(tmp_path),
+        dry_run=True,
+        sources=["pbr"],
+    )
+
+    assert build_cmd(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["states"]["pbr"] == "PUBLISHED"

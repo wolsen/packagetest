@@ -123,6 +123,7 @@ def build_cmd(args: argparse.Namespace) -> int:
                 )
                 continue
             _run_package(source, plan, args, run_dir, runner, states, package_metadata[source], operation_plans[source])
+    _publish_run_outputs(plan, args, run_dir, runner, states, package_metadata)
 
     manifests: list[PackageManifest] = []
     for item in plan.planned_builds:
@@ -248,40 +249,8 @@ def _run_package(
             },
         )
         return
-    publish_dir = run_dir / "apt-repo"
-    publish_dir.mkdir(parents=True, exist_ok=True)
-    publish_commands = [(command, publish_dir) for command in apt_repository_commands(publish_dir, plan.ubuntu_release)]
-    states[source] = BuildState.PUBLISHING
-    for command, cwd in publish_commands:
-        planned_command = command
-        if args.dry_run:
-            command = ["echo", "DRY-RUN:", *command]
-        result = runner.run(command=command, cwd=run_dir if args.dry_run else cwd)
-        if result.exit_code != 0:
-            states[source] = BuildState.PUBLISH_FAILED
-            metadata.build_finished_at = datetime.now(UTC).isoformat()
-            write_failure_bundle(
-                out_dir=run_dir / "failures" / source,
-                bundle=FailureBundle(
-                    category=classify_packaging_failure(planned_command, result.stdout, result.stderr),
-                    source_package=source,
-                    generation_id=plan.generation_id,
-                    upstream_sha=None,
-                    packaging_sha=metadata.packaging_base_sha if metadata.packaging_base_sha != "unknown" else None,
-                    failed_command=result.command,
-                    command_exit_code=result.exit_code,
-                ),
-                command_result=result,
-                files={
-                    "debian/control": "",
-                    "debian/rules": "",
-                    "debian/changelog": "",
-                    "debian/patches/series": "",
-                },
-            )
-            return
     metadata.build_finished_at = datetime.now(UTC).isoformat()
-    states[source] = BuildState.PUBLISHED
+    states[source] = BuildState.BUILD_SUCCEEDED
 
 
 def _record_preparation_failure(
@@ -330,6 +299,78 @@ def _classify_preparation_failure(message: str) -> str:
     if "No packaging branch configured" in message:
         return "PACKAGING_POLICY_FAILURE"
     return "SOURCE_GENERATION_FAILURE"
+
+
+def _publish_run_outputs(
+    plan: BuildPlan,
+    args: argparse.Namespace,
+    run_dir: Path,
+    runner: CommandRunner,
+    states: dict[str, BuildState],
+    package_metadata: dict[str, PackageExecutionMetadata],
+) -> None:
+    publishable_sources = [source for source, state in states.items() if state == BuildState.BUILD_SUCCEEDED]
+    if not publishable_sources or any(
+        state in {BuildState.BUILD_FAILED, BuildState.PUBLISH_FAILED, BuildState.BLOCKED_BY_FAILED_DEPENDENCY}
+        for state in states.values()
+    ):
+        return
+
+    for source in publishable_sources:
+        states[source] = BuildState.PUBLISHING
+
+    publish_dir = run_dir / "apt-repo"
+    publish_dir.mkdir(parents=True, exist_ok=True)
+    for planned_command in apt_repository_commands(publish_dir, plan.ubuntu_release):
+        command = ["echo", "DRY-RUN:", *planned_command] if args.dry_run else planned_command
+        result = runner.run(command=command, cwd=run_dir if args.dry_run else publish_dir)
+        if result.exit_code != 0:
+            for source in publishable_sources:
+                states[source] = BuildState.PUBLISH_FAILED
+                package_metadata[source].build_finished_at = datetime.now(UTC).isoformat()
+                _write_package_failure(
+                    source=source,
+                    plan=plan,
+                    run_dir=run_dir,
+                    metadata=package_metadata[source],
+                    result=result,
+                    category=classify_packaging_failure(planned_command, result.stdout, result.stderr),
+                )
+            return
+
+    for source in publishable_sources:
+        states[source] = BuildState.PUBLISHED
+        package_metadata[source].build_finished_at = datetime.now(UTC).isoformat()
+
+
+def _write_package_failure(
+    *,
+    source: str,
+    plan: BuildPlan,
+    run_dir: Path,
+    metadata: PackageExecutionMetadata,
+    result: CommandResult,
+    category: str,
+) -> None:
+    write_failure_bundle(
+        out_dir=run_dir / "failures" / source,
+        bundle=FailureBundle(
+            category=category,
+            source_package=source,
+            generation_id=plan.generation_id,
+            upstream_sha=None,
+            packaging_sha=metadata.packaging_base_sha if metadata.packaging_base_sha != "unknown" else None,
+            failed_command=result.command,
+            command_exit_code=result.exit_code,
+        ),
+        command_result=result,
+        files={
+            "debian/control": "",
+            "debian/rules": "",
+            "debian/changelog": "",
+            "debian/patches/series": "",
+        },
+    )
 
 
 def _resolve_package_releases(
