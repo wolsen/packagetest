@@ -60,20 +60,20 @@ def package_operation_commands(
     )
     return [
         (["mkdir", "-p", str(operation_plan.workspace_dir)], operation_plan.workspace_dir.parent),
-        (["git", "clone", package.packaging_repo, str(operation_plan.packaging_checkout_dir)], operation_plan.workspace_dir),
-        (["git", "-C", str(operation_plan.packaging_checkout_dir), "checkout", operation_plan.packaging_branch], operation_plan.workspace_dir),
+        (["git", "clone", package.packaging_repo, str(operation_plan.packaging_checkout_dir)], operation_plan.workspace_dir.parent),
+        (["git", "-C", str(operation_plan.packaging_checkout_dir), "checkout", operation_plan.packaging_branch], operation_plan.workspace_dir.parent),
         (
             ["git", "-C", str(operation_plan.packaging_checkout_dir), "checkout", "-B", "upstream", "origin/upstream"],
-            operation_plan.workspace_dir,
+            operation_plan.workspace_dir.parent,
         ),
         (
             ["git", "-C", str(operation_plan.packaging_checkout_dir), "checkout", "-B", "pristine-tar", "origin/pristine-tar"],
-            operation_plan.workspace_dir,
+            operation_plan.workspace_dir.parent,
         ),
-        (["git", "-C", str(operation_plan.packaging_checkout_dir), "checkout", operation_plan.packaging_branch], operation_plan.workspace_dir),
-        (["git", "clone", package.upstream_repo, str(operation_plan.upstream_checkout_dir)], operation_plan.workspace_dir),
-        (["git", "-C", str(operation_plan.upstream_checkout_dir), "checkout", operation_plan.upstream_ref], operation_plan.workspace_dir),
-        (["bash", "-lc", archive_cmd], operation_plan.workspace_dir),
+        (["git", "-C", str(operation_plan.packaging_checkout_dir), "checkout", operation_plan.packaging_branch], operation_plan.workspace_dir.parent),
+        (["git", "clone", package.upstream_repo, str(operation_plan.upstream_checkout_dir)], operation_plan.workspace_dir.parent),
+        (["git", "-C", str(operation_plan.upstream_checkout_dir), "checkout", operation_plan.upstream_ref], operation_plan.workspace_dir.parent),
+        (["bash", "-lc", archive_cmd], operation_plan.workspace_dir.parent),
         (
             [
                 "gbp",
@@ -126,7 +126,12 @@ def classify_packaging_failure(command: list[str], stderr: str) -> str:
     command_text = " ".join(command)
     stderr_lower = stderr.lower()
     if "gbp pq import" in command_text:
-        return "PATCH_APPLY_FAILURE"
+        if any(
+            marker in stderr_lower
+            for marker in ("patch failed", "patch does not apply", "quilt", "merge conflict", "cannot apply")
+        ):
+            return "PATCH_APPLY_FAILURE"
+        return "PACKAGING_POLICY_FAILURE"
     if "gbp import-orig" in command_text or " archive --format=tar.gz " in command_text:
         return "SOURCE_GENERATION_FAILURE"
     if "sbuild" in command_text:

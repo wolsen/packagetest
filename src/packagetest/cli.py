@@ -51,14 +51,7 @@ def build_cmd(args: argparse.Namespace) -> int:
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     states = initial_states(plan)
-    package_metadata = {
-        item.source_package: PackageExecutionMetadata(
-            upstream_tag_or_sha=plan.openstack_target,
-            upstream_version=item.source_package,
-            packaging_branch=item.package.branch_mapping.get(args.ubuntu_release, "master"),
-        )
-        for item in plan.planned_builds
-    }
+    package_metadata = {}
     for item in plan.planned_builds:
         operation_plan = build_package_operation_plan(
             package=item.package,
@@ -66,8 +59,12 @@ def build_cmd(args: argparse.Namespace) -> int:
             ubuntu_release=plan.ubuntu_release,
             run_dir=run_dir,
         )
-        package_metadata[item.source_package].upstream_version = operation_plan.upstream_version
-        package_metadata[item.source_package].generated_debian_version = operation_plan.generated_debian_version
+        package_metadata[item.source_package] = PackageExecutionMetadata(
+            upstream_tag_or_sha=plan.openstack_target,
+            upstream_version=operation_plan.upstream_version,
+            packaging_branch=operation_plan.packaging_branch,
+            generated_debian_version=operation_plan.generated_debian_version,
+        )
 
     runner = CommandRunner(log_path=logs_dir / "commands.jsonl")
     while any(state == BuildState.WAITING_FOR_DEPENDENCY for state in states.values()):
