@@ -202,23 +202,21 @@ def _release_index_by_version(releases: list[OpenStackRelease]) -> dict[str, int
 
 def _candidate_releases_for_series(content: str, releases: list[OpenStackRelease], release_id: str) -> list[OpenStackRelease]:
     branch_locations = branch_locations_from_deliverable_yaml(content)
+    version_indexes = _release_index_by_version(releases)
+    stable_branch_indexes = sorted(
+        (version_indexes[location], branch_name)
+        for branch_name, location in branch_locations.items()
+        if branch_name.startswith("stable/") and location in version_indexes
+    )
     start_index = 0
     end_index = len(releases)
-    version_indexes = _release_index_by_version(releases)
     current_branch = f"stable/{release_id}"
-    if current_branch in branch_locations and branch_locations[current_branch] in version_indexes:
-        start_index = version_indexes[branch_locations[current_branch]]
-    future_branch_indexes = sorted(
-        index
-        for branch_name, location in branch_locations.items()
-        if branch_name.startswith("stable/")
-        and branch_name != current_branch
-        and location in version_indexes
-        and version_indexes[location] > start_index
-        for index in [version_indexes[location]]
-    )
-    if future_branch_indexes:
-        end_index = future_branch_indexes[0]
+    for position, (index, branch_name) in enumerate(stable_branch_indexes):
+        if branch_name != current_branch:
+            continue
+        start_index = stable_branch_indexes[position - 1][0] + 1 if position > 0 else 0
+        end_index = stable_branch_indexes[position + 1][0] if position + 1 < len(stable_branch_indexes) else len(releases)
+        break
     return releases[start_index:end_index]
 
 

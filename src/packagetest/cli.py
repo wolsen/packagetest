@@ -312,9 +312,11 @@ def _publish_run_outputs(
 ) -> None:
     if any(state in {BuildState.BUILD_FAILED, BuildState.PUBLISH_FAILED, BuildState.BLOCKED_BY_FAILED_DEPENDENCY} for state in states.values()):
         return
-    if not states or not all(state == BuildState.BUILD_SUCCEEDED for state in states.values()):
+    if not states:
         return
-    publishable_sources = [source for source in states if _package_has_publishable_outputs(run_dir, source)]
+    publishable_sources = [
+        source for source, state in states.items() if state == BuildState.BUILD_SUCCEEDED and _package_has_publishable_outputs(run_dir, source)
+    ]
     if not publishable_sources:
         return
 

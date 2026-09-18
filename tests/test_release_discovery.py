@@ -160,6 +160,41 @@ branches:
     assert resolve_release_from_deliverable_yaml(content, openstack_target="2027.1", deliverable_scope="indri").version == "31.1.0"
 
 
+def test_stage_target_uses_requested_series_window():
+    content = """
+releases:
+  - version: 30.0.0.0b1
+    projects:
+      - repo: openstack/glance
+        hash: 0000000000000000000000000000000000000000
+  - version: 31.0.0.0b1
+    projects:
+      - repo: openstack/glance
+        hash: 1111111111111111111111111111111111111111
+  - version: 31.0.0.0rc1
+    projects:
+      - repo: openstack/glance
+        hash: 2222222222222222222222222222222222222222
+  - version: 31.0.0
+    projects:
+      - repo: openstack/glance
+        hash: 3333333333333333333333333333333333333333
+  - version: 32.0.0.0b1
+    projects:
+      - repo: openstack/glance
+        hash: 4444444444444444444444444444444444444444
+branches:
+  - name: stable/2026.2
+    location: 30.0.0.0b1
+  - name: stable/2027.1
+    location: 31.0.0.0rc1
+  - name: stable/2027.2
+    location: 32.0.0.0b1
+"""
+    release = resolve_release_from_deliverable_yaml(content, openstack_target="2027.1-b1", deliverable_scope="indri")
+    assert release.version == "31.0.0.0b1"
+
+
 def test_resolver_uses_series_deliverables_and_snapshot_hashes():
     package = PackageDefinition(
         source_package="glance",
