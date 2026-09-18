@@ -128,6 +128,18 @@ def package_operation_commands(
         (["gbp", "pq", "import"], operation_plan.packaging_checkout_dir),
         (
             [
+                "git",
+                "-C",
+                str(operation_plan.packaging_checkout_dir),
+                "checkout",
+                "-B",
+                operation_plan.packaging_branch,
+                f"origin/{operation_plan.packaging_branch}",
+            ],
+            operation_plan.workspace_dir.parent,
+        ),
+        (
+            [
                 "dch",
                 "--distribution",
                 ubuntu_release,
@@ -162,6 +174,8 @@ def package_operation_commands(
 def classify_packaging_failure(command: list[str], stdout: str, stderr: str) -> str:
     command_text = " ".join(command)
     output_lower = "\n".join((stdout, stderr)).lower()
+    if "missing origin/upstream branch" in output_lower or "missing origin/pristine-tar branch" in output_lower:
+        return "PACKAGING_POLICY_FAILURE"
     if "gbp pq import" in command_text:
         if any(
             marker in output_lower

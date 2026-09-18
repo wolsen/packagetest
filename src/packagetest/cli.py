@@ -181,13 +181,14 @@ def _run_package(
     publish_dir = run_dir / "apt-repo" / source
     publish_dir.mkdir(parents=True, exist_ok=True)
     publish_commands = [(command, publish_dir) for command in apt_repository_commands(publish_dir, plan.ubuntu_release)]
+    states[source] = BuildState.PUBLISHING
     for command, cwd in publish_commands:
         planned_command = command
         if args.dry_run:
             command = ["echo", "DRY-RUN:", *command]
         result = runner.run(command=command, cwd=run_dir if args.dry_run else cwd)
         if result.exit_code != 0:
-            states[source] = BuildState.BUILD_FAILED
+            states[source] = BuildState.PUBLISH_FAILED
             metadata.build_finished_at = datetime.now(UTC).isoformat()
             write_failure_bundle(
                 out_dir=run_dir / "failures" / source,
