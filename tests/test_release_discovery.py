@@ -122,13 +122,17 @@ releases:
     projects:
       - repo: openstack/pbr
         hash: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  - version: 5.7.1b1
+    projects:
+      - repo: openstack/pbr
+        hash: cccccccccccccccccccccccccccccccccccccccc
 """
     release = resolve_release_from_deliverable_yaml(
         content,
         openstack_target="2027.1-b1",
         deliverable_scope="_independent",
     )
-    assert release.version == "5.7.0b1"
+    assert release.version == "5.7.1b1"
 
 
 def test_plain_cycle_target_ignores_trailing_prerelease():

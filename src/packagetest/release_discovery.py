@@ -239,7 +239,7 @@ def resolve_release_from_deliverable_yaml(
     parsed_target = parse_openstack_target(openstack_target)
     if deliverable_scope == "_independent":
         if parsed_target.stage is not None:
-            for release in releases:
+            for release in reversed(releases):
                 if release.version.lower().endswith(parsed_target.stage.lower()):
                     return release
         return releases[-1]

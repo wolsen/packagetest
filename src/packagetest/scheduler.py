@@ -17,7 +17,7 @@ def next_ready_packages(plan: BuildPlan, states: dict[str, BuildState]) -> list[
         ):
             states[source] = BuildState.BLOCKED_BY_FAILED_DEPENDENCY
             continue
-        if all(s in {BuildState.BUILD_SUCCEEDED, BuildState.PUBLISHING, BuildState.PUBLISHED} for s in dep_states):
+        if all(s in {BuildState.BUILD_SUCCEEDED, BuildState.PUBLISHED} for s in dep_states):
             ready.append(source)
     return sorted(ready)
 
