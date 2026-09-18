@@ -4,7 +4,7 @@
       "source_package": "pbr",
       "binary_packages": ["python3-pbr"],
       "upstream_repo": "https://opendev.org/openstack/pbr",
-      "packaging_repo": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/pbr",
+      "packaging_repo": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-pbr",
       "build_depends_on_sources": [],
       "source_creation_method": "opendev-tarball-or-sdist-snapshot"
     },
