@@ -80,7 +80,12 @@ jobs:
 
           print(f"Found {len(failure_files)} packaging failure bundle(s).")
           for failure_file in failure_files:
-              payload = json.loads(failure_file.read_text(encoding="utf-8"))
+              try:
+                  payload = json.loads(failure_file.read_text(encoding="utf-8"))
+              except json.JSONDecodeError as exc:
+                  print(f"- failure_json: {failure_file}")
+                  print(f"  parse_error: {exc}")
+                  continue
               command = payload.get("command", {})
               print(f"- package: {payload.get('source_package')}")
               print(f"  category: {payload.get('category')}")
@@ -159,7 +164,12 @@ jobs:
 
           print(f"Found {len(failure_files)} packaging failure bundle(s).")
           for failure_file in failure_files:
-              payload = json.loads(failure_file.read_text(encoding="utf-8"))
+              try:
+                  payload = json.loads(failure_file.read_text(encoding="utf-8"))
+              except json.JSONDecodeError as exc:
+                  print(f"- failure_json: {failure_file}")
+                  print(f"  parse_error: {exc}")
+                  continue
               command = payload.get("command", {})
               print(f"- package: {payload.get('source_package')}")
               print(f"  category: {payload.get('category')}")
@@ -232,7 +242,12 @@ jobs:
 
           print(f"Found {len(failure_files)} packaging failure bundle(s).")
           for failure_file in failure_files:
-              payload = json.loads(failure_file.read_text(encoding="utf-8"))
+              try:
+                  payload = json.loads(failure_file.read_text(encoding="utf-8"))
+              except json.JSONDecodeError as exc:
+                  print(f"- failure_json: {failure_file}")
+                  print(f"  parse_error: {exc}")
+                  continue
               command = payload.get("command", {})
               print(f"- package: {payload.get('source_package')}")
               print(f"  category: {payload.get('category')}")

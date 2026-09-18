@@ -365,7 +365,7 @@ def _collect_failures(run_dir: Path, states: dict[str, BuildState]) -> list[dict
                 command_exit_code = payload.get("command_exit_code")
                 if isinstance(category, str):
                     failure["category"] = category
-                if isinstance(failed_command, list):
+                if isinstance(failed_command, list) and all(isinstance(part, str) for part in failed_command):
                     failure["failed_command"] = failed_command
                 if isinstance(command_exit_code, int):
                     failure["command_exit_code"] = command_exit_code
