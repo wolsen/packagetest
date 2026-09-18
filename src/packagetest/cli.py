@@ -9,7 +9,7 @@ from .commands import CommandRunner
 from .config import load_package_definitions
 from .failures import FailureBundle, write_failure_bundle
 from .manifest import write_generation_manifest
-from .models import BuildState, GenerationManifest, PackageManifest
+from .models import BuildPlan, BuildState, GenerationManifest, PackageManifest
 from .planner import build_plan
 from .repository import apt_repository_commands
 from .scheduler import mark_state, next_ready_packages
@@ -100,7 +100,14 @@ def build_cmd(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_package(source: str, plan, args, run_dir: Path, runner: CommandRunner, states: dict[str, BuildState]) -> None:
+def _run_package(
+    source: str,
+    plan: BuildPlan,
+    args: argparse.Namespace,
+    run_dir: Path,
+    runner: CommandRunner,
+    states: dict[str, BuildState],
+) -> None:
     package = next(p.package for p in plan.planned_builds if p.source_package == source)
     package_dir = run_dir / source
     package_dir.mkdir(parents=True, exist_ok=True)

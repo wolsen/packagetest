@@ -17,21 +17,32 @@ _HASH_RE = re.compile(r"^\s+hash:\s+([0-9a-f]{7,40})\s*$")
 
 
 def latest_release_from_deliverable_yaml(content: str) -> OpenStackRelease:
-    versions: list[str] = []
-    last_repo: str | None = None
-    last_hash: str | None = None
+    releases: list[OpenStackRelease] = []
+    current: OpenStackRelease | None = None
     for line in content.splitlines():
         m = _VERSION_RE.match(line)
         if m:
-            versions.append(m.group(1).strip())
+            if current is not None:
+                releases.append(current)
+            current = OpenStackRelease(version=m.group(1).strip(), project_repo=None, project_hash=None)
             continue
         r = _REPO_RE.match(line)
-        if r:
-            last_repo = r.group(1).strip()
+        if r and current is not None:
+            current = OpenStackRelease(
+                version=current.version,
+                project_repo=r.group(1).strip(),
+                project_hash=current.project_hash,
+            )
             continue
         h = _HASH_RE.match(line)
-        if h:
-            last_hash = h.group(1).strip()
-    if not versions:
+        if h and current is not None:
+            current = OpenStackRelease(
+                version=current.version,
+                project_repo=current.project_repo,
+                project_hash=h.group(1).strip(),
+            )
+    if current is not None:
+        releases.append(current)
+    if not releases:
         raise ValueError("No releases found in deliverable YAML")
-    return OpenStackRelease(version=versions[-1], project_repo=last_repo, project_hash=last_hash)
+    return releases[-1]

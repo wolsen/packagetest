@@ -100,9 +100,14 @@ class GenerationManifest:
     package_manifests: list[PackageManifest]
 
     def as_dict(self) -> dict[str, Any]:
+        package_manifests = []
+        for package_manifest in self.package_manifests:
+            row = asdict(package_manifest)
+            row["build_result"] = package_manifest.build_result.value
+            package_manifests.append(row)
         return {
             "generation_id": self.generation_id,
             "openstack_release_target": self.openstack_release_target,
             "ubuntu_release": self.ubuntu_release,
-            "package_manifests": [asdict(p) for p in self.package_manifests],
+            "package_manifests": package_manifests,
         }

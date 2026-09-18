@@ -49,3 +49,17 @@ def test_scheduler_blocks_when_dependency_failed(tmp_path):
     assert ready == []
     assert states["python-oslo.i18n"] == BuildState.BLOCKED_BY_FAILED_DEPENDENCY
     assert states["python-oslo.serialization"] == BuildState.BLOCKED_BY_FAILED_DEPENDENCY
+
+
+def test_scheduler_considers_root_node_ready(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
+    plan = build_plan(
+        definitions=definitions,
+        requested_sources=["pbr"],
+        openstack_target="2027.1-b1",
+        ubuntu_release="noble",
+    )
+    states = {"pbr": BuildState.WAITING_FOR_DEPENDENCY}
+    ready = next_ready_packages(plan, states)
+    assert ready == ["pbr"]
