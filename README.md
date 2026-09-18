@@ -17,6 +17,8 @@ This demonstrates:
 
 - dependency-aware planning (DAG)
 - blocked/ready/build/publish state transitions
+- OpenStack release discovery from `openstack/releases` series status and deliverables
+- target resolution for cycle, beta, rc, final, and snapshot-based upstream refs
 - branch-aware packaging repository orchestration (`packaging`, `upstream`, `pristine-tar`)
 - Debian-versioned changelog update commands for OpenStack targets
 - command-level execution logs
@@ -40,6 +42,13 @@ python -m pip install -e .
 # Create a build plan
 packaging plan \
   --openstack-target 2027.1-b1 \
+  --ubuntu-release noble \
+  glance
+
+# Record a reproducible snapshot using resolved upstream SHAs
+packaging plan \
+  --openstack-target 2027.1 \
+  --snapshot-at 2026-09-18T05:32:15+00:00 \
   --ubuntu-release noble \
   glance
 

@@ -95,3 +95,16 @@ def test_plan_can_skip_dependency_closure(tmp_path):
     )
     assert [b.source_package for b in plan.planned_builds] == ["glance"]
     assert plan.planned_builds[0].depends_on_sources == []
+
+
+def test_plan_records_snapshot_timestamp(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
+    plan = build_plan(
+        definitions=definitions,
+        requested_sources=["pbr"],
+        openstack_target="2027.1",
+        ubuntu_release="noble",
+        snapshot_at="2026-09-18T05:32:15+00:00",
+    )
+    assert plan.snapshot_at == "2026-09-18T05:32:15+00:00"

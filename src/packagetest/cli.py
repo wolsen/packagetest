@@ -13,9 +13,10 @@ from .manifest import write_generation_manifest
 from .models import BuildPlan, BuildState, CommandResult, GenerationManifest, PackageExecutionMetadata, PackageManifest
 from .packaging import PackageOperationPlan, build_package_operation_plan, classify_packaging_failure, package_operation_commands
 from .planner import build_plan, initial_states
+from .release_discovery import OpenStackReleaseResolver, ReleaseDiscoveryError, ResolvedRelease
 from .repository import apt_repository_commands
 from .scheduler import mark_state, next_ready_packages
-from .versioning import openstack_target_to_debian_version, openstack_target_to_upstream_version
+from .versioning import openstack_target_to_upstream_version, upstream_version_to_debian_version
 
 
 def _default_config_path() -> Path:
@@ -30,9 +31,23 @@ def plan_cmd(args: argparse.Namespace) -> int:
         openstack_target=args.openstack_target,
         ubuntu_release=args.ubuntu_release,
         include_dependency_closure=not args.no_dependency_closure,
+        snapshot_at=args.snapshot_at,
     )
-    print(json.dumps(plan.as_dict(), indent=2, sort_keys=True))
-    return 0
+    resolved_releases, resolution_errors = _resolve_package_releases(plan, args)
+    payload = plan.as_dict()
+    for row in payload["planned_builds"]:
+        source = row["source_package"]
+        resolved_release = resolved_releases.get(source)
+        if resolved_release is not None:
+            row["resolved_upstream_version"] = resolved_release.version
+            row["resolved_upstream_tag_or_sha"] = resolved_release.upstream_ref
+            row["resolved_upstream_sha"] = resolved_release.project_hash
+            row["release_series"] = resolved_release.series
+            row["release_deliverable_path"] = resolved_release.deliverable_path
+        if source in resolution_errors:
+            row["release_resolution_error"] = resolution_errors[source]
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 1 if resolution_errors else 0
 
 
 def build_cmd(args: argparse.Namespace) -> int:
@@ -43,6 +58,7 @@ def build_cmd(args: argparse.Namespace) -> int:
         openstack_target=args.openstack_target,
         ubuntu_release=args.ubuntu_release,
         include_dependency_closure=not args.no_dependency_closure,
+        snapshot_at=args.snapshot_at,
     )
 
     run_dir = Path(args.run_dir) / plan.generation_id
@@ -52,21 +68,30 @@ def build_cmd(args: argparse.Namespace) -> int:
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     states = initial_states(plan)
+    resolved_releases, release_resolution_errors = _resolve_package_releases(plan, args)
     operation_plans: dict[str, PackageOperationPlan] = {}
     operation_plan_errors: dict[str, str] = {}
     package_metadata = {}
     for item in plan.planned_builds:
+        resolved_release = resolved_releases.get(item.source_package)
         metadata = PackageExecutionMetadata(
-            upstream_tag_or_sha=plan.openstack_target,
-            upstream_version=openstack_target_to_upstream_version(plan.openstack_target),
+            upstream_tag_or_sha=resolved_release.upstream_ref if resolved_release else plan.openstack_target,
+            upstream_version=resolved_release.version if resolved_release else openstack_target_to_upstream_version(plan.openstack_target),
             packaging_branch=item.package.branch_mapping.get(args.ubuntu_release, "unknown"),
-            generated_debian_version=openstack_target_to_debian_version(plan.openstack_target),
+            generated_debian_version=upstream_version_to_debian_version(
+                resolved_release.version if resolved_release else openstack_target_to_upstream_version(plan.openstack_target)
+            ),
+            source_hashes=[f"git:{resolved_release.project_hash}"] if resolved_release and resolved_release.project_hash else [],
         )
         package_metadata[item.source_package] = metadata
+        if item.source_package in release_resolution_errors:
+            operation_plan_errors[item.source_package] = release_resolution_errors[item.source_package]
+            continue
         try:
             operation_plans[item.source_package] = build_package_operation_plan(
                 package=item.package,
-                openstack_target=plan.openstack_target,
+                upstream_ref=metadata.upstream_tag_or_sha,
+                upstream_version=metadata.upstream_version,
                 ubuntu_release=plan.ubuntu_release,
                 run_dir=run_dir,
             )
@@ -83,7 +108,7 @@ def build_cmd(args: argparse.Namespace) -> int:
         for source in ready:
             mark_state(states, source, BuildState.BUILDING)
             if source in operation_plan_errors:
-                _record_operation_plan_failure(source, plan, run_dir, states, package_metadata[source], operation_plan_errors[source])
+                _record_preparation_failure(source, plan, run_dir, states, package_metadata[source], operation_plan_errors[source])
                 continue
             _run_package(source, plan, args, run_dir, runner, states, package_metadata[source], operation_plans[source])
 
@@ -118,6 +143,7 @@ def build_cmd(args: argparse.Namespace) -> int:
             openstack_release_target=plan.openstack_target,
             ubuntu_release=plan.ubuntu_release,
             package_manifests=manifests,
+            snapshot_at=plan.snapshot_at,
         ),
     )
 
@@ -217,7 +243,7 @@ def _run_package(
     states[source] = BuildState.PUBLISHED
 
 
-def _record_operation_plan_failure(
+def _record_preparation_failure(
     source: str,
     plan: BuildPlan,
     run_dir: Path,
@@ -240,7 +266,7 @@ def _record_operation_plan_failure(
     write_failure_bundle(
         out_dir=run_dir / "failures" / source,
         bundle=FailureBundle(
-            category="PACKAGING_POLICY_FAILURE",
+            category="SOURCE_GENERATION_FAILURE",
             source_package=source,
             generation_id=plan.generation_id,
             upstream_sha=None,
@@ -256,6 +282,25 @@ def _record_operation_plan_failure(
             "debian/patches/series": "",
         },
     )
+
+
+def _resolve_package_releases(
+    plan: BuildPlan,
+    args: argparse.Namespace,
+) -> tuple[dict[str, ResolvedRelease], dict[str, str]]:
+    resolver = OpenStackReleaseResolver()
+    resolved_releases: dict[str, ResolvedRelease] = {}
+    errors: dict[str, str] = {}
+    for item in plan.planned_builds:
+        try:
+            resolved_releases[item.source_package] = resolver.resolve(
+                package=item.package,
+                openstack_target=plan.openstack_target,
+                snapshot_at=args.snapshot_at,
+            )
+        except ReleaseDiscoveryError as exc:
+            errors[item.source_package] = str(exc)
+    return resolved_releases, errors
 
 
 def status_cmd(args: argparse.Namespace) -> int:
@@ -275,6 +320,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_plan.add_argument("--config", default=str(_default_config_path()))
     p_plan.add_argument("--openstack-target", required=True)
     p_plan.add_argument("--ubuntu-release", required=True)
+    p_plan.add_argument("--snapshot-at")
     p_plan.add_argument("--no-dependency-closure", action="store_true", default=False)
     p_plan.add_argument("sources", nargs="+")
     p_plan.set_defaults(func=plan_cmd)
@@ -283,6 +329,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_build.add_argument("--config", default=str(_default_config_path()))
     p_build.add_argument("--openstack-target", required=True)
     p_build.add_argument("--ubuntu-release", required=True)
+    p_build.add_argument("--snapshot-at")
     p_build.add_argument("--run-dir", default="artifacts")
     p_build.add_argument("--dry-run", action="store_true", default=False)
     p_build.add_argument(

@@ -5,7 +5,7 @@ from pathlib import Path
 from shlex import quote
 
 from .models import PackageDefinition
-from .versioning import openstack_target_to_debian_version, openstack_target_to_upstream_version
+from .versioning import upstream_version_to_debian_version
 
 
 @dataclass(frozen=True)
@@ -24,7 +24,8 @@ class PackageOperationPlan:
 def build_package_operation_plan(
     *,
     package: PackageDefinition,
-    openstack_target: str,
+    upstream_ref: str,
+    upstream_version: str,
     ubuntu_release: str,
     run_dir: Path,
 ) -> PackageOperationPlan:
@@ -34,13 +35,12 @@ def build_package_operation_plan(
     workspace_dir = run_dir / package.source_package
     packaging_checkout_dir = workspace_dir / "packaging"
     upstream_checkout_dir = workspace_dir / "upstream"
-    upstream_version = openstack_target_to_upstream_version(openstack_target)
     return PackageOperationPlan(
         source_package=package.source_package,
         packaging_branch=packaging_branch,
-        upstream_ref=openstack_target,
+        upstream_ref=upstream_ref,
         upstream_version=upstream_version,
-        generated_debian_version=openstack_target_to_debian_version(openstack_target),
+        generated_debian_version=upstream_version_to_debian_version(upstream_version),
         workspace_dir=workspace_dir,
         packaging_checkout_dir=packaging_checkout_dir,
         upstream_checkout_dir=upstream_checkout_dir,
@@ -101,9 +101,7 @@ def package_operation_commands(
                 "-C",
                 str(operation_plan.packaging_checkout_dir),
                 "checkout",
-                "-B",
                 operation_plan.packaging_branch,
-                f"origin/{operation_plan.packaging_branch}",
             ],
             operation_plan.workspace_dir.parent,
         ),

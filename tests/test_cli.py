@@ -2,12 +2,13 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-from packagetest.cli import _run_package
+from packagetest.cli import _run_package, plan_cmd
 from packagetest.commands import CommandRunner
 from packagetest.config import load_package_definitions
 from packagetest.models import BuildState, CommandResult, PackageExecutionMetadata
 from packagetest.packaging import build_package_operation_plan
 from packagetest.planner import build_plan
+from packagetest.release_discovery import ResolvedRelease
 
 
 class FailingRunner:
@@ -69,7 +70,8 @@ def test_run_package_dry_run_marks_published(tmp_path: Path):
     )
     operation_plan = build_package_operation_plan(
         package=plan.planned_builds[0].package,
-        openstack_target=plan.openstack_target,
+        upstream_ref="5.7.0",
+        upstream_version="5.7.0",
         ubuntu_release=plan.ubuntu_release,
         run_dir=tmp_path,
     )
@@ -78,7 +80,7 @@ def test_run_package_dry_run_marks_published(tmp_path: Path):
 
     assert states["pbr"] == BuildState.PUBLISHED
     assert (tmp_path / "commands.jsonl").exists()
-    assert metadata.generated_debian_version == "2027.1~b1-0ubuntu1"
+    assert metadata.generated_debian_version == "5.7.0-0ubuntu1"
     assert metadata.build_started_at != "unknown"
     assert metadata.build_finished_at != "unknown"
 
@@ -102,7 +104,8 @@ def test_run_package_without_artifacts_stops_at_build_succeeded(tmp_path: Path):
     )
     operation_plan = build_package_operation_plan(
         package=plan.planned_builds[0].package,
-        openstack_target=plan.openstack_target,
+        upstream_ref="5.7.0",
+        upstream_version="5.7.0",
         ubuntu_release=plan.ubuntu_release,
         run_dir=tmp_path,
     )
@@ -132,7 +135,8 @@ def test_run_package_failure_writes_bundle(tmp_path: Path):
     )
     operation_plan = build_package_operation_plan(
         package=plan.planned_builds[0].package,
-        openstack_target=plan.openstack_target,
+        upstream_ref="5.7.0",
+        upstream_version="5.7.0",
         ubuntu_release=plan.ubuntu_release,
         run_dir=tmp_path,
     )
@@ -145,3 +149,40 @@ def test_run_package_failure_writes_bundle(tmp_path: Path):
     assert failure["category"] == "PATCH_APPLY_FAILURE"
     assert runner.calls > 1
     assert metadata.build_finished_at != "unknown"
+
+
+def test_plan_cmd_outputs_release_resolution(capsys, monkeypatch):
+    repo_root = Path(__file__).resolve().parents[1]
+
+    def fake_resolve(plan, args):
+        return (
+            {
+                "pbr": ResolvedRelease(
+                    series="indri",
+                    release_id="2027.1",
+                    version="5.7.0",
+                    project_repo="openstack/pbr",
+                    project_hash="abc123",
+                    upstream_ref="abc123",
+                    snapshot_at="2026-09-18T05:32:15+00:00",
+                    deliverable_path="deliverables/_independent/pbr.yaml",
+                )
+            },
+            {},
+        )
+
+    monkeypatch.setattr("packagetest.cli._resolve_package_releases", fake_resolve)
+    args = Namespace(
+        config=str(repo_root / "config" / "vertical_slice.json"),
+        openstack_target="2027.1",
+        ubuntu_release="noble",
+        snapshot_at="2026-09-18T05:32:15+00:00",
+        no_dependency_closure=False,
+        sources=["pbr"],
+    )
+
+    assert plan_cmd(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["snapshot_at"] == "2026-09-18T05:32:15+00:00"
+    assert payload["planned_builds"][0]["resolved_upstream_version"] == "5.7.0"
+    assert payload["planned_builds"][0]["resolved_upstream_tag_or_sha"] == "abc123"

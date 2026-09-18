@@ -1,6 +1,11 @@
 from unittest.mock import Mock, patch
 
-from packagetest.versioning import debian_compare, openstack_target_to_debian_version, openstack_target_to_upstream_version
+from packagetest.versioning import (
+    debian_compare,
+    openstack_target_to_debian_version,
+    openstack_target_to_upstream_version,
+    upstream_version_to_debian_version,
+)
 
 
 def _completed(code: int):
@@ -41,3 +46,9 @@ def test_openstack_target_to_upstream_version_maps_pre_releases():
 def test_openstack_target_to_debian_version_appends_ubuntu_revision():
     assert openstack_target_to_debian_version("2027.1-b1") == "2027.1~b1-0ubuntu1"
     assert openstack_target_to_debian_version("2027.1-final") == "2027.1-0ubuntu1"
+
+
+def test_upstream_version_to_debian_version_rewrites_prereleases():
+    assert upstream_version_to_debian_version("31.0.0.0b1") == "31.0.0~b1-0ubuntu1"
+    assert upstream_version_to_debian_version("31.0.0.0rc1") == "31.0.0~rc1-0ubuntu1"
+    assert upstream_version_to_debian_version("31.1.0") == "31.1.0-0ubuntu1"

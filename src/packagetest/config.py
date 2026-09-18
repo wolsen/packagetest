@@ -18,6 +18,7 @@ def load_package_definitions(path: Path) -> dict[str, PackageDefinition]:
             build_depends_on_sources=row.get("build_depends_on_sources", []),
             branch_mapping=row.get("branch_mapping", {}),
             source_creation_method=row.get("source_creation_method", "opendev-tarball"),
+            openstack_deliverable=row.get("openstack_deliverable"),
         )
         definitions[pkg.source_package] = pkg
     return definitions

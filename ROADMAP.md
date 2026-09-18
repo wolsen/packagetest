@@ -10,9 +10,9 @@
 
 ## Milestone 1 — Release discovery and source selection
 
-- [ ] Pull release metadata from `openstack/releases` deliverables and series status.
-- [ ] Resolve targets (`2027.1`, `-b1`, `-rc1`, `-final`, snapshots) into project versions/SHAs.
-- [ ] Add reproducible snapshot mode (`snapshot-at=<timestamp>`) with recorded upstream SHAs.
+- [x] Pull release metadata from `openstack/releases` deliverables and series status.
+- [x] Resolve targets (`2027.1`, `-b1`, `-rc1`, `-final`, snapshots) into project versions/SHAs.
+- [x] Add reproducible snapshot mode (`snapshot-at=<timestamp>`) with recorded upstream SHAs.
 
 ## Milestone 2 — Real packaging repository operations
 

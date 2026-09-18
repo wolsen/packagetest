@@ -19,15 +19,16 @@ def _package_definition() -> PackageDefinition:
 def test_build_package_operation_plan_uses_branch_and_debian_version(tmp_path: Path):
     plan = build_package_operation_plan(
         package=_package_definition(),
-        openstack_target="2027.1-rc1",
+        upstream_ref="30.0.0.0rc1",
+        upstream_version="30.0.0.0rc1",
         ubuntu_release="noble",
         run_dir=tmp_path,
     )
 
     assert plan.packaging_branch == "ubuntu/noble"
-    assert plan.upstream_version == "2027.1~rc1"
-    assert plan.generated_debian_version == "2027.1~rc1-0ubuntu1"
-    assert plan.orig_tarball == tmp_path / "glance" / "glance_2027.1~rc1.orig.tar.gz"
+    assert plan.upstream_version == "30.0.0.0rc1"
+    assert plan.generated_debian_version == "30.0.0~rc1-0ubuntu1"
+    assert plan.orig_tarball == tmp_path / "glance" / "glance_30.0.0.0rc1.orig.tar.gz"
 
 
 def test_build_package_operation_plan_requires_branch_mapping(tmp_path: Path):
@@ -39,7 +40,8 @@ def test_build_package_operation_plan_requires_branch_mapping(tmp_path: Path):
                 upstream_repo="https://opendev.org/openstack/glance",
                 packaging_repo="https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/glance",
             ),
-            openstack_target="2027.1-b1",
+            upstream_ref="30.0.0.0b1",
+            upstream_version="30.0.0.0b1",
             ubuntu_release="noble",
             run_dir=tmp_path,
         )
@@ -48,7 +50,8 @@ def test_build_package_operation_plan_requires_branch_mapping(tmp_path: Path):
 def test_package_operation_commands_cover_milestone_two_steps(tmp_path: Path):
     operation_plan = build_package_operation_plan(
         package=_package_definition(),
-        openstack_target="2027.1-b1",
+        upstream_ref="30.0.0.0b1",
+        upstream_version="30.0.0.0b1",
         ubuntu_release="noble",
         run_dir=tmp_path,
     )
@@ -63,9 +66,9 @@ def test_package_operation_commands_cover_milestone_two_steps(tmp_path: Path):
     assert any("git clone https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/glance" in text for text in command_texts)
     assert any("checkout -B upstream origin/upstream" in text for text in command_texts)
     assert any("checkout -B pristine-tar origin/pristine-tar" in text for text in command_texts)
-    assert any("gbp import-orig --debian-branch=ubuntu/noble --upstream-branch=upstream --pristine-tar --no-interactive --upstream-version=2027.1~b1" in text for text in command_texts)
+    assert any("gbp import-orig --debian-branch=ubuntu/noble --upstream-branch=upstream --pristine-tar --no-interactive --upstream-version=30.0.0.0b1" in text for text in command_texts)
     assert any("gbp pq import" in text for text in command_texts)
-    assert any("dch --distribution noble --newversion 2027.1~b1-0ubuntu1" in text for text in command_texts)
+    assert any("dch --distribution noble --newversion 30.0.0~b1-0ubuntu1" in text for text in command_texts)
 
 
 def test_classify_packaging_failure_detects_patch_and_build_failures():
