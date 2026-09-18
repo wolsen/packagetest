@@ -148,7 +148,7 @@ branches:
   - name: stable/2027.1
     location: 31.0.0.0rc1
 """
-        if "api.github.com/repos/openstack/glance/commits" in url:
+        if "opendev.org/api/v1/repos/openstack/glance/commits" in url:
             return '[{"sha":"snapshotsha"}]'
         raise ReleaseDiscoveryError(f"unexpected url: {url}")
 
@@ -270,7 +270,7 @@ def test_snapshot_resolution_requires_snapshot_commit():
             return SERIES_STATUS
         if url.endswith("/deliverables/indri/glance.yaml"):
             return SERIES_DELIVERABLE
-        if "api.github.com/repos/openstack/glance/commits" in url:
+        if "opendev.org/api/v1/repos/openstack/glance/commits" in url:
             return "[]"
         raise ReleaseDiscoveryError(f"unexpected url: {url}")
 
@@ -308,7 +308,7 @@ def test_snapshot_resolution_wraps_invalid_commit_api_payload():
             return SERIES_STATUS
         if url.endswith("/deliverables/indri/glance.yaml"):
             return SERIES_DELIVERABLE
-        if "api.github.com/repos/openstack/glance/commits" in url:
+        if "opendev.org/api/v1/repos/openstack/glance/commits" in url:
             return "not-json"
         raise ReleaseDiscoveryError(f"unexpected url: {url}")
 

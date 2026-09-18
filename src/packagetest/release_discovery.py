@@ -6,14 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, build_opener
 
 from .models import PackageDefinition
 
 DEFAULT_OPENSTACK_RELEASES_BASE_URL = "https://raw.githubusercontent.com/openstack/releases/master"
-DEFAULT_GITHUB_API_BASE_URL = "https://api.github.com"
-
 _VERSION_RE = re.compile(r"^\s*-\s+version:\s+(.+?)\s*$")
 _REPO_RE = re.compile(r"^\s*-\s+repo:\s+(.+?)\s*$")
 _HASH_RE = re.compile(r"^\s+hash:\s+([0-9A-Fa-f]{7,40})\s*$")
@@ -270,11 +268,9 @@ class OpenStackReleaseResolver:
         self,
         *,
         base_url: str = DEFAULT_OPENSTACK_RELEASES_BASE_URL,
-        github_api_base_url: str = DEFAULT_GITHUB_API_BASE_URL,
         fetcher: Callable[[str], str] = read_text_from_url,
     ) -> None:
         self.base_url = base_url.rstrip("/")
-        self.github_api_base_url = github_api_base_url.rstrip("/")
         self.fetcher = fetcher
         self._series_status: list[OpenStackSeries] | None = None
         self._deliverable_cache: dict[str, str] = {}
@@ -298,6 +294,7 @@ class OpenStackReleaseResolver:
             if release.project_repo is None:
                 raise ReleaseDiscoveryError(f"Snapshot resolution requires a project repo for {deliverable_name}")
             upstream_ref = self._resolve_snapshot_ref(
+                upstream_repo=package.upstream_repo,
                 project_repo=release.project_repo,
                 release_id=resolved_series.release_id,
                 deliverable_scope=deliverable_path.split("/")[-2],
@@ -338,6 +335,7 @@ class OpenStackReleaseResolver:
     def _resolve_snapshot_ref(
         self,
         *,
+        upstream_repo: str,
         project_repo: str,
         release_id: str | None,
         deliverable_scope: str,
@@ -349,8 +347,8 @@ class OpenStackReleaseResolver:
             branch_locations = branch_locations_from_deliverable_yaml(deliverable_content)
             if f"stable/{release_id}" in branch_locations:
                 branch = f"stable/{release_id}"
-        query = urlencode({"sha": branch, "until": snapshot_at, "per_page": 1})
-        payload = self.fetcher(f"{self.github_api_base_url}/repos/{project_repo}/commits?{query}")
+        query = urlencode({"sha": branch, "until": snapshot_at, "limit": 1})
+        payload = self.fetcher(_canonical_commit_api_url(upstream_repo, query))
         try:
             commits = json.loads(payload)
         except json.JSONDecodeError as exc:
@@ -361,3 +359,11 @@ class OpenStackReleaseResolver:
         if not sha:
             raise ReleaseDiscoveryError(f"Snapshot response did not include a commit SHA for {project_repo}")
         return sha
+
+
+def _canonical_commit_api_url(upstream_repo: str, query: str) -> str:
+    parsed = urlparse(upstream_repo)
+    if not parsed.scheme or not parsed.netloc or not parsed.path:
+        raise ReleaseDiscoveryError(f"Unsupported upstream repository URL: {upstream_repo}")
+    repo_path = parsed.path.strip("/")
+    return f"{parsed.scheme}://{parsed.netloc}/api/v1/repos/{repo_path}/commits?{query}"

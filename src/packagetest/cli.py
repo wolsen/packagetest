@@ -75,6 +75,9 @@ def build_cmd(args: argparse.Namespace) -> int:
     package_metadata = {}
     for item in plan.planned_builds:
         resolved_release = resolved_releases.get(item.source_package)
+        source_hashes: list[str] = []
+        if resolved_release and resolved_release.upstream_ref:
+            source_hashes = [f"{'git' if resolved_release.snapshot_at else 'git-ref'}:{resolved_release.upstream_ref}"]
         metadata = PackageExecutionMetadata(
             upstream_tag_or_sha=resolved_release.upstream_ref if resolved_release else plan.openstack_target,
             upstream_version=resolved_release.version if resolved_release else openstack_target_to_upstream_version(plan.openstack_target),
@@ -82,9 +85,7 @@ def build_cmd(args: argparse.Namespace) -> int:
             generated_debian_version=upstream_version_to_debian_version(
                 resolved_release.version if resolved_release else openstack_target_to_upstream_version(plan.openstack_target)
             ),
-            source_hashes=[f"{'git' if resolved_release.snapshot_at else 'git-ref'}:{resolved_release.upstream_ref}"]
-            if resolved_release and resolved_release.upstream_ref
-            else [],
+            source_hashes=source_hashes,
         )
         package_metadata[item.source_package] = metadata
         if item.source_package in release_resolution_errors:
