@@ -11,7 +11,7 @@ def _package_definition() -> PackageDefinition:
         source_package="glance",
         binary_packages=["glance"],
         upstream_repo="https://opendev.org/openstack/glance",
-        packaging_repo="https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/glance",
+        packaging_repo="https://git.launchpad.net/ubuntu/+source/glance",
         branch_mapping={"noble": "ubuntu/noble"},
     )
 
@@ -37,7 +37,7 @@ def test_build_package_operation_plan_uses_debian_orig_tarball_basename(tmp_path
             source_package="python-oslo.i18n",
             binary_packages=["python3-oslo.i18n"],
             upstream_repo="https://opendev.org/openstack/oslo.i18n",
-            packaging_repo="https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.i18n",
+            packaging_repo="https://git.launchpad.net/ubuntu/+source/python-oslo.i18n",
             branch_mapping={"noble": "ubuntu/noble"},
         ),
         upstream_ref="8.0.0",
@@ -56,7 +56,7 @@ def test_build_package_operation_plan_requires_branch_mapping(tmp_path: Path):
                 source_package="glance",
                 binary_packages=["glance"],
                 upstream_repo="https://opendev.org/openstack/glance",
-                packaging_repo="https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/glance",
+                packaging_repo="https://git.launchpad.net/ubuntu/+source/glance",
             ),
             upstream_ref="30.0.0.0b1",
             upstream_version="30.0.0.0b1",
@@ -81,7 +81,7 @@ def test_package_operation_commands_cover_milestone_two_steps(tmp_path: Path):
     )
     command_texts = [" ".join(command) for command, _ in commands]
 
-    assert any("git clone https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/glance" in text for text in command_texts)
+    assert any("git clone https://git.launchpad.net/ubuntu/+source/glance" in text for text in command_texts)
     assert any("checkout -B upstream origin/upstream" in text for text in command_texts)
     assert any("checkout -B pristine-tar origin/pristine-tar" in text for text in command_texts)
     assert any("gbp import-orig --debian-branch=ubuntu/noble --upstream-branch=upstream --pristine-tar --no-interactive --upstream-version=30.0.0.0b1" in text for text in command_texts)
@@ -94,7 +94,7 @@ def test_package_operation_commands_use_orig_tarball_basename_for_archive_prefix
         source_package="python-oslo.i18n",
         binary_packages=["python3-oslo.i18n"],
         upstream_repo="https://opendev.org/openstack/oslo.i18n",
-        packaging_repo="https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.i18n",
+        packaging_repo="https://git.launchpad.net/ubuntu/+source/python-oslo.i18n",
         branch_mapping={"noble": "ubuntu/noble"},
     )
     operation_plan = build_package_operation_plan(
