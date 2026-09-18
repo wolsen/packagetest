@@ -310,8 +310,6 @@ def _publish_run_outputs(
     states: dict[str, BuildState],
     package_metadata: dict[str, PackageExecutionMetadata],
 ) -> None:
-    if any(state in {BuildState.BUILD_FAILED, BuildState.PUBLISH_FAILED, BuildState.BLOCKED_BY_FAILED_DEPENDENCY} for state in states.values()):
-        return
     if not states:
         return
     publishable_sources = [

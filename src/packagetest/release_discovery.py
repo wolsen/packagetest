@@ -220,6 +220,13 @@ def _candidate_releases_for_series(content: str, releases: list[OpenStackRelease
     return releases[start_index:end_index]
 
 
+def _numeric_series_prefix(version: str) -> str | None:
+    match = re.match(r"^(?P<prefix>\d+)\.", version)
+    if match:
+        return match.group("prefix")
+    return None
+
+
 def resolve_release_from_deliverable_yaml(
     content: str,
     *,
@@ -243,6 +250,19 @@ def resolve_release_from_deliverable_yaml(
         if stable_releases:
             return stable_releases[-1]
         raise ReleaseDiscoveryError(f"No stable release found for target: {openstack_target}")
+    branch_locations = branch_locations_from_deliverable_yaml(content)
+    if f"stable/{parsed_target.release_id}" not in branch_locations:
+        stable_prefixes = {
+            prefix for prefix in (_numeric_series_prefix(release.version) for release in stable_releases) if prefix is not None
+        }
+        if len(stable_prefixes) > 1:
+            raise ReleaseDiscoveryError(f"Cannot safely resolve staged target without stable branch metadata: {openstack_target}")
+    if stable_releases:
+        target_prefix = _numeric_series_prefix(stable_releases[-1].version)
+        if target_prefix is not None:
+            candidate_releases = [
+                release for release in candidate_releases if _numeric_series_prefix(release.version) == target_prefix
+            ]
     for release in candidate_releases:
         if release.version.lower().endswith(parsed_target.stage.lower()):
             return release
