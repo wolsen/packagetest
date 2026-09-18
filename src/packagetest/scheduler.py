@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .models import BuildPlan, BuildState
+from .models import COMPLETED_SUCCESS_STATES, TERMINAL_FAILURE_STATES, BuildPlan, BuildState
 
 
 def next_ready_packages(plan: BuildPlan, states: dict[str, BuildState]) -> list[str]:
@@ -11,13 +11,10 @@ def next_ready_packages(plan: BuildPlan, states: dict[str, BuildState]) -> list[
             continue
         deps = build_by_source[source].depends_on_sources
         dep_states = [states[d] for d in deps]
-        if any(
-            s in {BuildState.BUILD_FAILED, BuildState.PUBLISH_FAILED, BuildState.BLOCKED_BY_FAILED_DEPENDENCY}
-            for s in dep_states
-        ):
+        if any(s in TERMINAL_FAILURE_STATES for s in dep_states):
             states[source] = BuildState.BLOCKED_BY_FAILED_DEPENDENCY
             continue
-        if all(s in {BuildState.BUILD_SUCCEEDED, BuildState.PUBLISHED} for s in dep_states):
+        if all(s in COMPLETED_SUCCESS_STATES for s in dep_states):
             ready.append(source)
     return sorted(ready)
 

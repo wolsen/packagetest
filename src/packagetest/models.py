@@ -16,6 +16,22 @@ class BuildState(str, Enum):
     BLOCKED_BY_FAILED_DEPENDENCY = "BLOCKED_BY_FAILED_DEPENDENCY"
 
 
+TERMINAL_FAILURE_STATES = frozenset(
+    {
+        BuildState.BUILD_FAILED,
+        BuildState.PUBLISH_FAILED,
+        BuildState.BLOCKED_BY_FAILED_DEPENDENCY,
+    }
+)
+
+COMPLETED_SUCCESS_STATES = frozenset(
+    {
+        BuildState.BUILD_SUCCEEDED,
+        BuildState.PUBLISHED,
+    }
+)
+
+
 @dataclass(frozen=True)
 class PackageDefinition:
     source_package: str

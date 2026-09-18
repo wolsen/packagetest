@@ -266,9 +266,12 @@ def test_build_cmd_records_release_resolution_failure(tmp_path: Path, monkeypatc
         sources=["pbr"],
     )
 
-    assert build_cmd(args) == 0
+    assert build_cmd(args) == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["states"]["pbr"] == "BUILD_FAILED"
+    assert len(payload["failures"]) == 1
+    assert payload["failures"][0]["source_package"] == "pbr"
+    assert payload["failures"][0]["category"] == "SOURCE_GENERATION_FAILURE"
     failure_files = list(tmp_path.glob("gen-*/failures/pbr/failure.json"))
     assert len(failure_files) == 1
     failure = json.loads(failure_files[0].read_text(encoding="utf-8"))
