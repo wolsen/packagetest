@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import shutil
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -31,6 +32,7 @@ from .versioning import openstack_target_to_upstream_version, upstream_version_t
 
 SOURCE_ARTIFACT_PATTERNS = ("*.dsc", "*.orig.tar.*", "*.debian.tar.*", "*.changes", "*.buildinfo")
 BINARY_ARTIFACT_PATTERNS = ("*.deb", "*.udeb", "*.ddeb")
+logger = logging.getLogger(__name__)
 
 
 def _default_config_path() -> Path:
@@ -38,6 +40,7 @@ def _default_config_path() -> Path:
 
 
 def plan_cmd(args: argparse.Namespace) -> int:
+    logger.debug("Starting plan command with args: %s", vars(args))
     definitions = load_package_definitions(Path(args.config))
     plan = build_plan(
         definitions=definitions,
@@ -62,10 +65,12 @@ def plan_cmd(args: argparse.Namespace) -> int:
         if source in resolution_errors:
             row["release_resolution_error"] = resolution_errors[source]
     print(json.dumps(payload, indent=2, sort_keys=True))
+    logger.debug("Plan command completed with %d release resolution errors", len(resolution_errors))
     return 1 if resolution_errors else 0
 
 
 def build_cmd(args: argparse.Namespace) -> int:
+    logger.debug("Starting build command with args: %s", vars(args))
     definitions = load_package_definitions(Path(args.config))
     plan = build_plan(
         definitions=definitions,
@@ -82,6 +87,8 @@ def build_cmd(args: argparse.Namespace) -> int:
     logs_dir.mkdir(parents=True, exist_ok=True)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     dependency_repository_dirs = _discover_dependency_repository_dirs(args.dependency_repo)
+    logger.debug("Build run directory: %s", run_dir)
+    logger.debug("Discovered dependency repositories: %s", [str(path) for path in dependency_repository_dirs])
 
     states = initial_states(plan)
     resolved_releases, release_resolution_errors = _resolve_package_releases(plan, args)
@@ -121,8 +128,10 @@ def build_cmd(args: argparse.Namespace) -> int:
             metadata.build_output_dir = str(operation_plans[item.source_package].packaging_checkout_dir.parent)
 
     runner = CommandRunner(log_path=logs_dir / "commands.jsonl")
+    logger.debug("Command JSON log path: %s", logs_dir / "commands.jsonl")
     while any(state == BuildState.WAITING_FOR_DEPENDENCY for state in states.values()):
         ready = next_ready_packages(plan, states)
+        logger.debug("Ready packages: %s", ready)
         if not ready:
             break
         for source in ready:
@@ -191,6 +200,7 @@ def build_cmd(args: argparse.Namespace) -> int:
         "states": {k: v.value for k, v in states.items()},
     }
     failures = _collect_failures(run_dir, states)
+    logger.debug("Build command completed states: %s", {k: v.value for k, v in states.items()})
     if failures:
         output["failures"] = failures
     print(json.dumps(output, indent=2))
@@ -211,6 +221,7 @@ def _run_package(
     operation_plan: PackageOperationPlan,
     dependency_repository_dirs: list[Path],
 ) -> None:
+    logger.debug("Running package build for source=%s", source)
     package = next(p.package for p in plan.planned_builds if p.source_package == source)
     metadata.upstream_version = operation_plan.upstream_version
     metadata.generated_debian_version = operation_plan.generated_debian_version
@@ -226,6 +237,7 @@ def _run_package(
     )
     for command, cwd in commands:
         planned_command = command
+        logger.debug("Planned command for %s: %s (cwd=%s)", source, " ".join(command), cwd)
         if args.dry_run:
             command = ["echo", "DRY-RUN:", *command]
         result = runner.run(command=command, cwd=run_dir if args.dry_run else cwd)
@@ -236,6 +248,12 @@ def _run_package(
         if not args.dry_run and result.exit_code == 0 and planned_command[0:2] == ["git", "-C"] and planned_command[-2:] == ["rev-parse", "HEAD"]:
             metadata.packaging_base_sha = result.stdout.strip() or metadata.packaging_base_sha
         if result.exit_code != 0:
+            logger.debug(
+                "Package command failed for %s: command=%s exit_code=%d",
+                source,
+                " ".join(result.command),
+                result.exit_code,
+            )
             states[source] = BuildState.BUILD_FAILED
             metadata.build_finished_at = datetime.now(UTC).isoformat()
             write_failure_bundle(
@@ -260,6 +278,7 @@ def _run_package(
             return
 
     if not args.dry_run and not _package_has_publishable_outputs(operation_plan.packaging_checkout_dir.parent):
+        logger.debug("Package %s produced no source package artifacts", source)
         states[source] = BuildState.BUILD_FAILED
         metadata.build_finished_at = datetime.now(UTC).isoformat()
         result = CommandResult(
@@ -300,6 +319,7 @@ def _run_package(
         )
     metadata.build_finished_at = datetime.now(UTC).isoformat()
     states[source] = BuildState.BUILD_SUCCEEDED
+    logger.debug("Package build succeeded for %s", source)
 
 
 def _record_preparation_failure(
@@ -428,6 +448,7 @@ def _publish_run_outputs(
     ]
     if not publishable_sources:
         return
+    logger.debug("Publishing outputs for sources: %s", publishable_sources)
 
     for source in publishable_sources:
         states[source] = BuildState.PUBLISHING
@@ -442,9 +463,11 @@ def _publish_run_outputs(
         binary_input_dir = staged_binary_dir if staged_binary_dir.exists() else source_output_dir
         _copy_binary_artifacts_to_pool(source=source, output_dir=binary_input_dir, pool_dir=pool_dir)
     for planned_command in apt_repository_commands(publish_dir, plan.ubuntu_release):
+        logger.debug("APT publish command: %s", " ".join(planned_command))
         command = ["echo", "DRY-RUN:", *planned_command] if args.dry_run else planned_command
         result = runner.run(command=command, cwd=run_dir if args.dry_run else publish_dir)
         if result.exit_code != 0:
+            logger.debug("APT publish command failed with exit_code=%d", result.exit_code)
             for source in publishable_sources:
                 states[source] = BuildState.PUBLISH_FAILED
                 package_metadata[source].build_finished_at = datetime.now(UTC).isoformat()
@@ -583,8 +606,10 @@ def _resolve_package_releases(
             source_package = futures[future]
             try:
                 resolved_releases[source_package] = future.result()
+                logger.debug("Resolved release metadata for %s", source_package)
             except ReleaseDiscoveryError as exc:
                 errors[source_package] = str(exc)
+                logger.debug("Release resolution failed for %s: %s", source_package, exc)
     return resolved_releases, errors
 
 
@@ -599,9 +624,11 @@ def status_cmd(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="packaging")
+    _add_logging_flags(parser, default=False)
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_plan = sub.add_parser("plan")
+    _add_logging_flags(p_plan, default=argparse.SUPPRESS)
     p_plan.add_argument("--config", default=str(_default_config_path()))
     p_plan.add_argument("--openstack-target", required=True)
     p_plan.add_argument("--ubuntu-release", required=True)
@@ -611,6 +638,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_plan.set_defaults(func=plan_cmd)
 
     p_build = sub.add_parser("build")
+    _add_logging_flags(p_build, default=argparse.SUPPRESS)
     p_build.add_argument("--config", default=str(_default_config_path()))
     p_build.add_argument("--openstack-target", required=True)
     p_build.add_argument("--ubuntu-release", required=True)
@@ -633,15 +661,36 @@ def build_parser() -> argparse.ArgumentParser:
     p_build.set_defaults(func=build_cmd)
 
     p_status = sub.add_parser("status")
+    _add_logging_flags(p_status, default=argparse.SUPPRESS)
     p_status.add_argument("--manifest", required=True)
     p_status.set_defaults(func=status_cmd)
 
     return parser
 
 
+def _add_logging_flags(parser: argparse.ArgumentParser, *, default: bool | str) -> None:
+    parser.add_argument(
+        "--verbose",
+        "--debug",
+        dest="debug_logging",
+        action="store_true",
+        default=default,
+        help="Enable verbose debug logging, including command stdout/stderr traces.",
+    )
+
+
+def _configure_logging(debug_enabled: bool) -> None:
+    logging.basicConfig(
+        level=logging.DEBUG if debug_enabled else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        force=True,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    _configure_logging(getattr(args, "debug_logging", False))
     return args.func(args)
 
 

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import re
+import logging
 import subprocess
+
+logger = logging.getLogger(__name__)
 
 
 _OPERATORS = {
@@ -25,7 +28,11 @@ def debian_compare(left: str, right: str) -> int:
 
 def _dpkg_compare(left: str, right: str, op: str) -> bool:
     cmd = ["dpkg", "--compare-versions", left, op, right]
+    logger.debug("Running version comparison command: %s", " ".join(cmd))
     completed = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    logger.debug("Version comparison exit_code=%d", completed.returncode)
+    logger.debug("Version comparison stdout:\n%s", completed.stdout if completed.stdout else "<empty>")
+    logger.debug("Version comparison stderr:\n%s", completed.stderr if completed.stderr else "<empty>")
     return completed.returncode == 0
 
 
