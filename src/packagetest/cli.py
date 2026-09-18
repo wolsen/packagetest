@@ -432,9 +432,8 @@ def _discover_dependency_repository_dirs(raw_paths: list[str]) -> list[Path]:
 
 
 def _is_apt_repository_dir(path: Path) -> bool:
-    has_flat_layout = (path / "Release").exists() and (path / "Packages").exists()
     has_dists_layout = any(path.glob("dists/*/Release")) and any(path.glob("dists/*/main/binary-*/Packages*"))
-    return has_flat_layout or has_dists_layout
+    return has_dists_layout
 
 
 def _iter_artifacts(output_dir: Path, patterns: tuple[str, ...]) -> list[Path]:
