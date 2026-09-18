@@ -24,6 +24,10 @@ class ReleaseDiscoveryError(ValueError):
     pass
 
 
+class ReleaseNotFoundError(ReleaseDiscoveryError):
+    pass
+
+
 @dataclass(frozen=True)
 class OpenStackRelease:
     version: str
@@ -55,6 +59,8 @@ def read_text_from_url(url: str) -> str:
         with urlopen(url, timeout=30) as response:
             return response.read().decode("utf-8")
     except HTTPError as exc:
+        if exc.code == 404:
+            raise ReleaseNotFoundError(f"Failed to fetch {url}: HTTP 404") from exc
         raise ReleaseDiscoveryError(f"Failed to fetch {url}: HTTP {exc.code}") from exc
     except URLError as exc:
         raise ReleaseDiscoveryError(f"Failed to fetch {url}: {exc.reason}") from exc
@@ -162,12 +168,14 @@ def resolve_release_from_deliverable_yaml(
         return releases[-1]
 
     parsed_target = parse_openstack_target(openstack_target)
+    stable_releases = [release for release in releases if not _PRERELEASE_RE.search(release.version)]
     if parsed_target.stage is None:
-        return releases[-1]
+        if stable_releases:
+            return stable_releases[-1]
+        raise ReleaseDiscoveryError(f"No stable release found for target: {openstack_target}")
     if parsed_target.stage == "final":
-        for release in releases:
-            if not _PRERELEASE_RE.search(release.version):
-                return release
+        if stable_releases:
+            return stable_releases[0]
         raise ReleaseDiscoveryError(f"No final release found for target: {openstack_target}")
     for release in releases:
         if release.version.lower().endswith(parsed_target.stage.lower()):
@@ -240,7 +248,7 @@ class OpenStackReleaseResolver:
                 return path, self._deliverable_cache[path]
             try:
                 content = self.fetcher(f"{self.base_url}/{path}")
-            except ReleaseDiscoveryError:
+            except ReleaseNotFoundError:
                 continue
             self._deliverable_cache[path] = content
             return path, content

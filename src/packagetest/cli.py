@@ -204,7 +204,7 @@ def _run_package(
             return
 
     states[source] = BuildState.BUILD_SUCCEEDED
-    if not args.dry_run and not any(operation_plan.workspace_dir.glob("*.dsc")):
+    if not args.dry_run and not any(operation_plan.packaging_checkout_dir.parent.glob("*.dsc")):
         metadata.build_finished_at = datetime.now(UTC).isoformat()
         return
     publish_dir = run_dir / "apt-repo"

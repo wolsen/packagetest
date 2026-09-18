@@ -4,6 +4,7 @@ from packagetest.models import PackageDefinition
 from packagetest.release_discovery import (
     OpenStackReleaseResolver,
     ReleaseDiscoveryError,
+    ReleaseNotFoundError,
     latest_release_from_deliverable_yaml,
     parse_series_status_yaml,
     resolve_release_from_deliverable_yaml,
@@ -78,6 +79,16 @@ def test_resolve_release_from_deliverable_yaml_supports_stage_targets():
     assert resolve_release_from_deliverable_yaml(SERIES_DELIVERABLE, openstack_target="2027.1", deliverable_scope="indri").version == "31.1.0"
 
 
+def test_plain_cycle_target_ignores_trailing_prerelease():
+    content = SERIES_DELIVERABLE + """
+  - version: 31.2.0.0rc1
+    projects:
+      - repo: openstack/glance
+        hash: 5555555555555555555555555555555555555555
+"""
+    assert resolve_release_from_deliverable_yaml(content, openstack_target="2027.1", deliverable_scope="indri").version == "31.1.0"
+
+
 def test_resolver_uses_series_deliverables_and_snapshot_hashes():
     package = PackageDefinition(
         source_package="glance",
@@ -116,7 +127,7 @@ def test_resolver_falls_back_to_independent_deliverable():
             return SERIES_STATUS
         if url.endswith("/deliverables/_independent/pbr.yaml"):
             return INDEPENDENT_DELIVERABLE
-        raise ReleaseDiscoveryError(f"Failed to fetch {url}: HTTP 404")
+        raise ReleaseNotFoundError(f"Failed to fetch {url}: HTTP 404")
 
     resolver = OpenStackReleaseResolver(base_url="https://example.invalid", fetcher=fetcher)
     release = resolver.resolve(package=package, openstack_target="2027.1")
