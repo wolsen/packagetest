@@ -358,8 +358,9 @@ def _publish_run_outputs(
     pool_dir.mkdir(parents=True, exist_ok=True)
     for source in publishable_sources:
         staged_binary_dir = run_dir / "artifacts" / source / "binary"
-        if staged_binary_dir.exists():
-            _copy_binary_artifacts_to_pool(source=source, output_dir=staged_binary_dir, pool_dir=pool_dir)
+        source_output_dir = operation_plans[source].packaging_checkout_dir.parent
+        binary_input_dir = staged_binary_dir if staged_binary_dir.exists() else source_output_dir
+        _copy_binary_artifacts_to_pool(source=source, output_dir=binary_input_dir, pool_dir=pool_dir)
     for planned_command in apt_repository_commands(publish_dir, plan.ubuntu_release):
         command = ["echo", "DRY-RUN:", *planned_command] if args.dry_run else planned_command
         result = runner.run(command=command, cwd=run_dir if args.dry_run else publish_dir)
