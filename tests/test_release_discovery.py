@@ -102,6 +102,15 @@ def test_resolve_release_from_deliverable_yaml_supports_stage_targets():
     assert resolve_release_from_deliverable_yaml(SERIES_DELIVERABLE, openstack_target="2027.1", deliverable_scope="indri").version == "31.1.0"
 
 
+def test_independent_deliverable_rejects_stage_specific_targets():
+    with pytest.raises(ReleaseDiscoveryError, match="Stage-specific targets are not supported"):
+        resolve_release_from_deliverable_yaml(
+            INDEPENDENT_DELIVERABLE,
+            openstack_target="2027.1-b1",
+            deliverable_scope="_independent",
+        )
+
+
 def test_plain_cycle_target_ignores_trailing_prerelease():
     content = SERIES_DELIVERABLE + """
   - version: 31.2.0.0rc1
@@ -157,7 +166,7 @@ branches:
 
     assert release.series == "indri"
     assert release.version == "31.0.0.0rc1"
-    assert release.project_hash == "2222222222222222222222222222222222222222"
+    assert release.project_hash == "snapshotsha"
     assert release.upstream_ref == "snapshotsha"
     assert release.deliverable_path == "deliverables/indri/glance.yaml"
 

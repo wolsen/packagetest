@@ -230,10 +230,12 @@ def resolve_release_from_deliverable_yaml(
     releases = releases_from_deliverable_yaml(content)
     if not releases:
         raise ReleaseDiscoveryError("No releases found in deliverable YAML")
+    parsed_target = parse_openstack_target(openstack_target)
     if deliverable_scope == "_independent":
+        if parsed_target.stage is not None:
+            raise ReleaseDiscoveryError(f"Stage-specific targets are not supported for independent deliverables: {openstack_target}")
         return releases[-1]
 
-    parsed_target = parse_openstack_target(openstack_target)
     candidate_releases = _candidate_releases_for_series(content, releases, parsed_target.release_id)
     stable_releases = [release for release in candidate_releases if not _PRERELEASE_RE.search(release.version)]
     if parsed_target.stage is None or parsed_target.stage == "final":
@@ -306,7 +308,7 @@ class OpenStackReleaseResolver:
             release_id=resolved_series.release_id,
             version=release.version,
             project_repo=release.project_repo,
-            project_hash=release.project_hash,
+            project_hash=upstream_ref if snapshot_at else release.project_hash,
             upstream_ref=upstream_ref,
             snapshot_at=snapshot_at,
             deliverable_path=deliverable_path,

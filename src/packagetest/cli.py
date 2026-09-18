@@ -309,12 +309,11 @@ def _publish_run_outputs(
     states: dict[str, BuildState],
     package_metadata: dict[str, PackageExecutionMetadata],
 ) -> None:
-    publishable_sources = [source for source, state in states.items() if state == BuildState.BUILD_SUCCEEDED]
-    if not publishable_sources or any(
-        state in {BuildState.BUILD_FAILED, BuildState.PUBLISH_FAILED, BuildState.BLOCKED_BY_FAILED_DEPENDENCY}
-        for state in states.values()
-    ):
+    if any(state in {BuildState.BUILD_FAILED, BuildState.PUBLISH_FAILED, BuildState.BLOCKED_BY_FAILED_DEPENDENCY} for state in states.values()):
         return
+    if not states or not all(state == BuildState.BUILD_SUCCEEDED for state in states.values()):
+        return
+    publishable_sources = list(states.keys())
 
     for source in publishable_sources:
         states[source] = BuildState.PUBLISHING

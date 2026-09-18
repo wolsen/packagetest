@@ -61,7 +61,7 @@ def package_operation_commands(
     ubuntu_release: str,
 ) -> list[tuple[list[str], Path]]:
     packaging_checkout_q = quote(str(operation_plan.packaging_checkout_dir))
-    archive_prefix = f"{package.source_package}-{operation_plan.upstream_version}/"
+    archive_prefix = f"{_orig_tarball_basename(package.source_package)}-{operation_plan.upstream_version}/"
     archive_cmd = (
         "git -C "
         f"{quote(str(operation_plan.upstream_checkout_dir))} "

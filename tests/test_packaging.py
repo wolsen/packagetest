@@ -89,6 +89,27 @@ def test_package_operation_commands_cover_milestone_two_steps(tmp_path: Path):
     assert any("dch --distribution noble --newversion 30.0.0~b1-0ubuntu1" in text for text in command_texts)
 
 
+def test_package_operation_commands_use_orig_tarball_basename_for_archive_prefix(tmp_path: Path):
+    package = PackageDefinition(
+        source_package="python-oslo.i18n",
+        binary_packages=["python3-oslo.i18n"],
+        upstream_repo="https://opendev.org/openstack/oslo.i18n",
+        packaging_repo="https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.i18n",
+        branch_mapping={"noble": "ubuntu/noble"},
+    )
+    operation_plan = build_package_operation_plan(
+        package=package,
+        upstream_ref="8.0.0",
+        upstream_version="8.0.0",
+        ubuntu_release="noble",
+        run_dir=tmp_path,
+    )
+
+    commands = package_operation_commands(package=package, operation_plan=operation_plan, ubuntu_release="noble")
+    command_texts = [" ".join(command) for command, _ in commands]
+    assert any("--prefix=oslo.i18n-8.0.0/" in text for text in command_texts)
+
+
 def test_classify_packaging_failure_detects_patch_and_build_failures():
     assert classify_packaging_failure(["bash", "-lc", "check upstream branch"], "", "Missing origin/upstream branch") == "PACKAGING_POLICY_FAILURE"
     assert classify_packaging_failure(["gbp", "pq", "import"], "patch does not apply", "") == "PATCH_APPLY_FAILURE"
