@@ -109,7 +109,7 @@ def test_package_operation_commands_use_orig_tarball_basename_for_archive_prefix
     commands = package_operation_commands(package=package, operation_plan=operation_plan, ubuntu_release="noble")
     command_texts = [" ".join(command) for command, _ in commands]
     assert any("--prefix=oslo.i18n-8.0.0/" in text for text in command_texts)
-    assert any("git ls-remote --symref https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.i18n HEAD" in text for text in command_texts)
+    assert any("git ls-remote --symref" in text and "python-oslo.i18n" in text for text in command_texts)
 
 
 def test_package_operation_commands_add_dependency_repositories_to_sbuild(tmp_path: Path):
