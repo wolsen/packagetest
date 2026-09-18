@@ -358,7 +358,7 @@ def _publish_run_outputs(
     pool_dir.mkdir(parents=True, exist_ok=True)
     for source in publishable_sources:
         source_output_dir = operation_plans[source].packaging_checkout_dir.parent
-        _copy_binary_artifacts_to_pool(source_output_dir, pool_dir)
+        _copy_binary_artifacts_to_pool(source=source, output_dir=source_output_dir, pool_dir=pool_dir)
     for planned_command in apt_repository_commands(publish_dir, plan.ubuntu_release):
         command = ["echo", "DRY-RUN:", *planned_command] if args.dry_run else planned_command
         result = runner.run(command=command, cwd=run_dir if args.dry_run else publish_dir)
@@ -442,9 +442,11 @@ def _iter_artifacts(output_dir: Path, patterns: tuple[str, ...]) -> list[Path]:
     return sorted({path.resolve(): path for path in artifacts}.values(), key=lambda path: path.name)
 
 
-def _copy_binary_artifacts_to_pool(output_dir: Path, pool_dir: Path) -> None:
+def _copy_binary_artifacts_to_pool(*, source: str, output_dir: Path, pool_dir: Path) -> None:
+    source_pool_dir = pool_dir / source
+    source_pool_dir.mkdir(parents=True, exist_ok=True)
     for binary_artifact in _iter_artifacts(output_dir, BINARY_ARTIFACT_PATTERNS):
-        shutil.copy2(binary_artifact, pool_dir / binary_artifact.name)
+        shutil.copy2(binary_artifact, source_pool_dir / binary_artifact.name)
 
 
 def _compute_binary_hashes(output_dir: Path) -> list[str]:

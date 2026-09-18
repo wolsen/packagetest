@@ -364,7 +364,7 @@ def test_publish_run_outputs_publishes_only_packages_with_outputs(tmp_path: Path
 
     assert states["pbr"] == BuildState.PUBLISHED
     assert states["glance"] == BuildState.BUILD_SUCCEEDED
-    assert (tmp_path / "apt-repo" / "pool" / "python3-pbr_5.7.0_all.deb").exists()
+    assert (tmp_path / "apt-repo" / "pool" / "pbr" / "python3-pbr_5.7.0_all.deb").exists()
 
 
 def test_publish_run_outputs_allows_unrelated_failed_package(tmp_path: Path):
@@ -418,7 +418,7 @@ def test_publish_run_outputs_allows_unrelated_failed_package(tmp_path: Path):
 
     assert states["pbr"] == BuildState.PUBLISHED
     assert states["glance"] == BuildState.BUILD_FAILED
-    assert (tmp_path / "apt-repo" / "pool" / "python3-pbr_5.7.0_all.deb").exists()
+    assert (tmp_path / "apt-repo" / "pool" / "pbr" / "python3-pbr_5.7.0_all.deb").exists()
 
 
 def test_discover_dependency_repository_dirs_discovers_nested_apt_repo(tmp_path: Path):
