@@ -31,6 +31,24 @@ def test_build_package_operation_plan_uses_branch_and_debian_version(tmp_path: P
     assert plan.orig_tarball == tmp_path / "glance" / "glance_30.0.0.0rc1.orig.tar.gz"
 
 
+def test_build_package_operation_plan_uses_debian_orig_tarball_basename(tmp_path: Path):
+    plan = build_package_operation_plan(
+        package=PackageDefinition(
+            source_package="python-oslo.i18n",
+            binary_packages=["python3-oslo.i18n"],
+            upstream_repo="https://opendev.org/openstack/oslo.i18n",
+            packaging_repo="https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.i18n",
+            branch_mapping={"noble": "ubuntu/noble"},
+        ),
+        upstream_ref="8.0.0",
+        upstream_version="8.0.0",
+        ubuntu_release="noble",
+        run_dir=tmp_path,
+    )
+
+    assert plan.orig_tarball == tmp_path / "python-oslo.i18n" / "oslo.i18n_8.0.0.orig.tar.gz"
+
+
 def test_build_package_operation_plan_requires_branch_mapping(tmp_path: Path):
     with pytest.raises(ValueError, match="No packaging branch configured"):
         build_package_operation_plan(

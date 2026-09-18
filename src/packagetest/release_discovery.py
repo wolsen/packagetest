@@ -22,7 +22,7 @@ _SERIES_RELEASE_ID_RE = re.compile(r"^\s+release-id:\s+(.+?)\s*$")
 _SERIES_STATUS_RE = re.compile(r"^\s+status:\s+(.+?)\s*$")
 _BRANCH_NAME_RE = re.compile(r"^\s*-\s+name:\s+(.+?)\s*$")
 _BRANCH_LOCATION_RE = re.compile(r"^\s+location:\s+(.+?)\s*$")
-_OPENSTACK_TARGET_RE = re.compile(r"^(?P<release_id>\d+\.\d+)(?:-(?P<stage>b\d+|rc\d+|final))?$")
+_OPENSTACK_TARGET_RE = re.compile(r"^(?P<release_id>(?:\d+\.\d+|[a-z][a-z0-9-]*))(?:-(?P<stage>b\d+|rc\d+|final))?$", re.IGNORECASE)
 _PRERELEASE_RE = re.compile(r"(b\d+|rc\d+)$", re.IGNORECASE)
 
 
@@ -163,13 +163,13 @@ def parse_openstack_target(openstack_target: str) -> ParsedOpenStackTarget:
     match = _OPENSTACK_TARGET_RE.fullmatch(openstack_target)
     if not match:
         raise ReleaseDiscoveryError(f"Unsupported OpenStack target: {openstack_target}")
-    return ParsedOpenStackTarget(release_id=match.group("release_id"), stage=match.group("stage"))
+    return ParsedOpenStackTarget(release_id=match.group("release_id").lower(), stage=match.group("stage"))
 
 
 def resolve_series(series: list[OpenStackSeries], openstack_target: str) -> OpenStackSeries:
     target = parse_openstack_target(openstack_target)
     for entry in series:
-        if entry.release_id == target.release_id or entry.name == target.release_id:
+        if (entry.release_id and entry.release_id.lower() == target.release_id) or entry.name.lower() == target.release_id:
             return entry
     raise ReleaseDiscoveryError(f"Unknown OpenStack series target: {target.release_id}")
 
@@ -351,7 +351,10 @@ class OpenStackReleaseResolver:
                 branch = f"stable/{release_id}"
         query = urlencode({"sha": branch, "until": snapshot_at, "per_page": 1})
         payload = self.fetcher(f"{self.github_api_base_url}/repos/{project_repo}/commits?{query}")
-        commits = json.loads(payload)
+        try:
+            commits = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise ReleaseDiscoveryError(f"Invalid commit API response for {project_repo} at {snapshot_at}") from exc
         if not commits:
             raise ReleaseDiscoveryError(f"No upstream commit found for {project_repo} at {snapshot_at}")
         sha = commits[0].get("sha")

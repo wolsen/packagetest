@@ -21,6 +21,12 @@ class PackageOperationPlan:
     orig_tarball: Path
 
 
+def _orig_tarball_basename(source_package: str) -> str:
+    if source_package.startswith("python-"):
+        return source_package.removeprefix("python-")
+    return source_package
+
+
 def build_package_operation_plan(
     *,
     package: PackageDefinition,
@@ -44,7 +50,7 @@ def build_package_operation_plan(
         workspace_dir=workspace_dir,
         packaging_checkout_dir=packaging_checkout_dir,
         upstream_checkout_dir=upstream_checkout_dir,
-        orig_tarball=workspace_dir / f"{package.source_package}_{upstream_version}.orig.tar.gz",
+        orig_tarball=workspace_dir / f"{_orig_tarball_basename(package.source_package)}_{upstream_version}.orig.tar.gz",
     )
 
 
@@ -122,18 +128,6 @@ def package_operation_commands(
             operation_plan.packaging_checkout_dir,
         ),
         (["gbp", "pq", "import"], operation_plan.packaging_checkout_dir),
-        (
-            [
-                "git",
-                "-C",
-                str(operation_plan.packaging_checkout_dir),
-                "checkout",
-                "-B",
-                operation_plan.packaging_branch,
-                f"origin/{operation_plan.packaging_branch}",
-            ],
-            operation_plan.workspace_dir.parent,
-        ),
         (
             [
                 "dch",

@@ -2,13 +2,13 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-from packagetest.cli import _run_package, plan_cmd
+from packagetest.cli import _run_package, build_cmd, plan_cmd
 from packagetest.commands import CommandRunner
 from packagetest.config import load_package_definitions
 from packagetest.models import BuildState, CommandResult, PackageExecutionMetadata
 from packagetest.packaging import build_package_operation_plan
 from packagetest.planner import build_plan
-from packagetest.release_discovery import ResolvedRelease
+from packagetest.release_discovery import ReleaseDiscoveryError, ResolvedRelease
 
 
 class FailingRunner:
@@ -187,3 +187,51 @@ def test_plan_cmd_outputs_release_resolution(capsys, monkeypatch):
     assert payload["snapshot_at"] == "2026-09-18T05:32:15+00:00"
     assert payload["planned_builds"][0]["resolved_upstream_version"] == "5.7.0"
     assert payload["planned_builds"][0]["resolved_upstream_tag_or_sha"] == "abc123"
+
+
+def test_plan_cmd_surfaces_release_resolution_error(capsys, monkeypatch):
+    repo_root = Path(__file__).resolve().parents[1]
+
+    def fake_resolve(plan, args):
+        return ({}, {"pbr": "boom"})
+
+    monkeypatch.setattr("packagetest.cli._resolve_package_releases", fake_resolve)
+    args = Namespace(
+        config=str(repo_root / "config" / "vertical_slice.json"),
+        openstack_target="2027.1",
+        ubuntu_release="noble",
+        snapshot_at=None,
+        no_dependency_closure=False,
+        sources=["pbr"],
+    )
+
+    assert plan_cmd(args) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["planned_builds"][0]["release_resolution_error"] == "boom"
+
+
+def test_build_cmd_records_release_resolution_failure(tmp_path: Path, monkeypatch, capsys):
+    repo_root = Path(__file__).resolve().parents[1]
+
+    def fake_resolve(self, *, package, openstack_target, snapshot_at=None):
+        raise ReleaseDiscoveryError("release lookup failed")
+
+    monkeypatch.setattr("packagetest.cli.OpenStackReleaseResolver.resolve", fake_resolve)
+    args = Namespace(
+        config=str(repo_root / "config" / "vertical_slice.json"),
+        openstack_target="2027.1",
+        ubuntu_release="noble",
+        snapshot_at=None,
+        no_dependency_closure=True,
+        run_dir=str(tmp_path),
+        dry_run=False,
+        sources=["pbr"],
+    )
+
+    assert build_cmd(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["states"]["pbr"] == "BUILD_FAILED"
+    failure_files = list(tmp_path.glob("gen-*/failures/pbr/failure.json"))
+    assert len(failure_files) == 1
+    failure = json.loads(failure_files[0].read_text(encoding="utf-8"))
+    assert failure["category"] == "SOURCE_GENERATION_FAILURE"
