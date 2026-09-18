@@ -23,8 +23,9 @@ This demonstrates:
 - Debian-versioned changelog update commands for OpenStack targets
 - command-level execution logs
 - generation manifest output
+- staged source/binary build artifacts under each generation
 - failure bundle output (`failure.json`, `analysis.md`, `proposed-fix.patch`)
-- artifact-backed APT repository command generation
+- artifact-backed APT repository publication (`apt-repo/`) for downstream builds
 
 ## Important scope boundaries
 
@@ -58,11 +59,20 @@ packaging build \
   --openstack-target 2026.1 \
   --ubuntu-release noble \
   glance
+
+# Execute real package/source builds (requires Debian packaging toolchain + sbuild setup)
+packaging build \
+  --openstack-target 2026.1 \
+  --ubuntu-release noble \
+  --dependency-repo /path/to/previous-generation \
+  glance
 ```
 
 A run creates a generation directory under `artifacts/` containing:
 
 - `logs/commands.jsonl`
+- `artifacts/<source>/{source,binary}/...`
+- `apt-repo/` (`dists/<ubuntu-release>/main/binary-amd64/Packages*` and `dists/<ubuntu-release>/{Release,InRelease,Release.gpg}` plus `pool/`)
 - `generation-manifest.json`
 - `failures/<source>/...` (if any command fails)
 

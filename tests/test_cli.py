@@ -2,7 +2,7 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-from packagetest.cli import _publish_run_outputs, _run_package, build_cmd, plan_cmd
+from packagetest.cli import _discover_dependency_repository_dirs, _publish_run_outputs, _run_package, build_cmd, plan_cmd
 from packagetest.commands import CommandRunner
 from packagetest.config import load_package_definitions
 from packagetest.models import BuildState, CommandResult, PackageExecutionMetadata
@@ -76,7 +76,7 @@ def test_run_package_dry_run_marks_build_succeeded(tmp_path: Path):
         run_dir=tmp_path,
     )
 
-    _run_package("pbr", plan, args, tmp_path, runner, states, metadata, operation_plan)
+    _run_package("pbr", plan, args, tmp_path, runner, states, metadata, operation_plan, dependency_repository_dirs=[])
 
     assert states["pbr"] == BuildState.BUILD_SUCCEEDED
     assert (tmp_path / "commands.jsonl").exists()
@@ -110,11 +110,48 @@ def test_run_package_without_artifacts_stops_at_build_succeeded(tmp_path: Path):
         run_dir=tmp_path,
     )
 
-    _run_package("pbr", plan, args, tmp_path, runner, states, metadata, operation_plan)
+    _run_package("pbr", plan, args, tmp_path, runner, states, metadata, operation_plan, dependency_repository_dirs=[])
 
     assert states["pbr"] == BuildState.BUILD_FAILED
     assert (tmp_path / "failures" / "pbr" / "failure.json").exists()
     assert metadata.build_finished_at != "unknown"
+
+
+def test_run_package_stages_source_and_binary_artifacts(tmp_path: Path):
+    repo_root = Path(__file__).resolve().parents[1]
+    definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
+    plan = build_plan(
+        definitions=definitions,
+        requested_sources=["pbr"],
+        openstack_target="2027.1-b1",
+        ubuntu_release="noble",
+    )
+    states = {"pbr": BuildState.BUILDING}
+    args = Namespace(dry_run=False)
+    runner = SuccessfulRunner()
+    metadata = PackageExecutionMetadata(
+        upstream_tag_or_sha="2027.1-b1",
+        upstream_version="unknown",
+        packaging_branch="master",
+    )
+    operation_plan = build_package_operation_plan(
+        package=plan.planned_builds[0].package,
+        upstream_ref="5.7.0",
+        upstream_version="5.7.0",
+        ubuntu_release=plan.ubuntu_release,
+        run_dir=tmp_path,
+    )
+    output_dir = operation_plan.packaging_checkout_dir.parent
+    output_dir.mkdir(parents=True)
+    (output_dir / "pbr_5.7.0.dsc").write_text("source", encoding="utf-8")
+    (output_dir / "python3-pbr_5.7.0_all.deb").write_text("binary", encoding="utf-8")
+
+    _run_package("pbr", plan, args, tmp_path, runner, states, metadata, operation_plan, dependency_repository_dirs=[])
+
+    assert states["pbr"] == BuildState.BUILD_SUCCEEDED
+    assert (tmp_path / "artifacts" / "pbr" / "source" / "pbr_5.7.0.dsc").exists()
+    assert (tmp_path / "artifacts" / "pbr" / "binary" / "python3-pbr_5.7.0_all.deb").exists()
+    assert len(metadata.generated_binary_hashes) == 1
 
 
 def test_run_package_failure_writes_bundle(tmp_path: Path):
@@ -142,7 +179,7 @@ def test_run_package_failure_writes_bundle(tmp_path: Path):
         run_dir=tmp_path,
     )
 
-    _run_package("pbr", plan, args, tmp_path, runner, states, metadata, operation_plan)
+    _run_package("pbr", plan, args, tmp_path, runner, states, metadata, operation_plan, dependency_repository_dirs=[])
 
     assert states["pbr"] == BuildState.BUILD_FAILED
     assert (tmp_path / "failures" / "pbr" / "failure.json").exists()
@@ -225,6 +262,7 @@ def test_build_cmd_records_release_resolution_failure(tmp_path: Path, monkeypatc
         no_dependency_closure=True,
         run_dir=str(tmp_path),
         dry_run=False,
+        dependency_repo=[],
         sources=["pbr"],
     )
 
@@ -266,6 +304,7 @@ def test_build_cmd_skips_publish_without_outputs(tmp_path: Path, monkeypatch, ca
         no_dependency_closure=True,
         run_dir=str(tmp_path),
         dry_run=True,
+        dependency_repo=[],
         sources=["pbr"],
     )
 
@@ -319,11 +358,15 @@ def test_publish_run_outputs_publishes_only_packages_with_outputs(tmp_path: Path
     }
     (tmp_path / "pbr").mkdir(parents=True)
     (tmp_path / "pbr" / "pbr_5.7.0.dsc").write_text("", encoding="utf-8")
+    (tmp_path / "pbr" / "python3-pbr_5.7.0_all.deb").write_text("", encoding="utf-8")
+    (tmp_path / "artifacts" / "pbr" / "binary").mkdir(parents=True)
+    (tmp_path / "artifacts" / "pbr" / "binary" / "python3-pbr_5.7.0_all.deb").write_text("", encoding="utf-8")
 
     _publish_run_outputs(plan, args, tmp_path, runner, states, metadata, operation_plans)
 
     assert states["pbr"] == BuildState.PUBLISHED
     assert states["glance"] == BuildState.BUILD_SUCCEEDED
+    assert (tmp_path / "apt-repo" / "pool" / "pbr" / "python3-pbr_5.7.0_all.deb").exists()
 
 
 def test_publish_run_outputs_allows_unrelated_failed_package(tmp_path: Path):
@@ -371,8 +414,24 @@ def test_publish_run_outputs_allows_unrelated_failed_package(tmp_path: Path):
     }
     (tmp_path / "pbr").mkdir(parents=True)
     (tmp_path / "pbr" / "pbr_5.7.0.dsc").write_text("", encoding="utf-8")
+    (tmp_path / "pbr" / "python3-pbr_5.7.0_all.deb").write_text("", encoding="utf-8")
+    (tmp_path / "artifacts" / "pbr" / "binary").mkdir(parents=True)
+    (tmp_path / "artifacts" / "pbr" / "binary" / "python3-pbr_5.7.0_all.deb").write_text("", encoding="utf-8")
 
     _publish_run_outputs(plan, args, tmp_path, runner, states, metadata, operation_plans)
 
     assert states["pbr"] == BuildState.PUBLISHED
     assert states["glance"] == BuildState.BUILD_FAILED
+    assert (tmp_path / "apt-repo" / "pool" / "pbr" / "python3-pbr_5.7.0_all.deb").exists()
+
+
+def test_discover_dependency_repository_dirs_discovers_nested_apt_repo(tmp_path: Path):
+    apt_repo = tmp_path / "upstream-generation" / "gen-1" / "apt-repo"
+    dists_binary = apt_repo / "dists" / "noble" / "main" / "binary-amd64"
+    dists_binary.mkdir(parents=True)
+    (apt_repo / "dists" / "noble" / "Release").write_text("", encoding="utf-8")
+    (dists_binary / "Packages").write_text("", encoding="utf-8")
+
+    repositories = _discover_dependency_repository_dirs([str(tmp_path / "upstream-generation")])
+
+    assert repositories == [apt_repo.resolve()]

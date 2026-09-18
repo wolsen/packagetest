@@ -110,6 +110,28 @@ def test_package_operation_commands_use_orig_tarball_basename_for_archive_prefix
     assert any("--prefix=oslo.i18n-8.0.0/" in text for text in command_texts)
 
 
+def test_package_operation_commands_add_dependency_repositories_to_sbuild(tmp_path: Path):
+    operation_plan = build_package_operation_plan(
+        package=_package_definition(),
+        upstream_ref="30.0.0.0b1",
+        upstream_version="30.0.0.0b1",
+        ubuntu_release="noble",
+        run_dir=tmp_path,
+    )
+    dependency_repo = tmp_path / "dependency" / "apt-repo"
+    dependency_repo.mkdir(parents=True)
+
+    commands = package_operation_commands(
+        package=_package_definition(),
+        operation_plan=operation_plan,
+        ubuntu_release="noble",
+        dependency_repository_paths=[dependency_repo],
+    )
+    command_texts = [" ".join(command) for command, _ in commands]
+
+    assert any("--extra-repository='deb [trusted=yes] file://" in text for text in command_texts)
+
+
 def test_classify_packaging_failure_detects_patch_and_build_failures():
     assert classify_packaging_failure(["bash", "-lc", "check upstream branch"], "", "Missing origin/upstream branch") == "PACKAGING_POLICY_FAILURE"
     assert classify_packaging_failure(["gbp", "pq", "import"], "patch does not apply", "") == "PATCH_APPLY_FAILURE"

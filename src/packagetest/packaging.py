@@ -59,9 +59,11 @@ def package_operation_commands(
     package: PackageDefinition,
     operation_plan: PackageOperationPlan,
     ubuntu_release: str,
+    dependency_repository_paths: list[Path] | None = None,
 ) -> list[tuple[list[str], Path]]:
     packaging_checkout_q = quote(str(operation_plan.packaging_checkout_dir))
     archive_prefix = f"{_orig_tarball_basename(package.source_package)}-{operation_plan.upstream_version}/"
+    dependency_repository_paths = dependency_repository_paths or []
     archive_cmd = (
         "git -C "
         f"{quote(str(operation_plan.upstream_checkout_dir))} "
@@ -78,6 +80,15 @@ def package_operation_commands(
         f"git -C {packaging_checkout_q} checkout -B pristine-tar origin/pristine-tar; "
         f"else echo 'Missing origin/pristine-tar branch' >&2; exit 1; fi"
     )
+    extra_repo_args = " ".join(
+        f"--extra-repository={quote(f'deb [trusted=yes] file://{repo.resolve()} {ubuntu_release} main')}"
+        for repo in dependency_repository_paths
+    )
+    sbuild_command = f"sbuild --dist={quote(ubuntu_release)} --build=source+all+any"
+    if extra_repo_args:
+        sbuild_command = f"{sbuild_command} {extra_repo_args}"
+    sbuild_command = f"{sbuild_command} ../*.dsc"
+
     return [
         (["rm", "-rf", str(operation_plan.workspace_dir)], operation_plan.workspace_dir.parent),
         (["mkdir", "-p", str(operation_plan.workspace_dir)], operation_plan.workspace_dir.parent),
@@ -154,7 +165,7 @@ def package_operation_commands(
             [
                 "bash",
                 "-lc",
-                f"sbuild --dist={quote(ubuntu_release)} --build=source+all+any ../*.dsc",
+                sbuild_command,
             ],
             operation_plan.packaging_checkout_dir,
         ),
