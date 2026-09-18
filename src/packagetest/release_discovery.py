@@ -3,8 +3,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Callable
 from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
+from urllib.request import Request, build_opener
 
 from .models import PackageDefinition
 
@@ -26,6 +27,30 @@ class ReleaseDiscoveryError(ValueError):
 
 class ReleaseNotFoundError(ReleaseDiscoveryError):
     pass
+
+
+class HTTPTextClient:
+    def __init__(self, *, timeout: int = 30, retries: int = 2, user_agent: str = "packagetest/0.1") -> None:
+        self.timeout = timeout
+        self.retries = retries
+        self.user_agent = user_agent
+        self.opener = build_opener()
+
+    def fetch(self, url: str) -> str:
+        request = Request(url, headers={"User-Agent": self.user_agent})
+        last_error: URLError | None = None
+        for _ in range(self.retries):
+            try:
+                with self.opener.open(request, timeout=self.timeout) as response:
+                    return response.read().decode("utf-8")
+            except HTTPError as exc:
+                if exc.code == 404:
+                    raise ReleaseNotFoundError(f"Failed to fetch {url}: HTTP 404") from exc
+                raise ReleaseDiscoveryError(f"Failed to fetch {url}: HTTP {exc.code}") from exc
+            except URLError as exc:
+                last_error = exc
+        reason = last_error.reason if last_error is not None else "unknown error"
+        raise ReleaseDiscoveryError(f"Failed to fetch {url}: {reason}")
 
 
 @dataclass(frozen=True)
@@ -55,15 +80,7 @@ class ResolvedRelease:
 
 
 def read_text_from_url(url: str) -> str:
-    try:
-        with urlopen(url, timeout=30) as response:
-            return response.read().decode("utf-8")
-    except HTTPError as exc:
-        if exc.code == 404:
-            raise ReleaseNotFoundError(f"Failed to fetch {url}: HTTP 404") from exc
-        raise ReleaseDiscoveryError(f"Failed to fetch {url}: HTTP {exc.code}") from exc
-    except URLError as exc:
-        raise ReleaseDiscoveryError(f"Failed to fetch {url}: {exc.reason}") from exc
+    return HTTPTextClient().fetch(url)
 
 
 def parse_series_status_yaml(content: str) -> list[OpenStackSeries]:
@@ -106,24 +123,24 @@ def releases_from_deliverable_yaml(content: str) -> list[OpenStackRelease]:
     current: OpenStackRelease | None = None
     pending_project_repo: str | None = None
     for line in content.splitlines():
-        m = _VERSION_RE.match(line)
-        if m:
+        version_match = _VERSION_RE.match(line)
+        if version_match:
             if current is not None:
                 releases.append(current)
-            current = OpenStackRelease(version=m.group(1).strip(), project_repo=None, project_hash=None)
+            current = OpenStackRelease(version=version_match.group(1).strip(), project_repo=None, project_hash=None)
             pending_project_repo = None
             continue
-        r = _REPO_RE.match(line)
-        if r and current is not None:
-            pending_project_repo = r.group(1).strip()
+        repo_match = _REPO_RE.match(line)
+        if repo_match and current is not None:
+            pending_project_repo = repo_match.group(1).strip()
             continue
-        h = _HASH_RE.match(line)
-        if h and current is not None:
+        hash_match = _HASH_RE.match(line)
+        if hash_match and current is not None:
             if pending_project_repo and current.project_repo is None:
                 current = OpenStackRelease(
                     version=current.version,
                     project_repo=pending_project_repo,
-                    project_hash=h.group(1).strip(),
+                    project_hash=hash_match.group(1).strip(),
                 )
             pending_project_repo = None
     if current is not None:
@@ -149,10 +166,7 @@ def parse_openstack_target(openstack_target: str) -> ParsedOpenStackTarget:
     match = _OPENSTACK_TARGET_RE.fullmatch(openstack_target)
     if not match:
         raise ReleaseDiscoveryError(f"Unsupported OpenStack target: {openstack_target}")
-    return ParsedOpenStackTarget(
-        release_id=match.group("release_id"),
-        stage=match.group("stage"),
-    )
+    return ParsedOpenStackTarget(release_id=match.group("release_id"), stage=match.group("stage"))
 
 
 def resolve_release_from_deliverable_yaml(
@@ -175,7 +189,7 @@ def resolve_release_from_deliverable_yaml(
         raise ReleaseDiscoveryError(f"No stable release found for target: {openstack_target}")
     if parsed_target.stage == "final":
         if stable_releases:
-            return stable_releases[0]
+            return stable_releases[-1]
         raise ReleaseDiscoveryError(f"No final release found for target: {openstack_target}")
     for release in releases:
         if release.version.lower().endswith(parsed_target.stage.lower()):
@@ -205,16 +219,20 @@ class OpenStackReleaseResolver:
         self,
         *,
         base_url: str = DEFAULT_OPENSTACK_RELEASES_BASE_URL,
-        fetcher: callable = read_text_from_url,
+        fetcher: Callable[[str], str] = read_text_from_url,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.fetcher = fetcher
         self._series_status: list[OpenStackSeries] | None = None
         self._deliverable_cache: dict[str, str] = {}
+        self._resolved_cache: dict[tuple[str, str, str | None], ResolvedRelease] = {}
 
     def resolve(self, *, package: PackageDefinition, openstack_target: str, snapshot_at: str | None = None) -> ResolvedRelease:
         snapshot_at = validate_snapshot_at(snapshot_at)
         deliverable_name = derive_deliverable_name(package)
+        cache_key = (deliverable_name, openstack_target, snapshot_at)
+        if cache_key in self._resolved_cache:
+            return self._resolved_cache[cache_key]
         series = self._series_status_entries()
         resolved_series = resolve_series(series, openstack_target)
         deliverable_path, content = self._fetch_deliverable(resolved_series.name, deliverable_name)
@@ -224,7 +242,7 @@ class OpenStackReleaseResolver:
             deliverable_scope=deliverable_path.split("/")[-2],
         )
         upstream_ref = release.project_hash if snapshot_at and release.project_hash else release.version
-        return ResolvedRelease(
+        resolved_release = ResolvedRelease(
             series=resolved_series.name,
             release_id=resolved_series.release_id,
             version=release.version,
@@ -234,6 +252,8 @@ class OpenStackReleaseResolver:
             snapshot_at=snapshot_at,
             deliverable_path=deliverable_path,
         )
+        self._resolved_cache[cache_key] = resolved_release
+        return resolved_release
 
     def _series_status_entries(self) -> list[OpenStackSeries]:
         if self._series_status is None:

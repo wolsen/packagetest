@@ -75,7 +75,7 @@ def test_parse_series_status_yaml_reads_release_ids():
 def test_resolve_release_from_deliverable_yaml_supports_stage_targets():
     assert resolve_release_from_deliverable_yaml(SERIES_DELIVERABLE, openstack_target="2027.1-b1", deliverable_scope="indri").version == "31.0.0.0b1"
     assert resolve_release_from_deliverable_yaml(SERIES_DELIVERABLE, openstack_target="2027.1-rc1", deliverable_scope="indri").version == "31.0.0.0rc1"
-    assert resolve_release_from_deliverable_yaml(SERIES_DELIVERABLE, openstack_target="2027.1-final", deliverable_scope="indri").version == "31.0.0"
+    assert resolve_release_from_deliverable_yaml(SERIES_DELIVERABLE, openstack_target="2027.1-final", deliverable_scope="indri").version == "31.1.0"
     assert resolve_release_from_deliverable_yaml(SERIES_DELIVERABLE, openstack_target="2027.1", deliverable_scope="indri").version == "31.1.0"
 
 
@@ -135,6 +135,32 @@ def test_resolver_falls_back_to_independent_deliverable():
     assert release.version == "5.7.0"
     assert release.upstream_ref == "5.7.0"
     assert release.deliverable_path == "deliverables/_independent/pbr.yaml"
+
+
+def test_resolver_caches_release_by_deliverable_target_and_snapshot():
+    package = PackageDefinition(
+        source_package="glance",
+        binary_packages=["glance"],
+        upstream_repo="https://opendev.org/openstack/glance",
+        packaging_repo="https://example.invalid/glance",
+    )
+    calls: list[str] = []
+
+    def fetcher(url: str) -> str:
+        calls.append(url)
+        if url.endswith("/data/series_status.yaml"):
+            return SERIES_STATUS
+        if url.endswith("/deliverables/indri/glance.yaml"):
+            return SERIES_DELIVERABLE
+        raise ReleaseDiscoveryError(f"unexpected url: {url}")
+
+    resolver = OpenStackReleaseResolver(base_url="https://example.invalid", fetcher=fetcher)
+    first = resolver.resolve(package=package, openstack_target="2027.1")
+    second = resolver.resolve(package=package, openstack_target="2027.1")
+
+    assert first == second
+    assert calls.count("https://example.invalid/data/series_status.yaml") == 1
+    assert calls.count("https://example.invalid/deliverables/indri/glance.yaml") == 1
 
 
 def test_resolver_rejects_invalid_snapshot_timestamp():
