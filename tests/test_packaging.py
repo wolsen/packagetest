@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest
-
 from packagetest.models import PackageDefinition
 from packagetest.packaging import build_package_operation_plan, classify_packaging_failure, package_operation_commands
 
