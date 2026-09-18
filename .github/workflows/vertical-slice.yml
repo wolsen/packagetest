@@ -50,9 +50,13 @@ jobs:
           python-version: "3.11"
       - name: Install project
         run: python -m pip install -e .
-      - name: Build pbr (dry-run orchestration)
+      - name: Install packaging toolchain
         run: |
-          packaging build --dry-run \
+          sudo apt-get update
+          sudo apt-get install -y devscripts git-buildpackage pristine-tar sbuild apt-utils
+      - name: Build pbr
+        run: |
+          packaging build \
             --openstack-target "${{ inputs.openstack_target }}" \
             --ubuntu-release "${{ inputs.ubuntu_release }}" \
             --no-dependency-closure \
@@ -84,11 +88,16 @@ jobs:
           python-version: "3.11"
       - name: Install project
         run: python -m pip install -e .
-      - name: Build oslo package (dry-run orchestration)
+      - name: Install packaging toolchain
         run: |
-          packaging build --dry-run \
+          sudo apt-get update
+          sudo apt-get install -y devscripts git-buildpackage pristine-tar sbuild apt-utils
+      - name: Build oslo package
+        run: |
+          packaging build \
             --openstack-target "${{ inputs.openstack_target }}" \
             --ubuntu-release "${{ inputs.ubuntu_release }}" \
+            --dependency-repo upstream-generation \
             --no-dependency-closure \
             "${{ matrix.source_package }}"
       - uses: actions/upload-artifact@v4
@@ -115,11 +124,16 @@ jobs:
           python-version: "3.11"
       - name: Install project
         run: python -m pip install -e .
-      - name: Build glance (dry-run orchestration)
+      - name: Install packaging toolchain
         run: |
-          packaging build --dry-run \
+          sudo apt-get update
+          sudo apt-get install -y devscripts git-buildpackage pristine-tar sbuild apt-utils
+      - name: Build glance
+        run: |
+          packaging build \
             --openstack-target "${{ inputs.openstack_target }}" \
             --ubuntu-release "${{ inputs.ubuntu_release }}" \
+            --dependency-repo upstream-generation \
             --no-dependency-closure \
             glance
       - uses: actions/upload-artifact@v4

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import shutil
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
@@ -18,6 +20,9 @@ from .release_discovery import OpenStackReleaseResolver, ReleaseDiscoveryError, 
 from .repository import apt_repository_commands
 from .scheduler import mark_state, next_ready_packages
 from .versioning import openstack_target_to_upstream_version, upstream_version_to_debian_version
+
+SOURCE_ARTIFACT_PATTERNS = ("*.dsc", "*.orig.tar.*", "*.debian.tar.*", "*.changes", "*.buildinfo")
+BINARY_ARTIFACT_PATTERNS = ("*.deb", "*.udeb", "*.ddeb")
 
 
 def _default_config_path() -> Path:
@@ -68,6 +73,7 @@ def build_cmd(args: argparse.Namespace) -> int:
     artifacts_dir = run_dir / "artifacts"
     logs_dir.mkdir(parents=True, exist_ok=True)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
+    dependency_repository_dirs = _discover_dependency_repository_dirs(args.dependency_repo)
 
     states = initial_states(plan)
     resolved_releases, release_resolution_errors = _resolve_package_releases(plan, args)
@@ -124,7 +130,17 @@ def build_cmd(args: argparse.Namespace) -> int:
                     _classify_preparation_failure(operation_plan_errors[source]),
                 )
                 continue
-            _run_package(source, plan, args, run_dir, runner, states, package_metadata[source], operation_plans[source])
+            _run_package(
+                source,
+                plan,
+                args,
+                run_dir,
+                runner,
+                states,
+                package_metadata[source],
+                operation_plans[source],
+                dependency_repository_dirs=dependency_repository_dirs,
+            )
     _publish_run_outputs(plan, args, run_dir, runner, states, package_metadata, operation_plans)
 
     manifests: list[PackageManifest] = []
@@ -175,6 +191,7 @@ def _run_package(
     states: dict[str, BuildState],
     metadata: PackageExecutionMetadata,
     operation_plan: PackageOperationPlan,
+    dependency_repository_dirs: list[Path],
 ) -> None:
     package = next(p.package for p in plan.planned_builds if p.source_package == source)
     metadata.upstream_version = operation_plan.upstream_version
@@ -187,6 +204,7 @@ def _run_package(
         package=package,
         operation_plan=operation_plan,
         ubuntu_release=plan.ubuntu_release,
+        dependency_repository_paths=dependency_repository_dirs if package.build_depends_on_sources else [],
     )
     for command, cwd in commands:
         planned_command = command
@@ -251,6 +269,13 @@ def _run_package(
             },
         )
         return
+    if not args.dry_run:
+        metadata.generated_binary_hashes = _compute_binary_hashes(operation_plan.packaging_checkout_dir.parent)
+        _stage_package_artifacts(
+            source=source,
+            output_dir=operation_plan.packaging_checkout_dir.parent,
+            run_dir=run_dir,
+        )
     metadata.build_finished_at = datetime.now(UTC).isoformat()
     states[source] = BuildState.BUILD_SUCCEEDED
 
@@ -329,6 +354,11 @@ def _publish_run_outputs(
 
     publish_dir = run_dir / "apt-repo"
     publish_dir.mkdir(parents=True, exist_ok=True)
+    pool_dir = publish_dir / "pool"
+    pool_dir.mkdir(parents=True, exist_ok=True)
+    for source in publishable_sources:
+        source_output_dir = operation_plans[source].packaging_checkout_dir.parent
+        _copy_binary_artifacts_to_pool(source_output_dir, pool_dir)
     for planned_command in apt_repository_commands(publish_dir, plan.ubuntu_release):
         command = ["echo", "DRY-RUN:", *planned_command] if args.dry_run else planned_command
         result = runner.run(command=command, cwd=run_dir if args.dry_run else publish_dir)
@@ -381,8 +411,64 @@ def _write_package_failure(
     )
 
 
+def _discover_dependency_repository_dirs(raw_paths: list[str]) -> list[Path]:
+    discovered: list[Path] = []
+    for raw_path in raw_paths:
+        root = Path(raw_path)
+        if not root.exists():
+            continue
+        candidates = [root]
+        candidates.extend(path for path in root.rglob("apt-repo") if path.is_dir())
+        for candidate in candidates:
+            if not candidate.is_dir():
+                continue
+            if (candidate / "Release").exists() and (candidate / "Packages").exists():
+                resolved = candidate.resolve()
+                if resolved not in discovered:
+                    discovered.append(resolved)
+    return discovered
+
+
+def _iter_artifacts(output_dir: Path, patterns: tuple[str, ...]) -> list[Path]:
+    artifacts: list[Path] = []
+    for pattern in patterns:
+        artifacts.extend(sorted(output_dir.glob(pattern)))
+    return sorted({path.resolve(): path for path in artifacts}.values(), key=lambda path: path.name)
+
+
+def _copy_binary_artifacts_to_pool(output_dir: Path, pool_dir: Path) -> None:
+    for binary_artifact in _iter_artifacts(output_dir, BINARY_ARTIFACT_PATTERNS):
+        shutil.copy2(binary_artifact, pool_dir / binary_artifact.name)
+
+
+def _compute_binary_hashes(output_dir: Path) -> list[str]:
+    hashes: list[str] = []
+    for binary_artifact in _iter_artifacts(output_dir, BINARY_ARTIFACT_PATTERNS):
+        digest = hashlib.sha256(binary_artifact.read_bytes()).hexdigest()
+        hashes.append(f"sha256:{digest}")
+    return hashes
+
+
+def _stage_package_artifacts(*, source: str, output_dir: Path, run_dir: Path) -> None:
+    source_artifacts = _iter_artifacts(output_dir, SOURCE_ARTIFACT_PATTERNS)
+    binary_artifacts = _iter_artifacts(output_dir, BINARY_ARTIFACT_PATTERNS)
+    destination_root = run_dir / "artifacts" / source
+    destination_source_dir = destination_root / "source"
+    destination_binary_dir = destination_root / "binary"
+    destination_source_dir.mkdir(parents=True, exist_ok=True)
+    destination_binary_dir.mkdir(parents=True, exist_ok=True)
+    for artifact in source_artifacts:
+        shutil.copy2(artifact, destination_source_dir / artifact.name)
+    for artifact in binary_artifacts:
+        shutil.copy2(artifact, destination_binary_dir / artifact.name)
+
+
 def _package_has_publishable_outputs(output_dir: Path) -> bool:
-    return output_dir.exists() and any(output_dir.glob("*.dsc"))
+    if not output_dir.exists():
+        return False
+    has_source = any(output_dir.glob("*.dsc"))
+    has_binary = any(output_dir.glob("*.deb")) or any(output_dir.glob("*.udeb")) or any(output_dir.glob("*.ddeb"))
+    return has_source and has_binary
 
 
 def _resolve_package_releases(
@@ -441,6 +527,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_build.add_argument("--snapshot-at")
     p_build.add_argument("--run-dir", default="artifacts")
     p_build.add_argument("--dry-run", action="store_true", default=False)
+    p_build.add_argument(
+        "--dependency-repo",
+        action="append",
+        default=[],
+        help="Path containing previously published apt-repo artifacts to expose to sbuild.",
+    )
     p_build.add_argument(
         "--no-dependency-closure",
         action="store_true",

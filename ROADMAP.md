@@ -23,9 +23,9 @@
 
 ## Milestone 3 — Real source and binary builds
 
-- [ ] Generate source packages and build binaries with `sbuild` on GitHub-hosted runners.
-- [ ] Persist source/binary artifacts and logs as generation-scoped artifacts.
-- [ ] Ensure dependent builds consume prior-generation packages through standard APT semantics.
+- [x] Generate source packages and build binaries with `sbuild` on GitHub-hosted runners.
+- [x] Persist source/binary artifacts and logs as generation-scoped artifacts.
+- [x] Ensure dependent builds consume prior-generation packages through standard APT semantics.
 
 ## Milestone 4 — Failure intelligence
 
