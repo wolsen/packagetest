@@ -140,3 +140,10 @@ def test_plan_records_snapshot_timestamp(tmp_path):
         snapshot_at="2026-09-18T05:32:15+00:00",
     )
     assert plan.snapshot_at == "2026-09-18T05:32:15+00:00"
+
+
+def test_vertical_slice_config_uses_explicit_pbr_packaging_repo():
+    repo_root = Path(__file__).resolve().parents[1]
+    definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
+
+    assert definitions["pbr"].packaging_repo == "https://git.launchpad.net/ubuntu/+source/python-pbr"
