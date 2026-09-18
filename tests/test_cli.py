@@ -288,8 +288,18 @@ def test_publish_run_outputs_publishes_only_packages_with_outputs(tmp_path: Path
     runner = CommandRunner(log_path=tmp_path / "commands.jsonl")
     states = {"pbr": BuildState.BUILD_SUCCEEDED, "glance": BuildState.BUILD_SUCCEEDED}
     metadata = {
-        "pbr": PackageExecutionMetadata(upstream_tag_or_sha="5.7.0", upstream_version="5.7.0", packaging_branch="master"),
-        "glance": PackageExecutionMetadata(upstream_tag_or_sha="31.1.0", upstream_version="31.1.0", packaging_branch="master"),
+        "pbr": PackageExecutionMetadata(
+            upstream_tag_or_sha="5.7.0",
+            upstream_version="5.7.0",
+            packaging_branch="master",
+            build_output_dir=str(tmp_path / "pbr"),
+        ),
+        "glance": PackageExecutionMetadata(
+            upstream_tag_or_sha="31.1.0",
+            upstream_version="31.1.0",
+            packaging_branch="master",
+            build_output_dir=str(tmp_path / "glance"),
+        ),
     }
     (tmp_path / "pbr").mkdir(parents=True)
     (tmp_path / "pbr" / "pbr_5.7.0.dsc").write_text("", encoding="utf-8")
@@ -314,8 +324,18 @@ def test_publish_run_outputs_allows_unrelated_failed_package(tmp_path: Path):
     runner = CommandRunner(log_path=tmp_path / "commands.jsonl")
     states = {"pbr": BuildState.BUILD_SUCCEEDED, "glance": BuildState.BUILD_FAILED}
     metadata = {
-        "pbr": PackageExecutionMetadata(upstream_tag_or_sha="5.7.0", upstream_version="5.7.0", packaging_branch="master"),
-        "glance": PackageExecutionMetadata(upstream_tag_or_sha="31.1.0", upstream_version="31.1.0", packaging_branch="master"),
+        "pbr": PackageExecutionMetadata(
+            upstream_tag_or_sha="5.7.0",
+            upstream_version="5.7.0",
+            packaging_branch="master",
+            build_output_dir=str(tmp_path / "pbr"),
+        ),
+        "glance": PackageExecutionMetadata(
+            upstream_tag_or_sha="31.1.0",
+            upstream_version="31.1.0",
+            packaging_branch="master",
+            build_output_dir=str(tmp_path / "glance"),
+        ),
     }
     (tmp_path / "pbr").mkdir(parents=True)
     (tmp_path / "pbr" / "pbr_5.7.0.dsc").write_text("", encoding="utf-8")

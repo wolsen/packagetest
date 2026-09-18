@@ -104,6 +104,7 @@ def build_cmd(args: argparse.Namespace) -> int:
             operation_plan_errors[item.source_package] = str(exc)
         else:
             metadata.packaging_branch = operation_plans[item.source_package].packaging_branch
+            metadata.build_output_dir = str(operation_plans[item.source_package].packaging_checkout_dir.parent)
 
     runner = CommandRunner(log_path=logs_dir / "commands.jsonl")
     while any(state == BuildState.WAITING_FOR_DEPENDENCY for state in states.values()):
@@ -179,6 +180,7 @@ def _run_package(
     metadata.upstream_version = operation_plan.upstream_version
     metadata.generated_debian_version = operation_plan.generated_debian_version
     metadata.packaging_branch = operation_plan.packaging_branch
+    metadata.build_output_dir = str(operation_plan.packaging_checkout_dir.parent)
     metadata.build_started_at = datetime.now(UTC).isoformat()
 
     commands = package_operation_commands(
@@ -218,12 +220,12 @@ def _run_package(
             return
 
     states[source] = BuildState.BUILD_SUCCEEDED
-    if not args.dry_run and not any(operation_plan.packaging_checkout_dir.parent.glob("*.dsc")):
+    if not args.dry_run and not _package_has_publishable_outputs(Path(metadata.build_output_dir)):
         states[source] = BuildState.BUILD_FAILED
         metadata.build_finished_at = datetime.now(UTC).isoformat()
         result = CommandResult(
             command=["verify-build-output"],
-            cwd=str(operation_plan.packaging_checkout_dir.parent),
+            cwd=metadata.build_output_dir,
             env_diff={},
             stdout="",
             stderr="Expected source package artifact (*.dsc) was not produced.",
@@ -313,7 +315,9 @@ def _publish_run_outputs(
     if not states:
         return
     publishable_sources = [
-        source for source, state in states.items() if state == BuildState.BUILD_SUCCEEDED and _package_has_publishable_outputs(run_dir, source)
+        source
+        for source, state in states.items()
+        if state == BuildState.BUILD_SUCCEEDED and _package_has_publishable_outputs(Path(package_metadata[source].build_output_dir))
     ]
     if not publishable_sources:
         return
@@ -375,8 +379,8 @@ def _write_package_failure(
     )
 
 
-def _package_has_publishable_outputs(run_dir: Path, source: str) -> bool:
-    return any((run_dir / source).glob("*.dsc"))
+def _package_has_publishable_outputs(output_dir: Path) -> bool:
+    return output_dir.exists() and any(output_dir.glob("*.dsc"))
 
 
 def _resolve_package_releases(

@@ -125,6 +125,7 @@ class PackageExecutionMetadata:
     upstream_tag_or_sha: str
     upstream_version: str
     packaging_branch: str
+    build_output_dir: str = "unknown"
     packaging_base_sha: str = "unknown"
     generated_debian_version: str = "unknown"
     source_hashes: list[str] = field(default_factory=list)
