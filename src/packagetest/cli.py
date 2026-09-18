@@ -466,9 +466,7 @@ def _stage_package_artifacts(*, source: str, output_dir: Path, run_dir: Path) ->
 def _package_has_publishable_outputs(output_dir: Path) -> bool:
     if not output_dir.exists():
         return False
-    has_source = any(output_dir.glob("*.dsc"))
-    has_binary = any(output_dir.glob("*.deb")) or any(output_dir.glob("*.udeb")) or any(output_dir.glob("*.ddeb"))
-    return has_source and has_binary
+    return any(output_dir.glob("*.dsc"))
 
 
 def _resolve_package_releases(

@@ -53,7 +53,12 @@ jobs:
       - name: Install packaging toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y devscripts git-buildpackage pristine-tar sbuild apt-utils
+          sudo apt-get install -y devscripts git-buildpackage pristine-tar sbuild apt-utils ubuntu-dev-tools debootstrap
+      - name: Prepare sbuild chroot
+        run: |
+          sudo sbuild-adduser "$USER"
+          sudo mkdir -p /srv/chroot
+          sudo sbuild-createchroot --arch=amd64 "${{ inputs.ubuntu_release }}" "/srv/chroot/${{ inputs.ubuntu_release }}-amd64" http://archive.ubuntu.com/ubuntu/
       - name: Build pbr
         run: |
           packaging build \
@@ -91,7 +96,12 @@ jobs:
       - name: Install packaging toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y devscripts git-buildpackage pristine-tar sbuild apt-utils
+          sudo apt-get install -y devscripts git-buildpackage pristine-tar sbuild apt-utils ubuntu-dev-tools debootstrap
+      - name: Prepare sbuild chroot
+        run: |
+          sudo sbuild-adduser "$USER"
+          sudo mkdir -p /srv/chroot
+          sudo sbuild-createchroot --arch=amd64 "${{ inputs.ubuntu_release }}" "/srv/chroot/${{ inputs.ubuntu_release }}-amd64" http://archive.ubuntu.com/ubuntu/
       - name: Build oslo package
         run: |
           packaging build \
@@ -127,7 +137,12 @@ jobs:
       - name: Install packaging toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y devscripts git-buildpackage pristine-tar sbuild apt-utils
+          sudo apt-get install -y devscripts git-buildpackage pristine-tar sbuild apt-utils ubuntu-dev-tools debootstrap
+      - name: Prepare sbuild chroot
+        run: |
+          sudo sbuild-adduser "$USER"
+          sudo mkdir -p /srv/chroot
+          sudo sbuild-createchroot --arch=amd64 "${{ inputs.ubuntu_release }}" "/srv/chroot/${{ inputs.ubuntu_release }}-amd64" http://archive.ubuntu.com/ubuntu/
       - name: Build glance
         run: |
           packaging build \
