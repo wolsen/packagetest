@@ -151,7 +151,7 @@ def _run_package(
         if args.dry_run:
             command = ["echo", "DRY-RUN:", *command]
         result = runner.run(command=command, cwd=run_dir if args.dry_run else cwd)
-        if not args.dry_run and result.exit_code == 0 and planned_command == ["git", "rev-parse", "HEAD"]:
+        if not args.dry_run and result.exit_code == 0 and planned_command[0:2] == ["git", "-C"] and planned_command[-2:] == ["rev-parse", "HEAD"]:
             metadata.packaging_base_sha = result.stdout.strip() or metadata.packaging_base_sha
         if result.exit_code != 0:
             states[source] = BuildState.BUILD_FAILED
@@ -178,7 +178,7 @@ def _run_package(
             return
 
     states[source] = BuildState.BUILD_SUCCEEDED
-    publish_dir = run_dir / "apt-repo" / source
+    publish_dir = run_dir / "apt-repo"
     publish_dir.mkdir(parents=True, exist_ok=True)
     publish_commands = [(command, publish_dir) for command in apt_repository_commands(publish_dir, plan.ubuntu_release)]
     states[source] = BuildState.PUBLISHING

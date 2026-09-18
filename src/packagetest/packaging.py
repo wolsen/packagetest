@@ -88,7 +88,7 @@ def package_operation_commands(
             ],
             operation_plan.workspace_dir.parent,
         ),
-        (["git", "rev-parse", "HEAD"], operation_plan.packaging_checkout_dir),
+        (["git", "-C", str(operation_plan.packaging_checkout_dir), "rev-parse", "HEAD"], operation_plan.workspace_dir.parent),
         (
             ["bash", "-lc", upstream_branch_cmd],
             operation_plan.workspace_dir.parent,

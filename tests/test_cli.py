@@ -20,7 +20,7 @@ class FailingRunner:
     def run(self, command, cwd, env_diff=None):
         self.calls += 1
         exit_code = 1 if self.fail_on is None or command == self.fail_on else 0
-        stdout = self.stdout if exit_code else ("abc123\n" if command == ["git", "rev-parse", "HEAD"] else "")
+        stdout = self.stdout if exit_code else ("abc123\n" if command[-2:] == ["rev-parse", "HEAD"] else "")
         stderr = self.stderr if exit_code else ""
         return CommandResult(
             command=command,
