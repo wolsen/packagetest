@@ -112,7 +112,8 @@ def test_run_package_without_artifacts_stops_at_build_succeeded(tmp_path: Path):
 
     _run_package("pbr", plan, args, tmp_path, runner, states, metadata, operation_plan)
 
-    assert states["pbr"] == BuildState.BUILD_SUCCEEDED
+    assert states["pbr"] == BuildState.BUILD_FAILED
+    assert (tmp_path / "failures" / "pbr" / "failure.json").exists()
     assert metadata.build_finished_at != "unknown"
 
 

@@ -190,6 +190,39 @@ def test_resolver_caches_release_by_deliverable_target_and_snapshot():
     assert calls.count("https://example.invalid/deliverables/indri/glance.yaml") == 1
 
 
+def test_resolver_cache_distinguishes_packages_sharing_deliverable():
+    first_package = PackageDefinition(
+        source_package="glance-a",
+        binary_packages=["glance"],
+        upstream_repo="https://opendev.org/openstack/glance",
+        packaging_repo="https://example.invalid/glance-a",
+        openstack_deliverable="glance",
+    )
+    second_package = PackageDefinition(
+        source_package="glance-b",
+        binary_packages=["glance"],
+        upstream_repo="https://opendev.org/openstack/glance",
+        packaging_repo="https://example.invalid/glance-b",
+        openstack_deliverable="glance",
+    )
+    calls: list[str] = []
+
+    def fetcher(url: str) -> str:
+        calls.append(url)
+        if url.endswith("/data/series_status.yaml"):
+            return SERIES_STATUS
+        if url.endswith("/deliverables/indri/glance.yaml"):
+            return SERIES_DELIVERABLE
+        raise ReleaseDiscoveryError(f"unexpected url: {url}")
+
+    resolver = OpenStackReleaseResolver(base_url="https://example.invalid", fetcher=fetcher)
+    first = resolver.resolve(package=first_package, openstack_target="2027.1")
+    second = resolver.resolve(package=second_package, openstack_target="2027.1")
+
+    assert first == second
+    assert calls.count("https://example.invalid/deliverables/indri/glance.yaml") == 1
+
+
 def test_resolver_rejects_invalid_snapshot_timestamp():
     package = PackageDefinition(
         source_package="glance",

@@ -278,12 +278,12 @@ class OpenStackReleaseResolver:
         self.fetcher = fetcher
         self._series_status: list[OpenStackSeries] | None = None
         self._deliverable_cache: dict[str, str] = {}
-        self._resolved_cache: dict[tuple[str, str, str | None], ResolvedRelease] = {}
+        self._resolved_cache: dict[tuple[str, str, str, str, str | None], ResolvedRelease] = {}
 
     def resolve(self, *, package: PackageDefinition, openstack_target: str, snapshot_at: str | None = None) -> ResolvedRelease:
         snapshot_at = validate_snapshot_at(snapshot_at)
         deliverable_name = derive_deliverable_name(package)
-        cache_key = (deliverable_name, openstack_target, snapshot_at)
+        cache_key = (package.source_package, package.upstream_repo, deliverable_name, openstack_target, snapshot_at)
         if cache_key in self._resolved_cache:
             return self._resolved_cache[cache_key]
         resolved_series = resolve_series(self._series_status_entries(), openstack_target)

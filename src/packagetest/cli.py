@@ -215,7 +215,36 @@ def _run_package(
 
     states[source] = BuildState.BUILD_SUCCEEDED
     if not args.dry_run and not any(operation_plan.packaging_checkout_dir.parent.glob("*.dsc")):
+        states[source] = BuildState.BUILD_FAILED
         metadata.build_finished_at = datetime.now(UTC).isoformat()
+        result = CommandResult(
+            command=["verify-build-output"],
+            cwd=str(operation_plan.packaging_checkout_dir.parent),
+            env_diff={},
+            stdout="",
+            stderr="Expected source package artifact (*.dsc) was not produced.",
+            exit_code=1,
+            duration_seconds=0.0,
+        )
+        write_failure_bundle(
+            out_dir=run_dir / "failures" / source,
+            bundle=FailureBundle(
+                category="SOURCE_GENERATION_FAILURE",
+                source_package=source,
+                generation_id=plan.generation_id,
+                upstream_sha=None,
+                packaging_sha=metadata.packaging_base_sha if metadata.packaging_base_sha != "unknown" else None,
+                failed_command=result.command,
+                command_exit_code=result.exit_code,
+            ),
+            command_result=result,
+            files={
+                "debian/control": "",
+                "debian/rules": "",
+                "debian/changelog": "",
+                "debian/patches/series": "",
+            },
+        )
         return
     publish_dir = run_dir / "apt-repo"
     publish_dir.mkdir(parents=True, exist_ok=True)
