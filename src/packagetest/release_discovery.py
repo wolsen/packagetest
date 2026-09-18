@@ -251,6 +251,14 @@ def resolve_release_from_deliverable_yaml(
             return stable_releases[-1]
         raise ReleaseDiscoveryError(f"No stable release found for target: {openstack_target}")
     branch_locations = branch_locations_from_deliverable_yaml(content)
+    current_branch_location = branch_locations.get(f"stable/{parsed_target.release_id}")
+    if current_branch_location is not None:
+        target_prefix = _numeric_series_prefix(current_branch_location)
+        if target_prefix is not None:
+            candidate_releases = [
+                release for release in candidate_releases if _numeric_series_prefix(release.version) == target_prefix
+            ]
+            stable_releases = [release for release in candidate_releases if not _PRERELEASE_RE.search(release.version)]
     if f"stable/{parsed_target.release_id}" not in branch_locations:
         stable_prefixes = {
             prefix for prefix in (_numeric_series_prefix(release.version) for release in stable_releases) if prefix is not None

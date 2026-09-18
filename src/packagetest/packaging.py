@@ -154,7 +154,7 @@ def package_operation_commands(
             [
                 "bash",
                 "-lc",
-                f"sbuild --dist={quote(ubuntu_release)} --build=source,all,any ../*.dsc",
+                f"sbuild --dist={quote(ubuntu_release)} --build=source+all+any ../*.dsc",
             ],
             operation_plan.packaging_checkout_dir,
         ),

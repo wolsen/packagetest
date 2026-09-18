@@ -125,7 +125,7 @@ def build_cmd(args: argparse.Namespace) -> int:
                 )
                 continue
             _run_package(source, plan, args, run_dir, runner, states, package_metadata[source], operation_plans[source])
-    _publish_run_outputs(plan, args, run_dir, runner, states, package_metadata)
+    _publish_run_outputs(plan, args, run_dir, runner, states, package_metadata, operation_plans)
 
     manifests: list[PackageManifest] = []
     for item in plan.planned_builds:
@@ -220,12 +220,12 @@ def _run_package(
             return
 
     states[source] = BuildState.BUILD_SUCCEEDED
-    if not args.dry_run and not _package_has_publishable_outputs(Path(metadata.build_output_dir)):
+    if not args.dry_run and not _package_has_publishable_outputs(operation_plan.packaging_checkout_dir.parent):
         states[source] = BuildState.BUILD_FAILED
         metadata.build_finished_at = datetime.now(UTC).isoformat()
         result = CommandResult(
             command=["verify-build-output"],
-            cwd=metadata.build_output_dir,
+            cwd=str(operation_plan.packaging_checkout_dir.parent),
             env_diff={},
             stdout="",
             stderr="Expected source package artifact (*.dsc) was not produced.",
@@ -311,13 +311,16 @@ def _publish_run_outputs(
     runner: CommandRunner,
     states: dict[str, BuildState],
     package_metadata: dict[str, PackageExecutionMetadata],
+    operation_plans: dict[str, PackageOperationPlan],
 ) -> None:
     if not states:
         return
     publishable_sources = [
         source
         for source, state in states.items()
-        if state == BuildState.BUILD_SUCCEEDED and _package_has_publishable_outputs(Path(package_metadata[source].build_output_dir))
+        if state == BuildState.BUILD_SUCCEEDED
+        and source in operation_plans
+        and _package_has_publishable_outputs(operation_plans[source].packaging_checkout_dir.parent)
     ]
     if not publishable_sources:
         return

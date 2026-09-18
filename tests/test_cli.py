@@ -287,6 +287,22 @@ def test_publish_run_outputs_publishes_only_packages_with_outputs(tmp_path: Path
     args = Namespace(dry_run=True)
     runner = CommandRunner(log_path=tmp_path / "commands.jsonl")
     states = {"pbr": BuildState.BUILD_SUCCEEDED, "glance": BuildState.BUILD_SUCCEEDED}
+    operation_plans = {
+        "pbr": build_package_operation_plan(
+            package=definitions["pbr"],
+            upstream_ref="5.7.0",
+            upstream_version="5.7.0",
+            ubuntu_release="noble",
+            run_dir=tmp_path,
+        ),
+        "glance": build_package_operation_plan(
+            package=definitions["glance"],
+            upstream_ref="31.1.0",
+            upstream_version="31.1.0",
+            ubuntu_release="noble",
+            run_dir=tmp_path,
+        ),
+    }
     metadata = {
         "pbr": PackageExecutionMetadata(
             upstream_tag_or_sha="5.7.0",
@@ -304,7 +320,7 @@ def test_publish_run_outputs_publishes_only_packages_with_outputs(tmp_path: Path
     (tmp_path / "pbr").mkdir(parents=True)
     (tmp_path / "pbr" / "pbr_5.7.0.dsc").write_text("", encoding="utf-8")
 
-    _publish_run_outputs(plan, args, tmp_path, runner, states, metadata)
+    _publish_run_outputs(plan, args, tmp_path, runner, states, metadata, operation_plans)
 
     assert states["pbr"] == BuildState.PUBLISHED
     assert states["glance"] == BuildState.BUILD_SUCCEEDED
@@ -323,6 +339,22 @@ def test_publish_run_outputs_allows_unrelated_failed_package(tmp_path: Path):
     args = Namespace(dry_run=True)
     runner = CommandRunner(log_path=tmp_path / "commands.jsonl")
     states = {"pbr": BuildState.BUILD_SUCCEEDED, "glance": BuildState.BUILD_FAILED}
+    operation_plans = {
+        "pbr": build_package_operation_plan(
+            package=definitions["pbr"],
+            upstream_ref="5.7.0",
+            upstream_version="5.7.0",
+            ubuntu_release="noble",
+            run_dir=tmp_path,
+        ),
+        "glance": build_package_operation_plan(
+            package=definitions["glance"],
+            upstream_ref="31.1.0",
+            upstream_version="31.1.0",
+            ubuntu_release="noble",
+            run_dir=tmp_path,
+        ),
+    }
     metadata = {
         "pbr": PackageExecutionMetadata(
             upstream_tag_or_sha="5.7.0",
@@ -340,7 +372,7 @@ def test_publish_run_outputs_allows_unrelated_failed_package(tmp_path: Path):
     (tmp_path / "pbr").mkdir(parents=True)
     (tmp_path / "pbr" / "pbr_5.7.0.dsc").write_text("", encoding="utf-8")
 
-    _publish_run_outputs(plan, args, tmp_path, runner, states, metadata)
+    _publish_run_outputs(plan, args, tmp_path, runner, states, metadata, operation_plans)
 
     assert states["pbr"] == BuildState.PUBLISHED
     assert states["glance"] == BuildState.BUILD_FAILED
