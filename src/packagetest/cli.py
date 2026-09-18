@@ -147,7 +147,7 @@ def _run_package(
     for command, cwd in commands:
         if args.dry_run:
             command = ["echo", "DRY-RUN:", *command]
-        result = runner.run(command=command, cwd=cwd)
+        result = runner.run(command=command, cwd=run_dir if args.dry_run else cwd)
         if not args.dry_run and result.exit_code == 0 and result.command == ["git", "rev-parse", "HEAD"]:
             metadata.packaging_base_sha = result.stdout.strip() or metadata.packaging_base_sha
         if result.exit_code != 0:
