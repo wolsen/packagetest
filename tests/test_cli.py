@@ -359,6 +359,8 @@ def test_publish_run_outputs_publishes_only_packages_with_outputs(tmp_path: Path
     (tmp_path / "pbr").mkdir(parents=True)
     (tmp_path / "pbr" / "pbr_5.7.0.dsc").write_text("", encoding="utf-8")
     (tmp_path / "pbr" / "python3-pbr_5.7.0_all.deb").write_text("", encoding="utf-8")
+    (tmp_path / "artifacts" / "pbr" / "binary").mkdir(parents=True)
+    (tmp_path / "artifacts" / "pbr" / "binary" / "python3-pbr_5.7.0_all.deb").write_text("", encoding="utf-8")
 
     _publish_run_outputs(plan, args, tmp_path, runner, states, metadata, operation_plans)
 
@@ -413,6 +415,8 @@ def test_publish_run_outputs_allows_unrelated_failed_package(tmp_path: Path):
     (tmp_path / "pbr").mkdir(parents=True)
     (tmp_path / "pbr" / "pbr_5.7.0.dsc").write_text("", encoding="utf-8")
     (tmp_path / "pbr" / "python3-pbr_5.7.0_all.deb").write_text("", encoding="utf-8")
+    (tmp_path / "artifacts" / "pbr" / "binary").mkdir(parents=True)
+    (tmp_path / "artifacts" / "pbr" / "binary" / "python3-pbr_5.7.0_all.deb").write_text("", encoding="utf-8")
 
     _publish_run_outputs(plan, args, tmp_path, runner, states, metadata, operation_plans)
 

@@ -72,7 +72,7 @@ A run creates a generation directory under `artifacts/` containing:
 
 - `logs/commands.jsonl`
 - `artifacts/<source>/{source,binary}/...`
-- `apt-repo/` (Packages/Release/InRelease plus published pool binaries)
+- `apt-repo/` (`dists/<ubuntu-release>/main/binary-amd64/Packages*` and `dists/<ubuntu-release>/{Release,InRelease,Release.gpg}` plus `pool/`)
 - `generation-manifest.json`
 - `failures/<source>/...` (if any command fails)
 
