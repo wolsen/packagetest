@@ -178,7 +178,17 @@ def build_cmd(args: argparse.Namespace) -> int:
         ),
     )
 
-    print(json.dumps({"generation_id": plan.generation_id, "states": {k: v.value for k, v in states.items()}}, indent=2))
+    output: dict[str, object] = {
+        "generation_id": plan.generation_id,
+        "states": {k: v.value for k, v in states.items()},
+    }
+    failures = _collect_failures(run_dir, states)
+    if failures:
+        output["failures"] = failures
+    print(json.dumps(output, indent=2))
+    if failures:
+        _print_failure_debug_summary(generation_id=plan.generation_id, run_dir=run_dir, failures=failures)
+        return 1
     return 0
 
 
@@ -326,6 +336,69 @@ def _classify_preparation_failure(message: str) -> str:
     if "No packaging branch configured" in message:
         return "PACKAGING_POLICY_FAILURE"
     return "SOURCE_GENERATION_FAILURE"
+
+
+def _collect_failures(run_dir: Path, states: dict[str, BuildState]) -> list[dict[str, object]]:
+    failed_states = {
+        BuildState.BUILD_FAILED,
+        BuildState.PUBLISH_FAILED,
+        BuildState.BLOCKED_BY_FAILED_DEPENDENCY,
+    }
+    failures: list[dict[str, object]] = []
+    for source, state in sorted(states.items()):
+        if state not in failed_states:
+            continue
+        failure: dict[str, object] = {
+            "source_package": source,
+            "state": state.value,
+        }
+        failure_json = run_dir / "failures" / source / "failure.json"
+        if failure_json.exists():
+            failure["failure_bundle"] = str(failure_json)
+            try:
+                payload = json.loads(failure_json.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                payload = {}
+            if isinstance(payload, dict):
+                category = payload.get("category")
+                failed_command = payload.get("failed_command")
+                command_exit_code = payload.get("command_exit_code")
+                if isinstance(category, str):
+                    failure["category"] = category
+                if isinstance(failed_command, list):
+                    failure["failed_command"] = failed_command
+                if isinstance(command_exit_code, int):
+                    failure["command_exit_code"] = command_exit_code
+            analysis_path = failure_json.with_name("analysis.md")
+            if analysis_path.exists():
+                failure["analysis"] = str(analysis_path)
+        failures.append(failure)
+    return failures
+
+
+def _print_failure_debug_summary(*, generation_id: str, run_dir: Path, failures: list[dict[str, object]]) -> None:
+    print(
+        f"Build generation {generation_id} completed with {len(failures)} failure(s).",
+        file=sys.stderr,
+    )
+    print(f"Command logs: {run_dir / 'logs' / 'commands.jsonl'}", file=sys.stderr)
+    for failure in failures:
+        source = failure["source_package"]
+        state = failure["state"]
+        category = failure.get("category", "UNKNOWN")
+        failure_bundle = failure.get("failure_bundle")
+        failed_command = failure.get("failed_command")
+        command_exit_code = failure.get("command_exit_code")
+        print(f"- {source}: state={state}, category={category}", file=sys.stderr)
+        if failed_command:
+            print(f"  failed command: {' '.join(str(part) for part in failed_command)}", file=sys.stderr)
+        if command_exit_code is not None:
+            print(f"  command exit code: {command_exit_code}", file=sys.stderr)
+        if failure_bundle:
+            print(f"  failure bundle: {failure_bundle}", file=sys.stderr)
+        analysis = failure.get("analysis")
+        if analysis:
+            print(f"  analysis template: {analysis}", file=sys.stderr)
 
 
 def _publish_run_outputs(
