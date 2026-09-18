@@ -359,5 +359,5 @@ class OpenStackReleaseResolver:
             raise ReleaseDiscoveryError(f"No upstream commit found for {project_repo} at {snapshot_at}")
         sha = commits[0].get("sha")
         if not sha:
-            raise ReleaseDiscoveryError(f"Snapshot resolution requires a project hash for {project_repo}")
+            raise ReleaseDiscoveryError(f"Snapshot response did not include a commit SHA for {project_repo}")
         return sha
