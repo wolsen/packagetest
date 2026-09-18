@@ -360,7 +360,7 @@ def _collect_failures(run_dir: Path, states: dict[str, BuildState]) -> list[dict
             failure["failure_bundle"] = str(failure_json)
             try:
                 payload = json.loads(failure_json.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
+            except (OSError, ValueError):
                 payload = {}
             if isinstance(payload, dict):
                 category = payload.get("category")
