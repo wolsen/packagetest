@@ -6,14 +6,17 @@ from pathlib import Path
 
 def apt_repository_commands(repo_dir: Path, distribution: str, key_name: str = "Packagetest Ephemeral") -> list[list[str]]:
     pool_dir = quote(str(repo_dir / "pool"))
-    packages_file = quote(str(repo_dir / "Packages"))
-    release_file = quote(str(repo_dir / "Release"))
-    repo_dir_q = quote(str(repo_dir))
+    dists_dir = repo_dir / "dists" / distribution
+    binary_dir = dists_dir / "main" / "binary-amd64"
+    packages_file = quote(str(binary_dir / "Packages"))
+    release_file = quote(str(dists_dir / "Release"))
+    dists_dir_q = quote(str(dists_dir))
     distribution_q = quote(distribution)
     return [
         ["mkdir", "-p", str(repo_dir / "pool")],
+        ["mkdir", "-p", str(binary_dir)],
         ["bash", "-lc", f"apt-ftparchive packages {pool_dir} > {packages_file}"],
-        ["gzip", "-kf", str(repo_dir / "Packages")],
+        ["gzip", "-kf", str(binary_dir / "Packages")],
         [
             "bash",
             "-lc",
@@ -21,7 +24,9 @@ def apt_repository_commands(repo_dir: Path, distribution: str, key_name: str = "
                 "apt-ftparchive "
                 f"-o APT::FTPArchive::Release::Suite={distribution_q} "
                 f"-o APT::FTPArchive::Release::Codename={distribution_q} "
-                f"release {repo_dir_q} > {release_file}"
+                f"-o APT::FTPArchive::Release::Components=main "
+                f"-o APT::FTPArchive::Release::Architectures=amd64 "
+                f"release {dists_dir_q} > {release_file}"
             ),
         ],
         [
@@ -42,8 +47,8 @@ def apt_repository_commands(repo_dir: Path, distribution: str, key_name: str = "
             "--local-user",
             key_name,
             "-o",
-            str(repo_dir / "Release.gpg"),
-            str(repo_dir / "Release"),
+            str(dists_dir / "Release.gpg"),
+            str(dists_dir / "Release"),
         ],
         [
             "gpg",
@@ -53,8 +58,8 @@ def apt_repository_commands(repo_dir: Path, distribution: str, key_name: str = "
             "--local-user",
             key_name,
             "-o",
-            str(repo_dir / "InRelease"),
-            str(repo_dir / "Release"),
+            str(dists_dir / "InRelease"),
+            str(dists_dir / "Release"),
         ],
         ["bash", "-lc", "gpgconf --kill gpg-agent"],
     ]

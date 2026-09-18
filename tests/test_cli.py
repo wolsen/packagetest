@@ -423,9 +423,10 @@ def test_publish_run_outputs_allows_unrelated_failed_package(tmp_path: Path):
 
 def test_discover_dependency_repository_dirs_discovers_nested_apt_repo(tmp_path: Path):
     apt_repo = tmp_path / "upstream-generation" / "gen-1" / "apt-repo"
-    apt_repo.mkdir(parents=True)
-    (apt_repo / "Release").write_text("", encoding="utf-8")
-    (apt_repo / "Packages").write_text("", encoding="utf-8")
+    dists_binary = apt_repo / "dists" / "noble" / "main" / "binary-amd64"
+    dists_binary.mkdir(parents=True)
+    (apt_repo / "dists" / "noble" / "Release").write_text("", encoding="utf-8")
+    (dists_binary / "Packages").write_text("", encoding="utf-8")
 
     repositories = _discover_dependency_repository_dirs([str(tmp_path / "upstream-generation")])
 

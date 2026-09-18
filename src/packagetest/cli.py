@@ -422,11 +422,17 @@ def _discover_dependency_repository_dirs(raw_paths: list[str]) -> list[Path]:
         for candidate in candidates:
             if not candidate.is_dir():
                 continue
-            if (candidate / "Release").exists() and (candidate / "Packages").exists():
+            if _is_apt_repository_dir(candidate):
                 resolved = candidate.resolve()
                 if resolved not in discovered:
                     discovered.append(resolved)
     return discovered
+
+
+def _is_apt_repository_dir(path: Path) -> bool:
+    has_flat_layout = (path / "Release").exists() and (path / "Packages").exists()
+    has_dists_layout = any(path.glob("dists/*/Release")) and any(path.glob("dists/*/main/binary-*/Packages*"))
+    return has_flat_layout or has_dists_layout
 
 
 def _iter_artifacts(output_dir: Path, patterns: tuple[str, ...]) -> list[Path]:
@@ -444,8 +450,11 @@ def _copy_binary_artifacts_to_pool(output_dir: Path, pool_dir: Path) -> None:
 def _compute_binary_hashes(output_dir: Path) -> list[str]:
     hashes: list[str] = []
     for binary_artifact in _iter_artifacts(output_dir, BINARY_ARTIFACT_PATTERNS):
-        digest = hashlib.sha256(binary_artifact.read_bytes()).hexdigest()
-        hashes.append(f"sha256:{digest}")
+        digest = hashlib.sha256()
+        with binary_artifact.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        hashes.append(f"sha256:{digest.hexdigest()}")
     return hashes
 
 

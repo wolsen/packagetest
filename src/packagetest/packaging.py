@@ -81,7 +81,7 @@ def package_operation_commands(
         f"else echo 'Missing origin/pristine-tar branch' >&2; exit 1; fi"
     )
     extra_repo_args = " ".join(
-        f"--extra-repository={quote(f'deb [trusted=yes] file://{repo.resolve()} ./')}"
+        f"--extra-repository={quote(f'deb [trusted=yes] file://{repo.resolve()} {ubuntu_release} main')}"
         for repo in dependency_repository_paths
     )
     sbuild_command = f"sbuild --dist={quote(ubuntu_release)} --build=source+all+any"
