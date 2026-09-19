@@ -21,7 +21,10 @@ _SERIES_RELEASE_ID_RE = re.compile(r"^\s+release-id:\s+(.+?)\s*$")
 _SERIES_STATUS_RE = re.compile(r"^\s+status:\s+(.+?)\s*$")
 _BRANCH_NAME_RE = re.compile(r"^\s*-\s+name:\s+(.+?)\s*$")
 _BRANCH_LOCATION_RE = re.compile(r"^\s+location:\s+(.+?)\s*$")
-_OPENSTACK_TARGET_RE = re.compile(r"^(?P<release_id>(?:\d+\.\d+|[a-z][a-z0-9-]*))(?:-(?P<stage>b\d+|rc\d+|final))?$", re.IGNORECASE)
+_OPENSTACK_TARGET_RE = re.compile(
+    r"^(?P<release_id>(?:\d+\.\d+|[a-z][a-z0-9-]*))(?:-(?P<stage>b\d+|rc\d+|final|snapshot))?$",
+    re.IGNORECASE,
+)
 _PRERELEASE_RE = re.compile(r"(b\d+|rc\d+)$", re.IGNORECASE)
 
 
@@ -240,7 +243,7 @@ def resolve_release_from_deliverable_yaml(
         raise ReleaseDiscoveryError("No releases found in deliverable YAML")
     parsed_target = parse_openstack_target(openstack_target)
     if deliverable_scope == "_independent":
-        if parsed_target.stage is not None:
+        if parsed_target.stage not in {None, "snapshot"}:
             for release in reversed(releases):
                 if release.version.lower().endswith(parsed_target.stage.lower()):
                     return release
@@ -248,7 +251,7 @@ def resolve_release_from_deliverable_yaml(
 
     candidate_releases = _candidate_releases_for_series(content, releases, parsed_target.release_id)
     stable_releases = [release for release in candidate_releases if not _PRERELEASE_RE.search(release.version)]
-    if parsed_target.stage is None or parsed_target.stage == "final":
+    if parsed_target.stage in {None, "final", "snapshot"}:
         if stable_releases:
             return stable_releases[-1]
         raise ReleaseDiscoveryError(f"No stable release found for target: {openstack_target}")

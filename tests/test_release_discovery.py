@@ -100,6 +100,7 @@ def test_resolve_release_from_deliverable_yaml_supports_stage_targets():
     assert resolve_release_from_deliverable_yaml(SERIES_DELIVERABLE, openstack_target="2027.1-b1", deliverable_scope="indri").version == "31.0.0.0b1"
     assert resolve_release_from_deliverable_yaml(SERIES_DELIVERABLE, openstack_target="2027.1-rc1", deliverable_scope="indri").version == "31.0.0.0rc1"
     assert resolve_release_from_deliverable_yaml(SERIES_DELIVERABLE, openstack_target="2027.1-final", deliverable_scope="indri").version == "31.1.0"
+    assert resolve_release_from_deliverable_yaml(SERIES_DELIVERABLE, openstack_target="2027.1-snapshot", deliverable_scope="indri").version == "31.1.0"
     assert resolve_release_from_deliverable_yaml(SERIES_DELIVERABLE, openstack_target="2027.1", deliverable_scope="indri").version == "31.1.0"
 
 

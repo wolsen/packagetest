@@ -40,12 +40,14 @@ def test_openstack_target_to_upstream_version_maps_pre_releases():
     assert openstack_target_to_upstream_version("2027.1-b1") == "2027.1~b1"
     assert openstack_target_to_upstream_version("2027.1-rc1") == "2027.1~rc1"
     assert openstack_target_to_upstream_version("2027.1-final") == "2027.1"
+    assert openstack_target_to_upstream_version("2027.1-snapshot") == "2027.1"
     assert openstack_target_to_upstream_version("2027.1") == "2027.1"
 
 
 def test_openstack_target_to_debian_version_appends_ubuntu_revision():
     assert openstack_target_to_debian_version("2027.1-b1") == "2027.1~b1-0ubuntu1"
     assert openstack_target_to_debian_version("2027.1-final") == "2027.1-0ubuntu1"
+    assert openstack_target_to_debian_version("2027.1-snapshot") == "2027.1-0ubuntu1"
 
 
 def test_upstream_version_to_debian_version_rewrites_prereleases():
