@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import shlex
 import subprocess
 import time
 from pathlib import Path
 
 from .models import CommandResult
+
+logger = logging.getLogger(__name__)
 
 
 class CommandRunner:
@@ -18,6 +22,10 @@ class CommandRunner:
         env_diff = env_diff or {}
         env = os.environ.copy()
         env.update(env_diff)
+        rendered_command = shlex.join(command)
+        logger.debug("Running command: %s", rendered_command)
+        logger.debug("Command cwd: %s", cwd)
+        logger.debug("Command env overrides: %s", env_diff)
         start = time.monotonic()
         completed = subprocess.run(
             command,
@@ -28,6 +36,14 @@ class CommandRunner:
             capture_output=True,
         )
         duration = time.monotonic() - start
+        logger.debug(
+            "Command finished: %s (exit_code=%d, duration_seconds=%.3f)",
+            rendered_command,
+            completed.returncode,
+            duration,
+        )
+        logger.debug("Command stdout (%s):\n%s", rendered_command, completed.stdout if completed.stdout else "<empty>")
+        logger.debug("Command stderr (%s):\n%s", rendered_command, completed.stderr if completed.stderr else "<empty>")
         result = CommandResult(
             command=command,
             cwd=str(cwd),

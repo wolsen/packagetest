@@ -62,6 +62,7 @@ packaging build \
 
 # Execute real package/source builds (requires Debian packaging toolchain + sbuild setup)
 packaging build \
+  --verbose \
   --openstack-target 2026.1 \
   --ubuntu-release noble \
   --dependency-repo /path/to/previous-generation \
@@ -75,6 +76,8 @@ A run creates a generation directory under `artifacts/` containing:
 - `apt-repo/` (`dists/<ubuntu-release>/main/binary-amd64/Packages*` and `dists/<ubuntu-release>/{Release,InRelease,Release.gpg}` plus `pool/`)
 - `generation-manifest.json`
 - `failures/<source>/...` (if any command fails)
+
+Use `--verbose` (or `--debug`) with `packaging` commands to emit Python debug logs, including each command invocation and full stdout/stderr streams.
 
 ## CI workflow model
 

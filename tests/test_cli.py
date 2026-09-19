@@ -2,7 +2,7 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-from packagetest.cli import _discover_dependency_repository_dirs, _publish_run_outputs, _run_package, build_cmd, plan_cmd
+from packagetest.cli import _discover_dependency_repository_dirs, _publish_run_outputs, _run_package, build_cmd, build_parser, plan_cmd
 from packagetest.commands import CommandRunner
 from packagetest.config import load_package_definitions
 from packagetest.models import BuildState, CommandResult, PackageExecutionMetadata
@@ -482,3 +482,19 @@ def test_discover_dependency_repository_dirs_discovers_nested_apt_repo(tmp_path:
     repositories = _discover_dependency_repository_dirs([str(tmp_path / "upstream-generation")])
 
     assert repositories == [apt_repo.resolve()]
+
+
+def test_build_parser_supports_verbose_before_subcommand():
+    parser = build_parser()
+    args = parser.parse_args(
+        ["--verbose", "build", "--openstack-target", "2027.1", "--ubuntu-release", "noble", "pbr"]
+    )
+    assert args.debug_logging is True
+
+
+def test_build_parser_supports_debug_after_subcommand():
+    parser = build_parser()
+    args = parser.parse_args(
+        ["build", "--debug", "--openstack-target", "2027.1", "--ubuntu-release", "noble", "pbr"]
+    )
+    assert args.debug_logging is True
