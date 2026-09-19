@@ -13,7 +13,7 @@ _OPERATORS = {
     1: "gt",
 }
 
-_OPENSTACK_TARGET_RE = re.compile(r"^(?P<base>\d+\.\d+)(?:-(?P<stage>b\d+|rc\d+|final))?$")
+_OPENSTACK_TARGET_RE = re.compile(r"^(?P<base>\d+\.\d+)(?:-(?P<stage>b\d+|rc\d+|final|snapshot))?$")
 _UPSTREAM_DOT_ZERO_PRERELEASE_RE = re.compile(r"^(?P<base>\d+(?:\.\d+){2,})\.0(?P<stage>b\d+|rc\d+)$")
 _UPSTREAM_PLAIN_PRERELEASE_RE = re.compile(r"^(?P<base>.+\d)(?P<stage>b\d+|rc\d+)$")
 
@@ -49,7 +49,7 @@ def openstack_target_to_upstream_version(target: str) -> str:
         return target
     base = match.group("base")
     stage = match.group("stage")
-    if stage in {None, "final"}:
+    if stage in {None, "final", "snapshot"}:
         return base
     return f"{base}~{stage}"
 

@@ -39,8 +39,15 @@ def _default_config_path() -> Path:
     return Path(__file__).resolve().parents[2] / "config" / "vertical_slice.json"
 
 
+def _effective_snapshot_at(openstack_target: str, snapshot_at: str | None) -> str | None:
+    if snapshot_at is not None or not openstack_target.lower().endswith("-snapshot"):
+        return snapshot_at
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
+
+
 def plan_cmd(args: argparse.Namespace) -> int:
     logger.debug("Starting plan command with args: %s", vars(args))
+    args.snapshot_at = _effective_snapshot_at(args.openstack_target, args.snapshot_at)
     definitions = load_package_definitions(Path(args.config))
     plan = build_plan(
         definitions=definitions,
@@ -71,6 +78,7 @@ def plan_cmd(args: argparse.Namespace) -> int:
 
 def build_cmd(args: argparse.Namespace) -> int:
     logger.debug("Starting build command with args: %s", vars(args))
+    args.snapshot_at = _effective_snapshot_at(args.openstack_target, args.snapshot_at)
     definitions = load_package_definitions(Path(args.config))
     plan = build_plan(
         definitions=definitions,

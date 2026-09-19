@@ -1,5 +1,6 @@
 import json
 from argparse import Namespace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from packagetest.cli import _discover_dependency_repository_dirs, _publish_run_outputs, _run_package, build_cmd, build_parser, plan_cmd
@@ -245,6 +246,53 @@ def test_plan_cmd_surfaces_release_resolution_error(capsys, monkeypatch):
     assert plan_cmd(args) == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["planned_builds"][0]["release_resolution_error"] == "boom"
+
+
+def test_plan_cmd_snapshot_target_sets_consistent_snapshot_timestamp(capsys, monkeypatch):
+    repo_root = Path(__file__).resolve().parents[1]
+    snapshot_at = "2026-09-19T03:35:24+00:00"
+
+    class FrozenDateTime:
+        @staticmethod
+        def now(tz):
+            assert tz is UTC
+            return datetime(2026, 9, 19, 3, 35, 24, tzinfo=tz)
+
+    def fake_resolve(plan, args):
+        assert plan.snapshot_at == snapshot_at
+        assert args.snapshot_at == snapshot_at
+        return (
+            {
+                "pbr": ResolvedRelease(
+                    series="hibiscus",
+                    release_id="2026.2",
+                    version="5.7.0",
+                    project_repo="openstack/pbr",
+                    project_hash="abc123",
+                    upstream_ref="abc123",
+                    snapshot_at=snapshot_at,
+                    deliverable_path="deliverables/_independent/pbr.yaml",
+                )
+            },
+            {},
+        )
+
+    monkeypatch.setattr("packagetest.cli.datetime", FrozenDateTime)
+    monkeypatch.setattr("packagetest.cli._resolve_package_releases", fake_resolve)
+    args = Namespace(
+        config=str(repo_root / "config" / "vertical_slice.json"),
+        openstack_target="2026.2-snapshot",
+        ubuntu_release="stonking",
+        snapshot_at=None,
+        no_dependency_closure=False,
+        sources=["pbr"],
+    )
+
+    assert plan_cmd(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["openstack_target"] == "2026.2-snapshot"
+    assert payload["snapshot_at"] == snapshot_at
+    assert payload["planned_builds"][0]["resolved_upstream_sha"] == "abc123"
 
 
 def test_build_cmd_records_release_resolution_failure(tmp_path: Path, monkeypatch, capsys):
