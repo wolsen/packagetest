@@ -28,6 +28,7 @@ jobs:
       - name: Create plan artifact
         run: |
           packaging plan \
+            --verbose \
             --openstack-target "${{ inputs.openstack_target }}" \
             --ubuntu-release "${{ inputs.ubuntu_release }}" \
             glance > plan.json
@@ -62,6 +63,7 @@ jobs:
       - name: Build pbr
         run: |
           packaging build \
+            --verbose \
             --openstack-target "${{ inputs.openstack_target }}" \
             --ubuntu-release "${{ inputs.ubuntu_release }}" \
             --no-dependency-closure \
@@ -107,12 +109,14 @@ jobs:
       - name: Build oslo packages
         run: |
           packaging build \
+            --verbose \
             --openstack-target "${{ inputs.openstack_target }}" \
             --ubuntu-release "${{ inputs.ubuntu_release }}" \
             --dependency-repo upstream-generation \
             --no-dependency-closure \
             python-oslo.i18n
           packaging build \
+            --verbose \
             --openstack-target "${{ inputs.openstack_target }}" \
             --ubuntu-release "${{ inputs.ubuntu_release }}" \
             --dependency-repo upstream-generation \
@@ -159,6 +163,7 @@ jobs:
       - name: Build glance
         run: |
           packaging build \
+            --verbose \
             --openstack-target "${{ inputs.openstack_target }}" \
             --ubuntu-release "${{ inputs.ubuntu_release }}" \
             --dependency-repo upstream-generation \
