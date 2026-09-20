@@ -101,3 +101,58 @@ def test_sbuild_log_link_is_not_a_dependency_input(tmp_path):
     malicious.symlink_to('/outside/deb')
     with pytest.raises(ValueError, match='Symlink'):
         collect(root, lock)
+
+
+def persist_lock(root, lock):
+    (root / 'build-lock.json').write_text(json.dumps(lock))
+    path = root / 'generation-manifest.json'
+    manifest = json.loads(path.read_text())
+    manifest['lock_sha256'] = lock_digest(lock)
+    path.write_text(json.dumps(manifest))
+
+
+def prepared_bundle(tmp_path):
+    root, lock, deb = bundle(tmp_path)
+    directory = deb.parent.parent / 'source'
+    directory.mkdir()
+    orig = directory / 'sample_1.0.orig.tar.gz'
+    orig.write_bytes(b'fixture source payload')
+    dsc = directory / 'sample_1.0-1.dsc'
+    dsc.write_text(f'Source: sample\nVersion: 1.0-1\nChecksums-Sha256:\n {sha256(orig)} {orig.stat().st_size} {orig.name}\n')
+    lock['catalog_entry'] = {'source': 'sample', 'upstream_sha': 'a' * 40}
+    lock['packages'][0]['input'] = {'kind': 'prepared-snapshot', 'upstream_sha': 'a' * 40, 'dsc_sha256': sha256(dsc)}
+    persist_lock(root, lock)
+    return root, lock, orig, dsc
+
+
+def test_prepared_handoff_binds_uploaded_source_to_frozen_upstream(tmp_path):
+    root, lock, _, _ = prepared_bundle(tmp_path)
+    assert collect(root, lock)['sample'][0]['version'] == '1.0-1'
+    lock['packages'][0]['input']['upstream_sha'] = 'b' * 40
+    persist_lock(root, lock)
+    with pytest.raises(ValueError, match='frozen upstream'):
+        collect(root, lock)
+
+
+@pytest.mark.parametrize('corrupt', ['dsc', 'orig'])
+def test_prepared_handoff_rehashes_source_payload(tmp_path, corrupt):
+    root, lock, orig, dsc = prepared_bundle(tmp_path)
+    (orig if corrupt == 'orig' else dsc).write_bytes(b'corrupt source')
+    with pytest.raises(ValueError, match='checksum|corrupt'):
+        collect(root, lock)
+
+
+def test_dependency_buildinfo_cannot_silently_use_archive_version(tmp_path):
+    root, lock, _ = bundle(tmp_path)
+    lock['packages'][0]['required_build_versions'] = {'base-files': '2~snapshot'}
+    persist_lock(root, lock)
+    with pytest.raises(ValueError, match='required dependency'):
+        collect(root, lock)
+
+
+def test_producer_wrong_distribution_is_rejected(tmp_path):
+    root, lock, deb = bundle(tmp_path)
+    path = deb.parent / 'sample.changes'
+    path.write_text(path.read_text().replace('Distribution: resolute', 'Distribution: noble'))
+    with pytest.raises(ValueError, match='distribution mismatch'):
+        collect(root, lock)

@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .artifacts import sha256, verify_binaries
+from .artifacts import fields, sha256, verify_binaries, verify_source
 
 
 def lock_digest(lock: dict) -> str:
@@ -71,7 +71,7 @@ def collect_producers(download_root: Path, expected_locks: dict[str, dict], *,
             if source in found:
                 raise ValueError(f'Duplicate producer: {source}')
             expected = expected_locks[source]
-            if saved_lock != expected or manifest.get('lock_sha256') != lock_digest(expected):
+            if saved_lock != expected or expected.get('target') != target or manifest.get('lock_sha256') != lock_digest(expected):
                 raise ValueError(f'Producer lock mismatch: {source}')
             packages = [p for p in expected['packages'] if p['source'] == source]
             records = [p for p in manifest['packages'] if p['source'] == source]
@@ -88,8 +88,25 @@ def collect_producers(download_root: Path, expected_locks: dict[str, dict], *,
             if any(path.is_symlink() and not path.name.endswith('.build')
                    for path in manifest_path.parent.rglob('*')):
                 raise ValueError(f'Symlink in producer bundle: {source}')
+            acquisition = package.get('input', {})
+            if acquisition.get('kind') == 'prepared-snapshot':
+                catalog_entry = expected.get('catalog_entry', {})
+                if (catalog_entry.get('source') != source or not acquisition.get('upstream_sha')
+                        or acquisition['upstream_sha'] != catalog_entry.get('upstream_sha')):
+                    raise ValueError(f'Prepared snapshot differs from frozen upstream: {source}')
+                source_dir = directory.parent / 'source'
+                dscs = list(source_dir.glob('*.dsc'))
+                if len(dscs) != 1 or sha256(dscs[0]) != acquisition.get('dsc_sha256'):
+                    raise ValueError(f'Prepared source checksum mismatch: {source}')
+                verify_source(dscs[0], source, package['version'])
             verified = verify_binaries(directory, source=source, version=package['version'],
                                        expected=package['expected_binaries'], arch=target['architecture'])
+            distribution = target.get('distribution', target['suite'])
+            if fields(directory / verified['changes']).get('Distribution') != distribution:
+                raise ValueError(f'Producer binary distribution mismatch: {source}')
+            for dependency, version in package.get('required_build_versions', {}).items():
+                if verified['build_dependency_versions'].get(dependency) != version:
+                    raise ValueError(f'Producer did not use required dependency: {dependency}={version}')
             if verified['binaries'] != record.get('binaries'):
                 raise ValueError(f'Producer binary manifest mismatch: {source}')
             found[source] = [{**binary, 'path': str((directory / binary['file']).resolve()),
