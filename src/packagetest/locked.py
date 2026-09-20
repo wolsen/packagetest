@@ -35,6 +35,8 @@ def load_lock(path: Path) -> dict:
     for name in ('suite', 'architecture', 'chroot'):
         if not re.fullmatch(r'[a-z0-9][a-z0-9+.-]*', target[name]):
             raise ValueError(f'Invalid target {name}')
+    if 'distribution' in target and not re.fullmatch(r'[a-z0-9][a-z0-9+.-]*', target['distribution']):
+        raise ValueError('Invalid target distribution')
     if target.get('backend') != 'schroot':
         raise ValueError('This slice requires an explicitly provisioned schroot backend')
     packages = lock['packages']
@@ -74,6 +76,8 @@ def load_lock(path: Path) -> dict:
                 raise ValueError('Invalid snapshot base tag')
             if not _hex(snapshot.get('sdist_sha256'), 64):
                 raise ValueError('Invalid snapshot sdist checksum')
+            if snapshot.get('archive_format', 'legacy') not in {'legacy', 'portable-v1'}:
+                raise ValueError('Unsupported snapshot archive format')
             if not snapshot.get('build_requirements'):
                 raise ValueError('Snapshot requires checksum-pinned build tools')
             for requirement in snapshot['build_requirements']:
@@ -295,7 +299,7 @@ class LockedBuild:
             self.command('gbp', 'pq', 'drop', cwd=checkout)
         self.enter('changelog')
         env = {'DEBFULLNAME': self.lock['maintainer']['name'], 'DEBEMAIL': self.lock['maintainer']['email']}
-        self.command('dch', *(['--force-bad-version'] if backport else []), '--distribution', self.lock['target']['suite'], '--force-distribution', '--newversion',
+        self.command('dch', *(['--force-bad-version'] if backport else []), '--distribution', self.lock['target'].get('distribution', self.lock['target']['suite']), '--force-distribution', '--newversion',
                      package['version'], f'Build pinned upstream release {spec["upstream_version"]} for packaging validation.', cwd=checkout, env=env)
         self.command('git', 'add', 'debian/changelog', cwd=checkout)
         self.command('git', 'commit', '-m', f'New upstream release {spec["upstream_version"]}', cwd=checkout)
@@ -353,7 +357,7 @@ class LockedBuild:
                 self.enter('binary-build')
                 target = self.lock['target']
                 argv = ['sbuild', '--verbose', f'--chroot-mode={target["backend"]}', f'--chroot={target["chroot"]}',
-                        f'--dist={target["suite"]}', f'--arch={target["architecture"]}', '--arch-all',
+                        f'--dist={target.get("distribution", target["suite"])}', f'--arch={target["architecture"]}', '--arch-all',
                         f'--build-dir={binary_dir}', '--no-run-lintian']
                 record['dependency_artifacts'] = []
                 for dep in package.get('depends_on', []):
@@ -370,11 +374,25 @@ class LockedBuild:
                 self.enter('artifact-validation')
                 validation = verify_binaries(binary_dir, source=source, version=package['version'],
                                              expected=package['expected_binaries'], arch=target['architecture'])
+                distribution = target.get('distribution', target['suite'])
+                if fields(binary_dir / validation['changes']).get('Distribution') != distribution:
+                    raise StageFailure('Binary .changes distribution differs from target')
                 for dep, version in package.get('required_build_versions', {}).items():
                     if validation['build_dependency_versions'].get(dep) != version:
                         raise StageFailure(f'Build did not use required dependency {dep}={version}')
                 self.enter('lintian')
-                self.command('lintian', '--fail-on=error', str(binary_dir / validation['changes']), cwd=binary_dir)
+                lintian_args = []
+                if target.get('profile') == 'noble-uca-epoxy':
+                    # Noble's Lintian knows Ubuntu suites but not UCA pocket
+                    # names. Extend its distribution data; disable no checks.
+                    overlay = self.root / 'lintian'
+                    data = overlay / 'vendors/ubuntu/main/data/changes-file/known-dists'
+                    data.parent.mkdir(parents=True, exist_ok=True)
+                    installed = Path('/usr/share/lintian/vendors/ubuntu/main/data/changes-file/known-dists')
+                    data.write_text(installed.read_text() + '\nnoble-epoxy\n')
+                    record['lintian_distribution_data_sha256'] = sha256(data)
+                    lintian_args = ['--include-dir', str(overlay), '--profile', 'ubuntu']
+                self.command('lintian', *lintian_args, '--fail-on=error', str(binary_dir / validation['changes']), cwd=binary_dir)
                 record.update(validation, result='SUCCEEDED', finished_at=_now())
                 completed[source] = [{**b, 'path': binary_dir / b['file']} for b in validation['binaries']]
             except Exception as exc:

@@ -1,12 +1,13 @@
 """Run inside a disposable chroot; exercise migrations and the real Glance API."""
 import json
-import os
+import sys
 from pathlib import Path
 import socket
 import subprocess
 import tempfile
 import time
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 with tempfile.TemporaryDirectory(prefix='glance-smoke-') as directory:
     root = Path(directory)
@@ -23,7 +24,7 @@ show_image_direct_url = true
 [database]
 connection = sqlite:///{root}/glance.sqlite
 [paste_deploy]
-flavor = noauth
+flavor =
 config_file = /etc/glance/glance-api-paste.ini
 [glance_store]
 stores = file
@@ -36,15 +37,22 @@ filesystem_store_datadir = {root}/images
     if migration.returncode:
         raise RuntimeError(migration.stdout + migration.stderr)
     report = {'database_migration': migration.stdout + migration.stderr}
-    env = dict(os.environ, OS_GLANCE_DISABLE_EVENTLET_PATCHING='')
     with (root / 'api.log').open('w+') as log:
-        process = subprocess.Popen(['glance-api', '--config-file', str(config)], stdout=log, stderr=log, env=env)
+        process = subprocess.Popen(['glance-api', '--config-file', str(config)], stdout=log, stderr=log)
         try:
             url = f'http://127.0.0.1:{port}'
             for attempt in range(90):
                 try:
-                    with urlopen(url + '/versions', timeout=2) as response:
+                    try:
+                        response = urlopen(url + '/', timeout=2)
+                    except HTTPError as exc:
+                        if exc.code != 300:  # Glance's version discovery response.
+                            raise
+                        response = exc
+                    with response:
                         report['versions'] = json.load(response)
+                    if 'versions' not in report['versions']:
+                        raise RuntimeError('Missing API versions document')
                     break
                 except Exception:
                     if process.poll() is not None:
@@ -69,6 +77,10 @@ filesystem_store_datadir = {root}/images
             with urlopen(Request(url + f'/v2/images/{image_id}', headers=headers, method='DELETE'), timeout=15) as response:
                 assert response.status == 204
             report.update(image_id=image_id, image_round_trip='PASSED', result='SUCCEEDED')
+        except Exception:
+            log.seek(0)
+            print(log.read(), file=sys.stderr)
+            raise
         finally:
             process.terminate()
             try:

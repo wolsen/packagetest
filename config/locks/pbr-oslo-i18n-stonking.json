@@ -89,7 +89,8 @@
               "sha256": "708e7481cc80179af0e556bbf0cc00b8444c7321e2700b8d8580231d13017248"
             }
           ],
-          "sdist_sha256": "e299aa59689ec199a629793c7737264ebe0f0aa5d8bbd71ebcefab10f01feceb"
+          "sdist_sha256": "de75efaa73e20b6db3f918b9e4641d944a4b8a6b9246edb207fbfa3236ec55b9",
+          "archive_format": "portable-v1"
         }
       },
       "depends_on": [

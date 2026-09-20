@@ -20,7 +20,8 @@
     "openstack_series": "2025.1",
     "cloud_mirror": "http://ubuntu-cloud.archive.canonical.com/ubuntu",
     "cloud_keyring": "/usr/share/keyrings/ubuntu-cloud-keyring.gpg",
-    "version_policy": "Preserve the published UCA ~cloud revision and epoch for archive rebuilds"
+    "version_policy": "Preserve the published UCA ~cloud revision and epoch for archive rebuilds",
+    "distribution": "noble-epoxy"
   },
   "maintainer": {
     "name": "Packaging Build Agent",

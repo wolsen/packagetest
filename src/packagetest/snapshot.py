@@ -18,8 +18,10 @@ def snapshot_version(base: str, timestamp: int, count: int, sha: str) -> str:
     return f'{debian_base}+git{date}.{count}.{sha[:7]}'
 
 
-def canonical_sdist(source: Path, destination: Path, *, epoch: int, version: str):
+def canonical_sdist(source: Path, destination: Path, *, epoch: int, version: str, archive_format: str = "portable-v1"):
     """Keep generated sdist contents; normalize archive headers for repeatability."""
+    if archive_format not in {'legacy', 'portable-v1'}:
+        raise ValueError('Unsupported snapshot archive format')
     with tarfile.open(source, 'r:gz') as archive:
         members = archive.getmembers()
         names = {m.name.split('/', 1)[-1] for m in members}
@@ -35,6 +37,8 @@ def canonical_sdist(source: Path, destination: Path, *, epoch: int, version: str
                     if member.name.startswith('/') or '..' in Path(member.name).parts or not (member.isfile() or member.isdir()):
                         raise ValueError('Unexpected snapshot archive member')
                     data = archive.extractfile(member).read() if member.isfile() else None
+                    if archive_format == 'portable-v1':
+                        member.mode = 0o755 if member.isdir() or member.mode & 0o100 else 0o644
                     member.uid = member.gid = 0
                     member.uname = member.gname = ''
                     member.mtime = epoch
@@ -74,10 +78,11 @@ def build_snapshot(build, package: dict, destination: Path) -> dict:
     archives = list(dist.glob('*.tar.gz'))
     if len(archives) != 1:
         raise ValueError('Expected exactly one generated snapshot sdist')
-    canonical_sdist(archives[0], destination, epoch=epoch, version=spec['pep440_version'])
+    canonical_sdist(archives[0], destination, epoch=epoch, version=spec['pep440_version'],
+                    archive_format=spec.get('archive_format', 'legacy'))
     digest = sha256(destination)
     if spec.get('sdist_sha256') and digest != spec['sdist_sha256']:
-        raise ValueError('Generated snapshot sdist checksum differs from lock')
+        raise ValueError(f'Generated snapshot sdist checksum differs from lock: expected {spec["sdist_sha256"]}, got {digest}')
     return {**spec, 'sdist_sha256': digest, 'sdist_file': destination.name,
             'python': build.command(str(venv / 'bin/python'), '--version'),
             'installed_build_tools': build.command(str(venv / 'bin/pip'), 'freeze')}

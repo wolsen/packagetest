@@ -97,6 +97,7 @@ def dependency_build(tmp_path, monkeypatch, installed_version):
     def verify(directory, **kwargs):
         binary = directory / 'output.deb'
         binary.write_bytes(b'validated fixture output')
+        (directory / 'output.changes').write_text('Distribution: noble\n')
         return {'binaries': [{'file': binary.name, 'package': 'python3-producer', 'version': '1.0-1+local1', 'sha256': sha256(binary)}],
                 'changes': 'output.changes', 'build_dependency_versions': {'python3-producer': installed_version}}
     monkeypatch.setattr('packagetest.locked.verify_binaries', verify)

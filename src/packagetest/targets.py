@@ -13,7 +13,7 @@ def validate_target(lock):
     if profile != 'noble-uca-epoxy':
         raise ValueError('Unsupported target profile')
     expected = {'suite': 'noble', 'architecture': 'amd64', 'chroot': 'noble-uca-epoxy-amd64-sbuild',
-                'openstack_series': '2025.1', 'pockets': UCA_POCKETS,
+                'distribution': 'noble-epoxy', 'openstack_series': '2025.1', 'pockets': UCA_POCKETS,
                 'cloud_mirror': 'http://ubuntu-cloud.archive.canonical.com/ubuntu',
                 'cloud_keyring': '/usr/share/keyrings/ubuntu-cloud-keyring.gpg'}
     for key, value in expected.items():

@@ -76,6 +76,7 @@ def create_snapshot_lock(template: Path, output: Path, root: Path, *, ref='maste
     acquisition.pop('upstream_tag_sha', None)
     acquisition.pop('tarball', None)
     acquisition['snapshot'].update(selected)
+    acquisition['snapshot']['archive_format'] = 'portable-v1'
     acquisition['snapshot'].pop('sdist_sha256', None)
     result = build_snapshot(resolver, package, resolver.root / f'{package["source"]}_{version}.orig.tar.gz')
     acquisition['snapshot']['sdist_sha256'] = result['sdist_sha256']

@@ -76,3 +76,21 @@ def test_resolution_preserves_packaging_pins_and_only_writes_after_sdist(tmp_pat
     for key in ('packaging_sha', 'upstream_sha', 'pristine_tar_sha', 'packaging_branch'):
         assert actual['packages'][0]['input'][key] == original['packages'][0]['input'][key]
     assert json.loads(template.read_text()) == original
+
+
+def test_cutoff_uses_first_parent_not_unmerged_side_commit(tmp_path):
+    repo, first, tip = history(tmp_path)
+    git(repo, 'checkout', '-b', 'side', first)
+    git(repo, 'commit', '--allow-empty', '-m', 'side', date='2026-01-02T18:00:00Z')
+    git(repo, 'checkout', 'master')
+    git(repo, 'merge', '--no-ff', 'side', '-m', 'merge', date='2026-01-05T12:00:00Z')
+    git(repo, 'update-ref', 'refs/remotes/origin/master', 'HEAD')
+    selected = select_commit(Resolver(tmp_path / 'runs'), repo, 'master', '2026-01-03T00:00:00Z')
+    assert selected['sha'] == first
+
+
+def test_resolver_reads_full_stdout_not_diagnostic_tail(tmp_path):
+    import sys
+    resolver = Resolver(tmp_path)
+    text = resolver.command(sys.executable, '-c', "print('first\\n' + 'x' * 300000 + '\\nlast')")
+    assert text.startswith('first\n') and text.endswith('\nlast')

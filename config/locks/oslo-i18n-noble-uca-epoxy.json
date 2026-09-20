@@ -20,7 +20,8 @@
     "openstack_series": "2025.1",
     "cloud_mirror": "http://ubuntu-cloud.archive.canonical.com/ubuntu",
     "cloud_keyring": "/usr/share/keyrings/ubuntu-cloud-keyring.gpg",
-    "version_policy": "Append ~cloudN to the pinned packaging revision; preserve epoch and advance previous_target_version"
+    "version_policy": "Append ~cloudN to the pinned packaging revision; preserve epoch and advance previous_target_version",
+    "distribution": "noble-epoxy"
   },
   "maintainer": {
     "name": "Packaging Build Agent",

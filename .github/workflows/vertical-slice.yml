@@ -1,7 +1,10 @@
 name: OpenStack packaging validation
 on:
   push:
-    branches: [codex/packaging-milestones]
+    branches: [main, codex/packaging-milestones]
+    paths-ignore: ['**.md']
+  pull_request:
+    branches: [main]
     paths-ignore: ['**.md']
   workflow_dispatch:
     inputs:
@@ -49,19 +52,18 @@ jobs:
         if: always()
         continue-on-error: true
         run: python3 scripts/summarize_packaging_failures.py artifacts
+      - name: Bundle portable artifact payload
+        if: always()
+        env:
+          BUILD_CASE: ${{ matrix.build_case }}
+        run: |
+          mkdir -p artifacts
+          # Preserve sbuild's colon-bearing log names and symlinks inside a tar.
+          tar --exclude='*/work' --exclude='./environment.lock' \
+            -C artifacts -czf "$RUNNER_TEMP/packaging-$BUILD_CASE.tar.gz" .
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: packaging-${{ matrix.build_case }}
-          path: |
-            artifacts/prepare-builder.log
-            artifacts/gen-*/artifacts/
-            artifacts/gen-*/logs/
-            artifacts/gen-*/failures/
-            artifacts/gen-*/generation-manifest.json
-            artifacts/gen-*/build-lock.json
-            artifacts/gen-*/smoke-install.json
-            artifacts/dependency-negative/
-            artifacts/resolved-oslo-latest.json
-            artifacts/snapshot-locks/resolve-*/resolution.json
+          path: ${{ runner.temp }}/packaging-${{ matrix.build_case }}.tar.gz
           if-no-files-found: error

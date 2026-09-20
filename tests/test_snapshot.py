@@ -59,3 +59,22 @@ def test_snapshot_requires_git_and_tool_pins(tmp_path):
     invalid.write_text(json.dumps(lock))
     with pytest.raises(ValueError, match='full Git'):
         load_lock(invalid)
+
+
+def test_portable_sdist_removes_umask_variation_and_preserves_executable(tmp_path):
+    outputs = []
+    for mode in (0o644, 0o664):
+        source = tmp_path / f'{mode}.tgz'
+        with tarfile.open(source, 'w:gz') as archive:
+            for name, data in [('AUTHORS', b'A'), ('ChangeLog', b'C'), ('PKG-INFO', b'Version: 1.0\n'), ('run', b'#!/bin/sh')]:
+                member = tarfile.TarInfo('project/' + name)
+                member.size = len(data)
+                member.mode = mode | (0o111 if name == 'run' else 0)
+                archive.addfile(member, io.BytesIO(data))
+        output = tmp_path / f'{mode}-normalized.tgz'
+        canonical_sdist(source, output, epoch=100, version='1.0')
+        outputs.append(output.read_bytes())
+        with tarfile.open(output) as archive:
+            assert archive.getmember('project/run').mode == 0o755
+            assert archive.getmember('project/AUTHORS').mode == 0o644
+    assert outputs[0] == outputs[1]

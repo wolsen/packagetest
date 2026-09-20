@@ -103,6 +103,7 @@ def summarize(root: Path) -> int:
 
         print(f"- package: {payload.get('source_package')}")
         print(f"  category: {payload.get('category')}")
+        print(f"  error: {payload.get('error', 'unspecified')}")
         print(f"  failed_command: {' '.join(command_argv)}")
         print(f"  exit_code: {payload.get('command_exit_code')}")
         print(f"  failure_json: {failure_file}")
