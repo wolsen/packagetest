@@ -14,12 +14,14 @@ Progress is based on real build evidence, not generated command strings. See `VA
 - [x] Generate and build the latest pinned oslo.i18n Git snapshot on Stonking, with exact installed Python version verification.
 - [ ] Verify the checked-in workflow on GitHub Actions.
 
-## Next: prove a dependency edge
+## Validated dependency edge
 
-- Build a pinned python-pbr producer and compatible consumer.
-- Exercise the implemented `--extra-package` handoff.
-- Require the producer's exact binary version in the consumer's `.buildinfo`.
-- Prove a failed producer blocks its consumer.
+- [x] Build a pinned python-pbr producer and compatible consumer.
+- [x] Exercise the implemented `--extra-package` handoff.
+- [x] Require the producer's exact binary version during resolution and in the consumer's `.buildinfo`.
+- [x] Prove a failed producer blocks its consumer.
+
+Next: automate creation of reviewable snapshot locks from a branch or cutoff timestamp.
 
 ## Broader Ubuntu and Cloud Archive support
 

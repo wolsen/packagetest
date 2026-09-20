@@ -96,6 +96,18 @@ def build_cmd(args: argparse.Namespace) -> int:
         return 1
 
 
+def snapshot_lock_cmd(args: argparse.Namespace) -> int:
+    from .snapshot_lock import create_snapshot_lock
+    try:
+        result = create_snapshot_lock(Path(args.template), Path(args.output), Path(args.work_dir),
+                                      ref=args.ref, cutoff=args.at)
+        print(json.dumps(result, indent=2))
+        return 0
+    except (ValueError, KeyError, OSError, RuntimeError) as exc:
+        logger.error("Snapshot resolution failed: %s", exc)
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="packaging")
     _add_logging_flags(parser, default=False)
@@ -116,6 +128,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_build.add_argument("--command-timeout", type=float, default=3600)
     p_build.add_argument("--dry-run", action="store_true")
     p_build.set_defaults(func=build_cmd)
+    p_snapshot = sub.add_parser("lock-snapshot", help="Resolve a branch or cutoff into a new reviewed snapshot lock")
+    p_snapshot.add_argument("--template", required=True)
+    p_snapshot.add_argument("--ref", default="master")
+    p_snapshot.add_argument("--at", help="ISO 8601 commit cutoff including timezone")
+    p_snapshot.add_argument("--output", required=True)
+    p_snapshot.add_argument("--work-dir", default="artifacts/snapshot-locks")
+    p_snapshot.set_defaults(func=snapshot_lock_cmd)
     p_status = sub.add_parser("status")
     _add_logging_flags(p_status, default=argparse.SUPPRESS)
     p_status.add_argument("--manifest", required=True)

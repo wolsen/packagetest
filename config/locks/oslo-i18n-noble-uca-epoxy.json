@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "target": {
+    "suite": "noble",
+    "architecture": "amd64",
+    "backend": "schroot",
+    "chroot": "noble-uca-epoxy-amd64-sbuild",
+    "mirror": "http://archive.ubuntu.com/ubuntu",
+    "components": [
+      "main",
+      "universe"
+    ],
+    "pockets": [
+      "noble",
+      "noble-updates",
+      "noble-security",
+      "noble-updates/epoxy"
+    ],
+    "profile": "noble-uca-epoxy",
+    "openstack_series": "2025.1",
+    "cloud_mirror": "http://ubuntu-cloud.archive.canonical.com/ubuntu",
+    "cloud_keyring": "/usr/share/keyrings/ubuntu-cloud-keyring.gpg",
+    "version_policy": "Append ~cloudN to the pinned packaging revision; preserve epoch and advance previous_target_version"
+  },
+  "maintainer": {
+    "name": "Packaging Build Agent",
+    "email": "packaging-agent@example.invalid"
+  },
+  "packages": [
+    {
+      "source": "python-oslo.i18n",
+      "version": "6.5.1-0ubuntu1.1~cloud0+packagetest1",
+      "expected_binaries": [
+        "python3-oslo.i18n",
+        "python-oslo.i18n-doc"
+      ],
+      "input": {
+        "kind": "gbp",
+        "repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.i18n",
+        "packaging_branch": "stable/2025.1",
+        "packaging_sha": "6fa091590b0c78382caf89722dc95957f1c06112",
+        "upstream_branch": "upstream-epoxy",
+        "upstream_sha": "b2ee279617aa47c50a67bd8b5ed5e6fbd9f76adb",
+        "pristine_tar_sha": "ae4529b9bfe7aee23ae5ce5ed31c4ef2948c5199",
+        "upstream_tag": "6.5.1",
+        "upstream_tag_sha": "b2ee279617aa47c50a67bd8b5ed5e6fbd9f76adb",
+        "upstream_version": "6.5.1",
+        "import_mode": "reuse",
+        "tarball": {
+          "url": "https://ubuntu-cloud.archive.canonical.com/ubuntu/pool/main/p/python-oslo.i18n/python-oslo.i18n_6.5.1.orig.tar.gz",
+          "sha256": "ea856a70c5af7c76efb6590994231289deabe23be8477159d37901cef33b109d"
+        }
+      },
+      "backport_of": "6.5.1-0ubuntu1.1",
+      "previous_target_version": "6.5.1-0ubuntu1~cloud0"
+    }
+  ]
+}

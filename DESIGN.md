@@ -31,7 +31,7 @@ Each invocation creates a unique generation directory tied to the canonical lock
 
 Source and binary artifacts are stored separately. A zero exit code with missing, corrupt, or incorrectly versioned binaries fails validation. Source hashes, binary hashes, tool versions, builder identity, and installed build dependency versions are retained.
 
-For ordered multi-package locks, only validated successful producer binaries are passed to consumers using sbuild `--extra-package`. A declared required dependency version must match `.buildinfo`; failed producers block consumers. This mechanism has unit coverage, but a real producer/consumer integration case is still pending.
+For ordered multi-package locks, only validated successful producer binaries are passed to consumers using sbuild `--extra-package`. A declared required dependency version is enforced by an sbuild `--add-depends` constraint and must match `.buildinfo`; failed producers block consumers. The pbr → oslo.i18n Stonking case validates this handoff and failure blocking with real runs.
 
 ## Scope
 

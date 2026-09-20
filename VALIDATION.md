@@ -34,10 +34,20 @@ The VM `packagetest-baseline-f590e9` has been stopped to release memory, with it
 
 Gump was attempted and then set aside as requested. Three small fixes and their regression tests remain in the sibling checkout and in `integration/gump-packaging.patch`; workflow context propagation still blocked execution of uncommitted edits. Gump and GitHub Actions end-to-end success are **not** claimed.
 
-A real producer/consumer dependency case, UCA target/version policy, service packages, automatic discovery-to-lock conversion, archive snapshots, and uploads remain future work. No commits, pushes, package uploads, or signing were performed.
+A real producer/consumer dependency case, UCA target/version policy, service packages, automatic discovery-to-lock conversion, archive snapshots, and uploads remain future work. No pushes, package uploads, or signing were performed. The later implementation checkpoint is recorded below.
 
 ## Latest-upstream snapshot, 2026-09-20
 
 A further direct build of upstream commit `7045af07a0654247ad9f3dfd416622afed3e1489` succeeded on **Stonking amd64**, including all 75 upstream tests on Python 3.14 and installation into a separate fresh schroot. Debian version: `6.9.0+git20260914.3.7045af0-0ubuntu1~packagetest1`. Installed Python distribution version: `6.9.0+git20260914.3.7045af0`.
 
 Evidence: `artifacts/validated/gen-e018f791b30e-08323b0e/`; details and repeat instructions: `SNAPSHOTS.md`. Snapshot sdist generation was independently repeated and matched the pinned checksum. Lintian returned no errors; documentation and long-filename warnings are recorded in the logs. Agent tests now total **61 passed**. Gump remains deferred.
+
+## Producer/consumer dependency validation, 2026-09-20
+
+Implementation checkpoint `66ae9df` records the working release/snapshot slice. A subsequent real Stonking build of python-pbr → python-oslo.i18n succeeded in generation `gen-07019ac10c56-d323c648`.
+
+The consumer's binary `.buildinfo` records `python3-pbr (= 7.1.0+git20260813.1.9ec6e72-0ubuntu1+packagetest1)`. The build log shows it fetched from the local sbuild artifact repository, and the manifest records the producer artifact hashes. All four generated `.deb` packages passed metadata/checksum checks and installed at their expected versions in a fresh schroot. The Oslo snapshot's 75 tests and translation/version smoke checks passed.
+
+An independent negative test deliberately changed the producer tarball checksum. Pbr failed source acquisition, oslo.i18n was blocked without checkout or build, and `artifacts/dependency-negative/assertions.json` records the expected outcome. Both positive and negative evidence are retained locally; see `DEPENDENCY-VALIDATION.md`.
+
+Agent tests: **63 passed**. Ubuntu's pinned pbr packaging intentionally skips pbr build-time unit tests; no claim is made that those tests ran. No patches or `nocheck` settings were introduced. The PBR wheel used during snapshot sdist generation remains a separately pinned bootstrap tool; this test proves the Debian producer dependency in the consumer's binary build.

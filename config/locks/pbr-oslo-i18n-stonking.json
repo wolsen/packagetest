@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "target": {
+    "suite": "stonking",
+    "architecture": "amd64",
+    "backend": "schroot",
+    "chroot": "stonking-amd64-sbuild",
+    "mirror": "http://archive.ubuntu.com/ubuntu",
+    "components": [
+      "main",
+      "universe"
+    ],
+    "pockets": [
+      "stonking"
+    ]
+  },
+  "maintainer": {
+    "name": "Packaging Build Agent",
+    "email": "packaging-agent@example.invalid"
+  },
+  "packages": [
+    {
+      "source": "python-pbr",
+      "version": "7.1.0+git20260813.1.9ec6e72-0ubuntu1+packagetest1",
+      "expected_binaries": [
+        "python3-pbr",
+        "python-pbr-doc"
+      ],
+      "input": {
+        "kind": "gbp",
+        "repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-pbr",
+        "packaging_branch": "master",
+        "packaging_sha": "ac017dfccc3f74dc090da03a7173e2c045c8a43d",
+        "upstream_branch": "upstream-hibiscus",
+        "upstream_sha": "5e113e28891972152299ecebdbf697e87924c7d0",
+        "pristine_tar_sha": "061c10e02ad8f165c13be55aeba5c7d13c5cb1f0",
+        "upstream_tag": "7.1.0+git20260813.1.9ec6e72",
+        "upstream_tag_sha": "5e113e28891972152299ecebdbf697e87924c7d0",
+        "upstream_version": "7.1.0+git20260813.1.9ec6e72",
+        "import_mode": "reuse",
+        "tarball": {
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/python-pbr/python-pbr_7.1.0+git20260813.1.9ec6e72.orig.tar.gz",
+          "sha256": "fa995171f6e09256a666f4e11d786e7d07c82060182dff7797006c3a03c652db"
+        }
+      }
+    },
+    {
+      "source": "python-oslo.i18n",
+      "version": "6.9.0+git20260914.3.7045af0-0ubuntu1~packagetest1",
+      "expected_binaries": [
+        "python3-oslo.i18n",
+        "python-oslo.i18n-doc"
+      ],
+      "input": {
+        "kind": "gbp",
+        "repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.i18n",
+        "packaging_branch": "master",
+        "packaging_sha": "051e314cd8679650f3e7fc2986d99235fbe67eb5",
+        "upstream_branch": "upstream-hibiscus",
+        "upstream_sha": "03dd1aafd6be6e752a7a3e6299aaee995a3b70db",
+        "pristine_tar_sha": "ae4529b9bfe7aee23ae5ce5ed31c4ef2948c5199",
+        "upstream_tag": "6.9.0+git20260914.3.7045af0",
+        "upstream_version": "6.9.0+git20260914.3.7045af0",
+        "import_mode": "new",
+        "snapshot": {
+          "repository": "https://opendev.org/openstack/oslo.i18n",
+          "ref": "master",
+          "sha": "7045af07a0654247ad9f3dfd416622afed3e1489",
+          "resolved_at": "2026-09-20T07:14:06.264547+00:00",
+          "base_tag": "6.9.0",
+          "base_tag_sha": "eea85f8815a6475486fd3fbc558cbd3abd7c40db",
+          "commits_since_tag": 3,
+          "commit_timestamp": "1789374948",
+          "pep440_version": "6.9.0+git20260914.3.7045af0",
+          "build_requirements": [
+            {
+              "name": "pbr",
+              "version": "7.0.3",
+              "sha256": "ff223894eb1cd271a98076b13d3badff3bb36c424074d26334cd25aebeecea6b"
+            },
+            {
+              "name": "setuptools",
+              "version": "80.9.0",
+              "sha256": "062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922"
+            },
+            {
+              "name": "wheel",
+              "version": "0.45.1",
+              "sha256": "708e7481cc80179af0e556bbf0cc00b8444c7321e2700b8d8580231d13017248"
+            }
+          ],
+          "sdist_sha256": "e299aa59689ec199a629793c7737264ebe0f0aa5d8bbd71ebcefab10f01feceb"
+        }
+      },
+      "depends_on": [
+        "python-pbr"
+      ],
+      "required_build_versions": {
+        "python3-pbr": "7.1.0+git20260813.1.9ec6e72-0ubuntu1+packagetest1"
+      }
+    }
+  ]
+}

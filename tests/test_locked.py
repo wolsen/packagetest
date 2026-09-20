@@ -76,3 +76,47 @@ def test_corrupt_deb_rejected(binary_output):
 def test_wrong_expected_binary_rejected(binary_output):
     with pytest.raises(ValueError, match='Expected binaries'):
         verify_binaries(binary_output, source='example', version='1.0-1', expected=['missing'], arch='amd64')
+
+
+def dependency_build(tmp_path, monkeypatch, installed_version):
+    import copy
+    lock = load_lock(LOCK)
+    producer = lock['packages'][0]
+    producer.update(source='producer', version='1.0-1+local1', expected_binaries=['python3-producer'])
+    consumer = copy.deepcopy(producer)
+    consumer.update(source='consumer', depends_on=['producer'], required_build_versions={'python3-producer': '1.0-1+local1'})
+    lock['packages'].append(consumer)
+    build = LockedBuild(lock, tmp_path)
+    monkeypatch.setattr(build, 'preflight', lambda: None)
+    monkeypatch.setattr(build, 'archive_source', lambda package, directory: directory / 'input.dsc')
+    calls = []
+    def command(*argv, **kwargs):
+        calls.append(argv)
+        return ''
+    monkeypatch.setattr(build, 'command', command)
+    def verify(directory, **kwargs):
+        binary = directory / 'output.deb'
+        binary.write_bytes(b'validated fixture output')
+        return {'binaries': [{'file': binary.name, 'package': 'python3-producer', 'version': '1.0-1+local1', 'sha256': sha256(binary)}],
+                'changes': 'output.changes', 'build_dependency_versions': {'python3-producer': installed_version}}
+    monkeypatch.setattr('packagetest.locked.verify_binaries', verify)
+    return build, calls
+
+
+def test_consumer_receives_artifact_and_exact_solver_constraint(tmp_path, monkeypatch):
+    build, calls = dependency_build(tmp_path, monkeypatch, '1.0-1+local1')
+    assert build.run() == 0
+    consumer = [c for c in calls if c[0] == 'sbuild'][1]
+    assert '--add-depends=python3-producer (= 1.0-1+local1)' in consumer
+    assert any(a.startswith('--extra-package=') and '/producer/binary/' in a for a in consumer)
+    evidence = build.manifest['packages'][1]['dependency_artifacts'][0]
+    assert evidence['source'] == 'producer'
+    assert evidence['sha256'] == sha256(Path(evidence['path']))
+
+
+def test_consumer_cannot_succeed_using_archive_version(tmp_path, monkeypatch):
+    build, _ = dependency_build(tmp_path, monkeypatch, '1.0-1')
+    assert build.run() == 1
+    record = build.manifest['packages'][1]
+    assert record['result'] == 'FAILED'
+    assert 'did not use required dependency' in record['error']

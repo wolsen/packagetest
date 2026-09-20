@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "target": {
+    "suite": "noble",
+    "architecture": "amd64",
+    "backend": "schroot",
+    "chroot": "noble-uca-epoxy-amd64-sbuild",
+    "mirror": "http://archive.ubuntu.com/ubuntu",
+    "components": [
+      "main",
+      "universe"
+    ],
+    "pockets": [
+      "noble",
+      "noble-updates",
+      "noble-security",
+      "noble-updates/epoxy"
+    ],
+    "profile": "noble-uca-epoxy",
+    "openstack_series": "2025.1",
+    "cloud_mirror": "http://ubuntu-cloud.archive.canonical.com/ubuntu",
+    "cloud_keyring": "/usr/share/keyrings/ubuntu-cloud-keyring.gpg",
+    "version_policy": "Preserve the published UCA ~cloud revision and epoch for archive rebuilds"
+  },
+  "maintainer": {
+    "name": "Packaging Build Agent",
+    "email": "packaging-agent@example.invalid"
+  },
+  "packages": [
+    {
+      "source": "glance",
+      "version": "2:30.0.0-0ubuntu1~cloud1.1",
+      "expected_binaries": [
+        "glance",
+        "glance-api",
+        "glance-common",
+        "python-glance-doc",
+        "python3-glance"
+      ],
+      "input": {
+        "kind": "archive",
+        "dsc": {
+          "url": "https://ubuntu-cloud.archive.canonical.com/ubuntu/pool/main/g/glance/glance_30.0.0-0ubuntu1~cloud1.1.dsc",
+          "sha256": "908c95f988f668fd22a16be72a317c088f6feacd036705215af3f53d580e11dc"
+        }
+      }
+    }
+  ]
+}

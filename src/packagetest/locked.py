@@ -49,6 +49,11 @@ def load_lock(path: Path) -> dict:
             if dep not in seen:
                 raise ValueError(f'{source}: dependency {dep} must precede its consumer in lock')
         seen.add(source)
+        for binary, version in package.get('required_build_versions', {}).items():
+            if not re.fullmatch(r'[a-z0-9][a-z0-9+.-]+(?::[a-z0-9-]+)?', binary):
+                raise ValueError('Invalid required binary dependency name')
+            if subprocess.run(['dpkg', '--validate-version', version], capture_output=True).returncode:
+                raise ValueError('Invalid required binary dependency version')
         if not package.get('expected_binaries'):
             raise ValueError(f'{source}: expected_binaries is required')
         if subprocess.run(['dpkg', '--validate-version', package['version']], capture_output=True).returncode:
@@ -67,7 +72,7 @@ def load_lock(path: Path) -> dict:
                     raise ValueError(f'Snapshot requires a full Git {key}')
             if not re.fullmatch(r'[0-9][a-zA-Z0-9.+~\-]*', snapshot['base_tag']):
                 raise ValueError('Invalid snapshot base tag')
-            if snapshot.get('sdist_sha256') and not _hex(snapshot['sdist_sha256'], 64):
+            if not _hex(snapshot.get('sdist_sha256'), 64):
                 raise ValueError('Invalid snapshot sdist checksum')
             if not snapshot.get('build_requirements'):
                 raise ValueError('Snapshot requires checksum-pinned build tools')
@@ -94,6 +99,8 @@ def load_lock(path: Path) -> dict:
             for key in ('packaging_branch', 'upstream_branch', 'upstream_tag'):
                 if subprocess.run(['git', 'check-ref-format', '--branch', acquisition[key]], capture_output=True).returncode:
                     raise ValueError(f'Invalid Git ref: {key}')
+    from .targets import validate_target
+    validate_target(lock)
     return lock
 
 
@@ -188,6 +195,12 @@ class LockedBuild:
         if not any(line.removeprefix('chroot:') == target['chroot'] for line in chroots):
             raise StageFailure(f'Missing chroot {target["chroot"]}; run scripts/prepare-builder.sh')
         self.command('schroot', '-c', target['chroot'], '--directory', '/', '--', 'true')
+        self.manifest['apt_sources'] = self.command('schroot', '-c', target['chroot'], '--directory', '/', '--',
+            'sh', '-c', 'cat /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null; true')
+        if target.get('profile') == 'noble-uca-epoxy':
+            required = 'deb [signed-by=/usr/share/keyrings/ubuntu-cloud-keyring.gpg] http://ubuntu-cloud.archive.canonical.com/ubuntu noble-updates/epoxy main'
+            if required not in self.manifest['apt_sources'] or 'trusted=yes' in self.manifest['apt_sources']:
+                raise StageFailure('UCA chroot is missing its signed Epoxy repository')
         self.save()
 
     def archive_source(self, package: dict, source_dir: Path) -> Path:
@@ -233,7 +246,12 @@ class LockedBuild:
         new_epoch = package['version'].split(':')[0] if ':' in package['version'] else '0'
         if old_epoch != new_epoch:
             raise StageFailure('Epoch changes require a separate reviewed policy')
-        self.command('dpkg', '--compare-versions', package['version'], 'gt', old_version)
+        backport = self.lock['target'].get('profile') == 'noble-uca-epoxy'
+        if backport:
+            if package.get('backport_of') != old_version:
+                raise StageFailure('UCA backport base differs from pinned packaging changelog')
+        else:
+            self.command('dpkg', '--compare-versions', package['version'], 'gt', old_version)
         deb_upstream = package['version'].split(':')[-1].rsplit('-', 1)[0]
         if deb_upstream != spec['upstream_version']:
             raise StageFailure('Changelog and orig upstream versions differ')
@@ -277,7 +295,7 @@ class LockedBuild:
             self.command('gbp', 'pq', 'drop', cwd=checkout)
         self.enter('changelog')
         env = {'DEBFULLNAME': self.lock['maintainer']['name'], 'DEBEMAIL': self.lock['maintainer']['email']}
-        self.command('dch', '--distribution', self.lock['target']['suite'], '--force-distribution', '--newversion',
+        self.command('dch', *(['--force-bad-version'] if backport else []), '--distribution', self.lock['target']['suite'], '--force-distribution', '--newversion',
                      package['version'], f'Build pinned upstream release {spec["upstream_version"]} for packaging validation.', cwd=checkout, env=env)
         self.command('git', 'add', 'debian/changelog', cwd=checkout)
         self.command('git', 'commit', '-m', f'New upstream release {spec["upstream_version"]}', cwd=checkout)
@@ -320,7 +338,7 @@ class LockedBuild:
             self.manifest['packages'].append(record)
             self.checkout = None
             if any(dep in failed for dep in package.get('depends_on', [])):
-                record.update(result='BLOCKED', finished_at=_now())
+                record.update(result='BLOCKED', blocked_by=[dep for dep in package.get('depends_on', []) if dep in failed], finished_at=_now())
                 failed.add(source)
                 self.save()
                 continue
@@ -337,9 +355,17 @@ class LockedBuild:
                 argv = ['sbuild', '--verbose', f'--chroot-mode={target["backend"]}', f'--chroot={target["chroot"]}',
                         f'--dist={target["suite"]}', f'--arch={target["architecture"]}', '--arch-all',
                         f'--build-dir={binary_dir}', '--no-run-lintian']
+                record['dependency_artifacts'] = []
                 for dep in package.get('depends_on', []):
-                    for path in completed[dep]:
+                    for artifact in completed[dep]:
+                        path = artifact['path']
+                        if sha256(path) != artifact['sha256']:
+                            raise StageFailure(f'Dependency artifact changed after validation: {path}')
                         argv.append(f'--extra-package={path}')
+                        record['dependency_artifacts'].append({**artifact, 'path': str(path), 'source': dep})
+                for binary, version in package.get('required_build_versions', {}).items():
+                    argv.append(f'--add-depends={binary} (= {version})')
+                self.save()
                 self.command(*argv, str(dsc), cwd=binary_dir)
                 self.enter('artifact-validation')
                 validation = verify_binaries(binary_dir, source=source, version=package['version'],
@@ -350,7 +376,7 @@ class LockedBuild:
                 self.enter('lintian')
                 self.command('lintian', '--fail-on=error', str(binary_dir / validation['changes']), cwd=binary_dir)
                 record.update(validation, result='SUCCEEDED', finished_at=_now())
-                completed[source] = [binary_dir / b['file'] for b in validation['binaries']]
+                completed[source] = [{**b, 'path': binary_dir / b['file']} for b in validation['binaries']]
             except Exception as exc:
                 failed.add(source)
                 self.failure(source, exc)

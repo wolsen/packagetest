@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "target": {
+    "suite": "noble",
+    "architecture": "amd64",
+    "backend": "schroot",
+    "chroot": "noble-uca-epoxy-amd64-sbuild",
+    "mirror": "http://archive.ubuntu.com/ubuntu",
+    "components": [
+      "main",
+      "universe"
+    ],
+    "pockets": [
+      "noble",
+      "noble-updates",
+      "noble-security",
+      "noble-updates/epoxy"
+    ],
+    "profile": "noble-uca-epoxy",
+    "openstack_series": "2025.1",
+    "cloud_mirror": "http://ubuntu-cloud.archive.canonical.com/ubuntu",
+    "cloud_keyring": "/usr/share/keyrings/ubuntu-cloud-keyring.gpg",
+    "version_policy": "Preserve the published UCA ~cloud revision and epoch for archive rebuilds"
+  },
+  "maintainer": {
+    "name": "Packaging Build Agent",
+    "email": "packaging-agent@example.invalid"
+  },
+  "packages": [
+    {
+      "source": "python-oslo.i18n",
+      "version": "6.5.1-0ubuntu1~cloud0",
+      "expected_binaries": [
+        "python3-oslo.i18n",
+        "python-oslo.i18n-doc"
+      ],
+      "input": {
+        "kind": "archive",
+        "dsc": {
+          "url": "https://ubuntu-cloud.archive.canonical.com/ubuntu/pool/main/p/python-oslo.i18n/python-oslo.i18n_6.5.1-0ubuntu1~cloud0.dsc",
+          "sha256": "811239eadc0caa62f442a6ddea8cd8d17bdab5a5451eb7f3a1c0abcb51f7194f"
+        }
+      }
+    }
+  ]
+}

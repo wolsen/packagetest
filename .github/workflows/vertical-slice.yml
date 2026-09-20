@@ -1,32 +1,50 @@
-name: OpenStack library packaging
+name: OpenStack packaging validation
 on:
+  push:
+    branches: [codex/packaging-milestones]
+    paths-ignore: ['**.md']
   workflow_dispatch:
     inputs:
       build_case:
-        description: Pinned library build
+        description: Pinned packaging case (all runs the validation matrix)
         type: choice
-        options: [baseline, update, snapshot]
-        default: baseline
+        options: [all, baseline, update, snapshot, dependency, uca, glance, resolved-snapshot]
+        default: all
         required: true
 permissions:
   contents: read
 jobs:
-  library:
+  build:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        build_case: ${{ fromJSON(inputs.build_case && inputs.build_case != 'all' && format('["{0}"]', inputs.build_case) || '["baseline","update","snapshot","dependency","uca","glance"]') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Prepare isolated builder
         env:
-          BUILD_CASE: ${{ inputs.build_case }}
+          BUILD_CASE: ${{ matrix.build_case }}
         run: |
           target=noble
-          if [[ "$BUILD_CASE" == snapshot ]]; then target=stonking; fi
-          bash scripts/prepare-builder.sh "$target"
-      - name: Build, validate, and install pinned library
+          case "$BUILD_CASE" in
+            snapshot|dependency|resolved-snapshot) target=stonking ;;
+            uca|glance) target=noble-uca-epoxy ;;
+          esac
+          mkdir -p artifacts
+          set -o pipefail
+          bash scripts/prepare-builder.sh "$target" 2>&1 | tee artifacts/prepare-builder.log
+      - name: Build, validate, and install pinned packages
         env:
-          BUILD_CASE: ${{ inputs.build_case }}
+          BUILD_CASE: ${{ matrix.build_case }}
         run: bash scripts/run-library.sh "$BUILD_CASE"
+      - name: Verify failed dependency blocks its consumer
+        if: matrix.build_case == 'dependency'
+        run: sg sbuild -c '.venv/bin/python scripts/test-dependency-failure.py'
       - name: Summarize failures
         if: always()
         continue-on-error: true
@@ -34,12 +52,16 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: library-build
+          name: packaging-${{ matrix.build_case }}
           path: |
+            artifacts/prepare-builder.log
             artifacts/gen-*/artifacts/
             artifacts/gen-*/logs/
             artifacts/gen-*/failures/
             artifacts/gen-*/generation-manifest.json
             artifacts/gen-*/build-lock.json
             artifacts/gen-*/smoke-install.json
+            artifacts/dependency-negative/
+            artifacts/resolved-oslo-latest.json
+            artifacts/snapshot-locks/resolve-*/resolution.json
           if-no-files-found: error

@@ -6,6 +6,7 @@ The first integration cases are deliberately small:
 
 - `baseline`: rebuild Ubuntu's published `python-oslo.i18n` 6.3.0-0ubuntu1 source package.
 - `update`: prepare 6.4.0 from a pinned Launchpad packaging commit and official release tarball, then build 6.4.0-0ubuntu1~packagetest1.
+- `dependency`: build a uniquely versioned python-pbr and require it in the oslo.i18n snapshot build. See `DEPENDENCY-VALIDATION.md`.
 - `snapshot`: generate a PBR sdist from pinned oslo.i18n Git commit `7045af07a065`, then build it for Stonking. See `SNAPSHOTS.md`.
 
 The executor validates checksums, actual `.deb` metadata, `.changes`, and `.buildinfo`; runs Lintian; and records installed build dependency versions. The workflow installs the resulting packages in another fresh schroot and exercises Oslo translation. A successful subprocess without the expected artifacts is a failed build.
@@ -54,7 +55,7 @@ Release tarballs and archive source inputs are checksum pinned; Git inputs are c
 
 The update path honors the selected packaging and upstream branches, requires explicit `reuse` or `new` import policy, verifies reused pristine-tar content, validates patch application, commits the changelog, and builds unsigned source artifacts. It fails on conflicts instead of asking a model to improvise packaging policy.
 
-Dependency handoff with sbuild `--extra-package` and required build-version checks is implemented, but a real producer/consumer integration case remains to be established. Discovery/scheduler/repository modules from the earlier prototype remain available for development; repository publication is not wired into the locked executor. UCA policy, service packages, automatic remediation, signing, and Launchpad uploads are future work.
+Dependency handoff is validated by the pbr → oslo.i18n integration case, using sbuild `--extra-package`, exact solver constraints, and `.buildinfo` checks. A corrupt producer source also demonstrably blocks its consumer. Discovery/scheduler/repository modules from the earlier prototype remain available for development; repository publication is not wired into the locked executor. UCA policy, service packages, automatic remediation, signing, and Launchpad uploads are future work.
 
 ## Development
 

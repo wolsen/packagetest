@@ -11,7 +11,7 @@ Each package has a Debian source name, complete Debian version, and required bin
 
 `maintainer` supplies repository-local Git identity and changelog identity. Epoch changes are rejected. The generated version must sort after the pinned packaging changelog version and use the locked upstream version.
 
-For a future multi-package case, `depends_on` names preceding source nodes. Only successful validated binaries are passed to sbuild with `--extra-package`. `required_build_versions` maps binary dependency names to exact versions that must appear in the consumer's `.buildinfo`. These mechanisms have unit coverage; real dependency-edge validation remains a separate milestone.
+For multi-package builds, `depends_on` names preceding source nodes. Only successful validated binaries are passed to sbuild with `--extra-package`. `required_build_versions` maps binary dependency names to exact versions that must appear in the consumer's `.buildinfo`. The pbr-oslo.i18n Stonking lock is the validated integration case. Required versions are enforced during dependency resolution as well as checked after building.
 
 A canonicalized lock SHA256 identifies the inputs. Each invocation gets a unique generation directory, so repeated builds never share work trees. Archive build dependency versions and generated changelog timestamps are not fixed by the lock; equal lock hashes do not imply byte-identical output.
 
