@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from packagetest.autopkgtest import checked_file, classify, run
+from packagetest.autopkgtest import checked_file, classify, exit_status, run
 
 
 @pytest.mark.parametrize('code,summary,result', [
@@ -16,6 +16,10 @@ from packagetest.autopkgtest import checked_file, classify, run
     (6, 'smoke FAIL bad response\nmysql SKIP unavailable\n', 'FAIL'),
     (8, '* SKIP no tests in this package\n', 'NO_TESTS'),
     (8, 'smoke SKIP isolation-machine required\n', 'SKIP'),
+    (8, 'autodep8-python3 PASS (superficial)\n', 'SUPERFICIAL'),
+    (8, 'autodep8-python3 PASS (superficial)\nmysql SKIP unavailable\n', 'SKIP'),
+    (0, 'autodep8-python3 PASS (superficial)\n', 'SUPERFICIAL'),
+    (0, 'autodep8-python3 PASS (superficial)\nsmoke PASS\n', 'PASS'),
     (12, '', 'FAIL'),
     (14, '', 'FAIL'),
     (16, '', 'INFRA_ERROR'),
@@ -73,3 +77,11 @@ def test_nightly_rejects_unbuilt_and_wrong_run_inputs(tmp_path, ci, result):
     ], env={**os.environ, 'PYTHONPATH': str(Path('src').resolve())}, capture_output=True, text=True)
     assert completed.returncode == 1
     assert json.loads((output / 'result.json').read_text())['result'] == result
+
+
+@pytest.mark.parametrize('result,expected', [
+    ('PASS', 0), ('SUPERFICIAL', 2), ('SKIP', 2), ('NO_TESTS', 2),
+    ('FAIL', 1), ('INFRA_ERROR', 1), ('BLOCKED', 1),
+])
+def test_gate_does_not_promote_coverage_gaps(result, expected):
+    assert exit_status(result) == expected

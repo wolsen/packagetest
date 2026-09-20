@@ -18,7 +18,7 @@ Consumers validate artifact run ID, attempt, target, frozen catalog entry, check
 
 ## Tests and reports
 
-Autopkgtests start after each build wave while subsequent builds proceed. They use separate QEMU guests with 4 GiB RAM and two CPUs on KVM-capable GitHub runners. Built source packages and exact candidate binaries are tested. PASS, FAIL, SKIP, NO_TESTS, INFRA_ERROR, and BLOCKED remain distinct; missing or skipped tests are not passes.
+Autopkgtests start after each build wave while subsequent builds proceed. They use separate QEMU guests with 4 GiB RAM and two CPUs on KVM-capable GitHub runners. Built source packages and exact candidate binaries are tested. PASS, SUPERFICIAL, FAIL, SKIP, NO_TESTS, INFRA_ERROR, and BLOCKED remain distinct. Generated import checks marked superficial do not satisfy the substantive-test gate; neither do missing or skipped tests.
 
 Artifacts `build-SOURCE` and `autopkgtest-SOURCE` contain tar bundles of results and logs. Small `status-*` artifacts feed `pipeline-summary`. Retention is 14 days.
 

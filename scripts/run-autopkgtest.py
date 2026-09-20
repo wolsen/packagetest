@@ -3,7 +3,7 @@
 import argparse
 import json
 from pathlib import Path
-from packagetest.autopkgtest import run
+from packagetest.autopkgtest import exit_status, run
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--manifest', type=Path, required=True)
@@ -18,4 +18,4 @@ report = run(args.manifest, args.source, args.output.resolve(), backend=args.bac
              image=args.image, dependency_repository=args.dependency_repository, timeout=args.timeout)
 print(json.dumps(report, indent=2))
 # Skips and absent tests must be visible to the generation gate, not silently green.
-raise SystemExit(0 if report['result'] == 'PASS' else 2 if report['result'] in {'SKIP', 'NO_TESTS'} else 1)
+raise SystemExit(exit_status(report['result']))

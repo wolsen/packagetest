@@ -24,14 +24,22 @@ def classify(returncode: int, summary: str) -> dict:
     elif returncode in {4, 6, 12, 14} or any(t['result'] == 'FAIL' for t in tests):
         result = 'FAIL'
     elif returncode == 8:
-        result = 'SKIP' if any(t['name'] != '*' for t in tests) else 'NO_TESTS'
+        if tests and all(t['result'] == 'PASS' and '(superficial)' in t['detail'] for t in tests):
+            result = 'SUPERFICIAL'
+        else:
+            result = 'SKIP' if any(t['name'] != '*' for t in tests) else 'NO_TESTS'
     elif returncode == 2 or any(t['result'] in {'SKIP', 'FLAKY'} for t in tests):
         result = 'SKIP'
     elif returncode == 0 and any(t['result'] == 'PASS' for t in tests):
-        result = 'PASS'
+        result = 'SUPERFICIAL' if all('(superficial)' in t['detail'] for t in tests) else 'PASS'
     else:
         result = 'INFRA_ERROR'
     return {'result': result, 'returncode': returncode, 'tests': tests}
+
+
+def exit_status(result: str) -> int:
+    """Only substantive passes satisfy the gate; coverage gaps remain distinct."""
+    return 0 if result == 'PASS' else 2 if result in {'SKIP', 'NO_TESTS', 'SUPERFICIAL'} else 1
 
 
 def checked_file(directory: Path, record: dict) -> Path:

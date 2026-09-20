@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from packagetest.autopkgtest import run
+from packagetest.autopkgtest import exit_status, run
 from packagetest.handoff import build_repository, collect_producers
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -59,4 +59,4 @@ except (OSError, ValueError, KeyError) as error:
 finally:
     (args.output / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
 print(json.dumps(report, indent=2))
-raise SystemExit(0 if report['result'] == 'PASS' else 2 if report['result'] in {'SKIP', 'NO_TESTS'} else 1)
+raise SystemExit(exit_status(report['result']))
