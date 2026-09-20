@@ -1,0 +1,35 @@
+{
+  "archive_dsc_sha256": "861455770ecae6567a78df2afe1ab32a1e57f929b79917a6f8ff931ae83eec1e",
+  "replace_files": [
+    {
+      "name": "tests/control",
+      "replacement": "tests-control",
+      "replacement_sha256": "3dc24e2694fdb950f890379e116d30f2be752f350fba16ff344ab2051c3cc4e2",
+      "reason": "Enable runtime discovery and installed-candidate coverage before source unit tests.",
+      "sha256": "1c804a8b33900e97c3a00faf783718b557a7c2dc2097a1643b71187e6031cfcd"
+    }
+  ],
+  "add_files": [
+    {
+      "name": "patches/series",
+      "replacement": "series",
+      "replacement_sha256": "21cedb0051c5c4fc5c8ff728169029bcc92022b4ff7cdddcb8cfc02e90c6f967",
+      "reason": "Enable runtime discovery and installed-candidate coverage before source unit tests.",
+      "mode": "0644"
+    },
+    {
+      "name": "patches/discover-runtime-subpackages.patch",
+      "replacement": "discover-runtime-subpackages.patch",
+      "replacement_sha256": "ed05d1ca568d93e97e309632b97f79bf933a70d7e45dd7c7e7bccaa55518d317",
+      "mode": "0644",
+      "reason": "Actual candidate binary omits octavia_lib.common and api.drivers runtime modules."
+    },
+    {
+      "name": "tests/installed-runtime",
+      "replacement": "installed-runtime",
+      "replacement_sha256": "4392cbc8293324c95c8c1b13a24bdca2d8f363e3a388db9d9c1f150293d6e32f",
+      "mode": "0755",
+      "reason": "Exercise installed provider data-model conversion and constants with dpkg ownership checks, before source unit tests."
+    }
+  ]
+}

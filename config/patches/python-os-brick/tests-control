@@ -1,0 +1,8 @@
+Tests: installed-runtime
+Depends: python3-os-brick
+
+Tests: unittests
+Depends:
+ @,
+ @builddeps@,
+Restrictions: allow-stderr needs-root

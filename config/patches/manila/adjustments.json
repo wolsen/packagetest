@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "6ffbcc71804e69b300fafb9e48dbf84c58a2e68f101272ebd092d9ee98d7a38e",
+  "replace_files": [
+    {
+      "name": "control",
+      "sha256": "ad42465ba372d55080104cc8e8edfc146227463634932b993c1b8abe4597f998",
+      "replacement": "control",
+      "replacement_sha256": "ec2064495b1fea5ac3714654f75fcfd82ef8169ac793cf21dbad84285b270d5c",
+      "reason": "API binary ships a Python 3 executable and must directly declare its interpreter dependency; retain the existing service/module dependencies and Lintian checks."
+    }
+  ]
+}

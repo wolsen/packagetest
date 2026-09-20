@@ -175,3 +175,46 @@ def test_add_packaging_tests_reject_unsafe_destinations_and_content(tmp_path, vi
     with pytest.raises(ValueError):
         packaging_adjustments({'source': 'demo', 'archive_source': {'sha256': 'a' * 64}}, tree, config.parent)
     assert not (tree / 'debian/tests/run').exists()
+
+
+def component_fixture(tmp_path):
+    import hashlib
+    archive = tmp_path / 'sample_1.0.orig-assets.tar.gz'
+    with tarfile.open(archive, 'w:gz') as out:
+        member = tarfile.TarInfo('assets/data.js')
+        member.size = 3
+        out.addfile(member, io.BytesIO(b'abc'))
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    dsc = tmp_path / 'sample_1.0-1.dsc'
+    dsc.write_text(f'Checksums-Sha256:\n {digest} {archive.stat().st_size} {archive.name}\n')
+    tree = tmp_path / 'snapshot'
+    tree.mkdir()
+    return dsc, archive, tree, digest
+
+
+def test_snapshot_preserves_verified_component_bytes_layout_and_provenance(tmp_path):
+    from packagetest.nightly_source import preserve_orig_components
+    dsc, archive, tree, digest = component_fixture(tmp_path)
+    result = preserve_orig_components(dsc, 'sample', '2.0+git123', tree, tmp_path)
+    copied = tmp_path / 'sample_2.0+git123.orig-assets.tar.gz'
+    assert copied.read_bytes() == archive.read_bytes()
+    assert (tree / 'assets/data.js').read_bytes() == b'abc'
+    assert result == [{'component': 'assets', 'archive_file': archive.name,
+                       'snapshot_file': copied.name, 'sha256': digest}]
+
+
+def test_snapshot_component_rejects_tampered_archive_before_extraction(tmp_path):
+    from packagetest.nightly_source import preserve_orig_components
+    dsc, archive, tree, _ = component_fixture(tmp_path)
+    archive.write_bytes(b'tampered')
+    with pytest.raises(ValueError, match='checksum mismatch'):
+        preserve_orig_components(dsc, 'sample', '2.0', tree, tmp_path)
+    assert not (tree / 'assets').exists()
+
+
+def test_snapshot_component_cannot_replace_upstream_directory(tmp_path):
+    from packagetest.nightly_source import preserve_orig_components
+    dsc, _, tree, _ = component_fixture(tmp_path)
+    (tree / 'assets').mkdir()
+    with pytest.raises(ValueError, match='collides'):
+        preserve_orig_components(dsc, 'sample', '2.0', tree, tmp_path)

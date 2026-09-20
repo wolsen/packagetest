@@ -5,8 +5,8 @@
       "name": "patches/skip-RGW-tests-if-awscurl-not-available.patch",
       "sha256": "0cb461e244861c060de9dddc0babc0ecb92f39f1b07ff2e9da7ce80b8ac5ee08",
       "replacement": "skip-RGW-tests-if-awscurl-not-available.patch",
-      "replacement_sha256": "1b68a5254f94906c2dea62e896abe28554a10cb0fd5251a3a2573e8d5f7974f5",
-      "reason": "Refresh existing optional awscurl availability guards after upstream moved test base imports from oslotest to ceilometer.tests. Preserve all RGW tests and scenarios when awscurl is available; preserve the archive existing conditional skip when absent."
+      "replacement_sha256": "8031be1d59540c6573fa6b97e60f06a13b4f50d494a4bddcf3d62c8da65af3b9",
+      "reason": "Refresh existing optional awscurl availability guards after upstream moved test base imports from oslotest to ceilometer.tests. Preserve all RGW tests and scenarios when awscurl is available; preserve the archive existing conditional skip when absent. Import rgw independently of the optional awscurl-dependent rgw_client so TLS and missing-config tests continue to execute without awscurl; rgw only imports the client lazily when making a request."
     },
     {
       "name": "patches/patch-test-base.patch",

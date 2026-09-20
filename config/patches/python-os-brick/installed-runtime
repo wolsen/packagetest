@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+cd /tmp
+unset PYTHONPATH
+python3 -I - <<'PY'
+import subprocess
+
+from os_brick import encryptors
+from os_brick import initiator
+from os_brick.initiator import connector
+
+for module in (encryptors, initiator, connector):
+    owner = subprocess.check_output(
+        ['dpkg-query', '-S', module.__file__], text=True).strip()
+    assert owner.startswith('python3-os-brick: '), (module.__file__, owner)
+
+assert connector.get_connector_properties
+PY

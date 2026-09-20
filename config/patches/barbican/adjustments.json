@@ -17,5 +17,14 @@
       "upstream_commit": "a9f7478e36292eff97647934d863d579a81c9fff",
       "reason": "Upstream commit fixes unconfigured KEK with a truthiness check and explicitly configures the same test KEK before constructing SimpleCryptoPlugin. Both Ubuntu patch effects are already present; retain upstream production code and test coverage unchanged."
     }
+  ],
+  "replace_files": [
+    {
+      "name": "control",
+      "sha256": "2a4793a5dbbc402f379d04149e1cb7ae5224e25762cfd6c7c2d657415b9a059e",
+      "replacement": "control",
+      "replacement_sha256": "9c54c783828e8b234c01c19e463c40c4ef5f68d097bacfdc2506047cae56cfcc",
+      "reason": "Pinned requirements.txt requires oslo.reports>=1.18.0 and the application imports oslo_reports. Add the missing build/test and runtime dependencies, preserving all tests."
+    }
   ]
 }

@@ -196,6 +196,36 @@ def extract_snapshot(archive: Path, destination: Path) -> None:
     root.rmdir()
 
 
+def preserve_orig_components(baseline_dsc: Path, source: str, upstream: str,
+                             tree: Path, output: Path) -> list[dict]:
+    """Carry checksum-pinned supplementary orig tarballs into the new source.
+
+    Debian packaging can depend on components absent from upstream Git, such
+    as Horizon's separately archived XStatic assets. Preserve their bytes and
+    component layout while naming them for the new snapshot version.
+    """
+    components = []
+    for digest, size, filename in checksum_entries(fields(baseline_dsc)):
+        if '.orig-' not in filename or filename.endswith('.asc'):
+            continue
+        match = re.fullmatch(re.escape(source) + r'_[^/]+\.orig-([A-Za-z0-9-]+)\.tar\.(gz|xz|bz2|lzma)', filename)
+        if not match:
+            raise ValueError('Unsupported supplementary orig filename: ' + filename)
+        component, compression = match.groups()
+        archive = baseline_dsc.parent / filename
+        if archive.stat().st_size != int(size) or sha256(archive) != digest:
+            raise ValueError('Supplementary orig checksum mismatch: ' + filename)
+        destination = output / f'{source}_{upstream}.orig-{component}.tar.{compression}'
+        component_tree = tree / component
+        if destination.exists() or destination.is_symlink() or component_tree.exists() or component_tree.is_symlink():
+            raise ValueError('Supplementary orig component collides with snapshot: ' + component)
+        extract_snapshot(archive, component_tree)
+        shutil.copyfile(archive, destination)
+        components.append({'component': component, 'archive_file': filename,
+                           'snapshot_file': destination.name, 'sha256': digest})
+    return components
+
+
 def git_archive(build: Preparation, checkout: Path, selected: dict, destination: Path, package: str) -> dict:
     raw = build.work / 'git-source.tar'
     build.command('git', 'archive', '--format=tar', f'--prefix={package}-{selected["upstream_version"]}/',
@@ -262,6 +292,8 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None)
             snapshot = build_snapshot(build, {'source': source, 'input': {'snapshot': snapshot_spec, 'upstream_version': upstream}}, orig)
         tree = build.root / f'{source}-{upstream}'
         extract_snapshot(orig, tree)
+        report['supplementary_orig_components'] = preserve_orig_components(
+            baseline_dsc, source, upstream, tree, build.root)
         if (tree / 'debian').exists():
             raise ValueError('Upstream snapshot unexpectedly contains Debian packaging')
         shutil.copytree(packaging_tree / 'debian', tree / 'debian', symlinks=True)

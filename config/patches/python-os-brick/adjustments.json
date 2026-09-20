@@ -1,0 +1,35 @@
+{
+  "archive_dsc_sha256": "c44d0e7aac22c256852042cd339300544d9770f530bfb73091e53a95e18244ce",
+  "replace_files": [
+    {
+      "name": "patches/series",
+      "sha256": "e7753535ae73f8e466b9a5133106e9011a70d51c59786987ba26467477771db6",
+      "replacement": "series",
+      "replacement_sha256": "8617deb469ce9aa107e0b43641b8e1c4b111421211785bca95e0e1dd7e419d1a",
+      "reason": "Enable runtime subpackage discovery while retaining the archive documentation patch."
+    },
+    {
+      "name": "tests/control",
+      "sha256": "1c804a8b33900e97c3a00faf783718b557a7c2dc2097a1643b71187e6031cfcd",
+      "replacement": "tests-control",
+      "replacement_sha256": "51aadbcfdd682ae1d4c8640b3813e405874e19b938dec238e214204271a5716a",
+      "reason": "Test installed runtime subpackages and Debian ownership before running the unchanged source unit suite."
+    }
+  ],
+  "add_files": [
+    {
+      "name": "patches/discover-runtime-subpackages.patch",
+      "replacement": "discover-runtime-subpackages.patch",
+      "replacement_sha256": "a858d0570682bb185e4e3ec4952d31336dcadaf63d1b946193bf0c6033a51c25",
+      "mode": "0644",
+      "reason": "The candidate binary omitted initiator and encryptors even though downstream Cinder and Glance Store import them. Discover runtime subpackages and exclude installed tests."
+    },
+    {
+      "name": "tests/installed-runtime",
+      "replacement": "installed-runtime",
+      "replacement_sha256": "b9d9d92811744b50e52fa4f520d60900cd95dfaa578a2b276dc9bac6f16a8078",
+      "mode": "0755",
+      "reason": "Exercise candidate-owned os-brick initiator and encryptor modules outside the source tree."
+    }
+  ]
+}

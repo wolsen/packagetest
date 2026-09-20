@@ -6,7 +6,7 @@ Refresh existing optional awscurl availability guards after upstream moved test 
 
 --- a/ceilometer/tests/unit/objectstore/test_rgw.py
 +++ b/ceilometer/tests/unit/objectstore/test_rgw.py
-@@ -14,20 +14,34 @@
+@@ -14,20 +14,32 @@
  
  import collections
  from unittest import mock
@@ -18,12 +18,10 @@ Refresh existing optional awscurl availability guards after upstream moved test 
  
 -from ceilometer.objectstore import rgw
 -from ceilometer.objectstore import rgw_client
-+rgw = None
++from ceilometer.objectstore import rgw
 +rgw_client = None
 +try:
-+    from ceilometer.objectstore import rgw as _rgw
 +    from ceilometer.objectstore import rgw_client as _rgw_client
-+    rgw = _rgw
 +    rgw_client = _rgw_client
 +    awscurl_available = True
 +except ImportError:
@@ -46,7 +44,7 @@ Refresh existing optional awscurl availability guards after upstream moved test 
  
  GET_BUCKETS = [('tenant-000', {'num_buckets': 2, 'size': 1042,
                                 'num_objects': 1001, 'buckets': bucket_list1}),
-@@ -54,26 +68,29 @@
+@@ -54,26 +66,29 @@
                           return_value.service_catalog)
          self._catalog.url_for.return_value = 'http://foobar/endpoint'
  
@@ -91,7 +89,7 @@ Refresh existing optional awscurl availability guards after upstream moved test 
  
      @staticmethod
      def fake_ks_service_catalog_url_for(*args, **kwargs):
-@@ -100,7 +117,8 @@
+@@ -100,7 +115,8 @@
  
      def tearDown(self):
          super().tearDown()

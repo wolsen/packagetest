@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "a50f10be341a6e8536e31f1504be96c74a89f3b038e1f7957c9025e1ec637af8",
+  "replace_files": [
+    {
+      "name": "blazar-api.install",
+      "sha256": "b2151e520309be6df2e1fc30ceafc379e7c2398db42711042c80b7385477c0cc",
+      "replacement": "blazar-api.install",
+      "replacement_sha256": "12f811d8490cad84c3ad6904388320585d6e16b8e5e9380bc39ded4d2e5df59e",
+      "reason": "Upstream removed the generated blazar-api-wsgi script (remove-wsgi-scripts release note). The existing packaged uWSGI configuration already uses the supported blazar.wsgi.api:application module. Remove only the obsolete installation entry; preserve the API module, service and console command."
+    }
+  ]
+}

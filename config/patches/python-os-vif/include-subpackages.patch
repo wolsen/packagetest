@@ -1,0 +1,21 @@
+Description: Include nested runtime modules and tests in installed os-vif distributions.
+Forwarded: no
+Last-Update: 2026-09-20
+
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -37,12 +37,8 @@
+ "ovs" = "vif_plug_ovs.ovs:OvsPlugin"
+ "noop" = "vif_plug_noop.noop:NoOpPlugin"
+ 
+-[tool.setuptools]
+-packages = [
+-    "os_vif",
+-    "vif_plug_noop",
+-    "vif_plug_ovs",
+-]
++[tool.setuptools.packages.find]
++include = ["os_vif", "os_vif.*", "vif_plug_noop", "vif_plug_noop.*", "vif_plug_ovs", "vif_plug_ovs.*"]
+ 
+ [tool.mypy]
+ python_version = "3.11"

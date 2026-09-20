@@ -1,0 +1,19 @@
+{
+  "archive_dsc_sha256": "175efb22c248501adb48bc09def466aa544c7bbd8cff7209ff6d9730f0aefa63",
+  "add_files": [
+    {
+      "name": "patches/series",
+      "replacement": "series",
+      "replacement_sha256": "6c8847c3e2d8d8c0e8d3a4ebce50224007e7fedd1c45b3c24a2f970887ad1b8d",
+      "mode": "0644",
+      "reason": "Upstream explicit top-level package list omits os_vif.objects and other nested runtime packages. Use recursive discovery scoped to all three original package namespaces, preserving runtime code and tests."
+    },
+    {
+      "name": "patches/include-subpackages.patch",
+      "replacement": "include-subpackages.patch",
+      "replacement_sha256": "0c1a70fb9c15bde1ad994ba0f1c82d326eaf52ef5078f0fc573fda6e86f967e4",
+      "mode": "0644",
+      "reason": "Upstream explicit top-level package list omits os_vif.objects and other nested runtime packages. Use recursive discovery scoped to all three original package namespaces, preserving runtime code and tests."
+    }
+  ]
+}

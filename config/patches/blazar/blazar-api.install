@@ -1,0 +1,2 @@
+debian/blazar-api-uwsgi.ini	/etc/blazar
+usr/bin/blazar-api

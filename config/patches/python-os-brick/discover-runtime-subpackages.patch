@@ -1,0 +1,25 @@
+Description: Include os-brick runtime subpackages in binary packages
+Forwarded: no
+
+The explicit root-only setuptools package list omits required runtime modules,
+including initiator and encryptors. Discover all runtime subpackages while
+keeping source tests out of installed package contents.
+
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -32,9 +32,11 @@ Repository = "https://opendev.org/openstack/os-brick"
+ Bugs = "https://launchpad.net/os-brick"
+ 
+-[tool.setuptools]
+-packages = [
+-    "os_brick"
+-    ]
++[tool.setuptools.exclude-package-data]
++os_brick = ["tests/*", "tests/**/*"]
++
++[tool.setuptools.packages.find]
++include = ["os_brick*"]
++exclude = ["os_brick.tests*"]
+ 
+ [tool.setuptools.data-files]
+ "etc/os-brick/rootwrap.d" = [

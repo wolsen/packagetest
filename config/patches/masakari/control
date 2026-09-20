@@ -1,0 +1,173 @@
+Source: masakari
+Section: net
+Priority: optional
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+XSBC-Original-Maintainer: Corey Bryant <corey.bryant@canonical.com>
+Build-Depends:
+ apache2-dev,
+ debhelper-compat (= 13),
+ dh-apache2,
+ dh-python,
+ openstack-pkg-tools (>= 119ubuntu1~),
+ python3-all,
+ python3-setuptools,
+ python3-sphinx (>= 2.0.0),
+Build-Depends-Indep:
+ crudini,
+ python3-alembic (>= 1.8.0),
+ python3-babel (>= 2.3.4),
+ python3-ddt (>= 1.0.1),
+ python3-hacking,
+ python3-iso8601 (>= 0.1.11),
+ python3-jsonschema (>= 3.2.0),
+ python3-keystoneauth1 (>= 3.4.0),
+ python3-keystonemiddleware (>= 4.17.0),
+ python3-microversion-parse (>= 0.2.1),
+ python3-novaclient (>= 2:9.1.0),
+ python3-openstackdocstheme (>= 2.2.1),
+ python3-openstacksdk (>= 0.35.0),
+ python3-os-api-ref (>= 1.4.0),
+ python3-oslo.config (>= 1:5.2.0),
+ python3-oslo.context (>= 1:2.19.2),
+ python3-oslo.db (>= 4.44.0),
+ python3-oslo.i18n (>= 3.15.3),
+ python3-oslo.log (>= 3.36.0),
+ python3-oslo.messaging (>= 14.1.0),
+ python3-oslo.middleware (>= 3.31.0),
+ python3-oslo.policy (>= 4.5.0),
+ python3-oslo.service (>= 1.24.0),
+ python3-oslo.upgradecheck (>= 1.3.0),
+ python3-oslo.utils (>= 4.7.0),
+ python3-oslo.versionedobjects (>= 1.31.2),
+ python3-oslosphinx (>= 4.7.0),
+ python3-oslotest (>= 1:3.2.0),
+ python3-pbr (>= 2.0.0),
+ python3-pep8 (>= 1.5.7),
+ python3-psycopg2 (>= 2.8),
+ python3-pymysql (>= 0.7.6),
+ python3-requests-mock (>= 1.2.0),
+ python3-sphinxcontrib.apidoc (>= 0.2.0),
+ python3-sphinxcontrib.svg2pdfconverter (>= 0.1.0),
+ python3-sqlalchemy (>= 1.2.19),
+ python3-sqlalchemy-utils (>= 0.33.10),
+ python3-stestr (>= 1.0.0),
+ python3-stevedore (>= 1:1.20.0),
+ python3-subunit (>= 1.0.0),
+ python3-taskflow (>= 2.16.0),
+ python3-testresources (>= 2.0.0),
+ python3-testscenarios (>= 0.4),
+ python3-testtools (>= 2.2.0),
+ python3-tooz (>= 2.10.1),
+ python3-webob (>= 1:1.7.1),
+ subunit,
+ testrepository,
+Standards-Version: 4.6.1
+Vcs-Git: https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/masakari
+Homepage: https://opendev.org/openstack/masakari
+Testsuite: autopkgtest-pkg-python
+
+Package: masakari-api
+Architecture: all
+Section: python
+Depends:
+ python3:any,
+ apache2 | httpd,
+ libapache2-mod-wsgi-py3,
+ python3-masakari (= ${source:Version}),
+ ${misc:Depends},
+Description: Virtual Machine High Availability (VMHA) for OpenStack - API Server
+ Masakari provides Virtual Machine High Availability (VMHA) service for
+ OpenStack clouds by automatically recovering the KVM-based Virtual
+ Machine(VM)s from failure events such as VM process down, provisioning
+ process down, and nova-compute host failure. It also provides
+ API service for manage and control the automated rescue mechanism.
+ .
+ This package contains the Masakari API Server.
+
+Package: masakari-common
+Architecture: all
+Section: python
+Depends:
+ adduser,
+ ${misc:Depends},
+Description: Virtual Machine High Availability (VMHA) for OpenStack - Common Files
+ Masakari provides Virtual Machine High Availability (VMHA) service for
+ OpenStack clouds by automatically recovering the KVM-based Virtual
+ Machine(VM)s from failure events such as VM process down, provisioning
+ process down, and nova-compute host failure. It also provides
+ API service for manage and control the automated rescue mechanism.
+ .
+ This package contains common files.
+
+Package: masakari-doc
+Architecture: all
+Section: doc
+Depends:
+ ${misc:Depends},
+Recommends:
+ libjs-jquery,
+Description: Virtual Machine High Availability (VMHA) for OpenStack - Documentation
+ Masakari provides Virtual Machine High Availability (VMHA) service for
+ OpenStack clouds by automatically recovering the KVM-based Virtual
+ Machine(VM)s from failure events such as VM process down, provisioning
+ process down, and nova-compute host failure. It also provides
+ API service for manage and control the automated rescue mechanism.
+ .
+ This package contains the Masakari documentation.
+
+Package: masakari-engine
+Architecture: all
+Section: python
+Depends:
+ python3-masakari (= ${source:Version}),
+ ${misc:Depends},
+Description: Virtual Machine High Availability (VMHA) for OpenStack - Engine
+ Masakari provides Virtual Machine High Availability (VMHA) service for
+ OpenStack clouds by automatically recovering the KVM-based Virtual
+ Machine(VM)s from failure events such as VM process down, provisioning
+ process down, and nova-compute host failure. It also provides
+ API service for manage and control the automated rescue mechanism.
+ .
+ This package contains the Masakari Engine.
+
+Package: python3-masakari
+Architecture: all
+Depends:
+ masakari-common (= ${source:Version}),
+ python3-alembic (>= 1.8.0),
+ python3-babel (>= 2.3.4),
+ python3-iso8601 (>= 0.1.11),
+ python3-jsonschema (>= 3.2.0),
+ python3-keystoneauth1 (>= 3.4.0),
+ python3-keystonemiddleware (>= 4.17.0),
+ python3-microversion-parse (>= 0.2.1),
+ python3-novaclient (>= 2:9.1.0),
+ python3-oslo.config (>= 1:5.2.0),
+ python3-oslo.context (>= 1:2.19.2),
+ python3-oslo.db (>= 4.44.0),
+ python3-oslo.i18n (>= 3.15.3),
+ python3-oslo.log (>= 3.36.0),
+ python3-oslo.messaging (>= 14.1.0),
+ python3-oslo.middleware (>= 3.31.0),
+ python3-oslo.policy (>= 4.5.0),
+ python3-oslo.service (>= 1.24.0),
+ python3-oslo.upgradecheck (>= 1.3.0),
+ python3-oslo.utils (>= 4.7.0),
+ python3-oslo.versionedobjects (>= 1.31.2),
+ python3-pbr (>= 2.0.0),
+ python3-sqlalchemy (>= 1.2.19),
+ python3-sqlalchemy-utils (>= 0.33.10),
+ python3-stevedore (>= 1:1.20.0),
+ python3-taskflow (>= 2.16.0),
+ python3-tooz (>= 2.10.1),
+ python3-webob (>= 1:1.7.1),
+ ${misc:Depends},
+ ${python3:Depends},
+Description: Virtual Machine High Availability (VMHA) for OpenStack - Python 3
+ Masakari provides Virtual Machine High Availability (VMHA) service for
+ OpenStack clouds by automatically recovering the KVM-based Virtual
+ Machine(VM)s from failure events such as VM process down, provisioning
+ process down, and nova-compute host failure. It also provides
+ API service for manage and control the automated rescue mechanism.
+ .
+ This package contains the Python 3 module.

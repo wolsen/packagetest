@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+cd /tmp
+unset PYTHONPATH
+python3 -I - <<'PY'
+import subprocess
+from octavia_lib.common import constants
+from octavia_lib.api.drivers import data_models
+
+for module in (constants, data_models):
+    owner = subprocess.check_output(
+        ['dpkg-query', '-S', module.__file__], text=True).strip()
+    assert owner.startswith('python3-octavia-lib: '), (module.__file__, owner)
+
+assert constants.ACTIVE == 'ACTIVE'
+listener = data_models.Listener(listener_id='snapshot-test', protocol='HTTP',
+                                protocol_port=80)
+fields = listener.to_dict()
+assert fields['listener_id'] == 'snapshot-test'
+assert fields['protocol'] == 'HTTP'
+assert fields['protocol_port'] == 80
+PY

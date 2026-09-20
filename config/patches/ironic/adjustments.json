@@ -36,5 +36,14 @@
       "upstream_file_sha256": "d7ccfd1abf4cce1fff3bbc8b407c1f452a1cfe739de192001d0c9eb3bedce24d",
       "reason": "Upstream now requires sushy>=5.12.0, whose connect_timeout API is native; preserve native timeout handling and upstream tests rather than the archive workaround for sushy5.9."
     }
+  ],
+  "replace_files": [
+    {
+      "name": "control",
+      "sha256": "ea6be3ea1e1e4663d578514e648457347f87709baf642b46592a0ddefb18f3e8",
+      "replacement": "control",
+      "replacement_sha256": "ee7c94472549a34fa8cae78719cdd5a7fa41e1d5e1832f09392e899d3f61b52f",
+      "reason": "API binary ships a Python 3 executable and must directly declare its interpreter dependency; retain the existing service/module dependencies and Lintian checks."
+    }
   ]
 }

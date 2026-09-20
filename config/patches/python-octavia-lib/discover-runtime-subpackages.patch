@@ -1,0 +1,22 @@
+Description: Include Octavia provider runtime packages in wheels
+Forwarded: no
+
+The root-only package declaration omits common and api.drivers from the
+installed binary, breaking Octavia imports. Preserve source test coverage.
+
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -31,7 +31,9 @@
+ Homepage = "https://docs.openstack.org/octavia-lib/latest/"
+ Repository = "https://opendev.org/openstack/octavia-lib"
+ 
+-[tool.setuptools]
+-packages = [
+-    "octavia_lib"
+-]
++[tool.setuptools.exclude-package-data]
++octavia_lib = ["tests/*", "tests/**/*"]
++
++[tool.setuptools.packages.find]
++include = ["octavia_lib*"]
++exclude = ["octavia_lib.tests*"]

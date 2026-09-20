@@ -1,0 +1,163 @@
+Source: placement
+Section: net
+Priority: optional
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+XSBC-Original-Maintainer: Openstack Maintainers <openstack@lists.launchpad.net>
+Uploaders:
+ Corey Bryant <corey.bryant@canonical.com>,
+Build-Depends:
+ apache2-dev,
+ debhelper-compat (= 13),
+ dh-apache2,
+ dh-python,
+ lsb-release,
+ openstack-pkg-tools (>= 119ubuntu1~),
+ python3-all,
+ python3-pbr (>= 3.1.1),
+ python3-setuptools (>= 16.0),
+ python3-sphinx (>= 2.1.1),
+ python3-sphinx-feature-classification (>= 0.2.0),
+ python3-sphinxcontrib.actdiag (>= 0.8.5),
+ python3-sphinxcontrib.seqdiag (>= 0.8.4),
+Build-Depends-Indep:
+ crudini,
+ python3-cryptography (>= 2.7),
+ python3-fixtures (>= 3.0.0),
+ python3-gabbi (>= 1.35.0),
+ python3-hacking,
+ python3-jsonschema (>= 3.2.0),
+ python3-keystonemiddleware (>= 4.18.0),
+ python3-microversion-parse (>= 0.2.1),
+ python3-openstackdocstheme (>= 2.2.1),
+ python3-os-api-ref (>= 1.4.0),
+ python3-os-resource-classes (>= 1.1.0),
+ python3-os-traits (>= 3.3.0),
+ python3-oslo.concurrency (>= 3.26.0),
+ python3-oslo.config (>= 1:6.7.0),
+ python3-oslo.context (>= 1:2.22.0),
+ python3-oslo.db (>= 8.6.0),
+ python3-oslo.i18n (>= 3.15.3),
+ python3-oslo.log (>= 4.3.0),
+ python3-oslo.middleware (>= 3.31.0),
+ python3-oslo.policy (>= 4.4.0),
+ python3-oslo.serialization (>= 2.25.0),
+ python3-oslo.upgradecheck (>= 1.3.0),
+ python3-oslo.utils (>= 4.5.0),
+ python3-oslo.versionedobjects (>= 1.31.2),
+ python3-oslotest (>= 1:3.5.0),
+ python3-osprofiler (>= 1.4.0),
+ python3-pkg-resources (>= 21.0.0),
+ python3-psycopg2 (>= 2.8),
+ python3-pymysql (>= 0.8.0),
+ python3-reno,
+ python3-requests (>= 2.25.0),
+ python3-routes (>= 2.3.1),
+ python3-sqlalchemy (>= 1.4.0),
+ python3-stestr (>= 1.0.0),
+ python3-testtools (>= 2.2.0),
+ python3-webob (>= 1:1.8.2),
+ python3-wsgi-intercept (>= 1.7.0),
+Standards-Version: 4.6.1
+Vcs-Git: https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/placement
+Homepage: https://opendev.org/openstack/placement
+Testsuite: autopkgtest-pkg-python
+
+Package: placement-doc
+Architecture: all
+Section: doc
+Depends:
+ ${misc:Depends},
+ ${sphinxdoc:Depends},
+Recommends:
+ libjs-jquery,
+Description: OpenStack Placement - documentation
+ OpenStack is a reliable cloud infrastructure. Its mission is to produce
+ the ubiquitous cloud computing platform that will meet the needs of public
+ and private cloud providers regardless of size, by being simple to implement
+ and massively scalable.
+ .
+ OpenStack Placement provides an HTTP service for managing, selecting,
+ and claiming providers of classes of inventory representing available
+ resources in a cloud.
+ .
+ This package provides the placement documentation.
+
+Package: placement-api
+Architecture: all
+Depends:
+ python3:any,
+ apache2 | httpd,
+ libapache2-mod-wsgi-py3,
+ python3-placement (= ${source:Version}),
+ ${misc:Depends},
+Description: OpenStack Placement - API
+ OpenStack is a reliable cloud infrastructure. Its mission is to produce
+ the ubiquitous cloud computing platform that will meet the needs of public
+ and private cloud providers regardless of size, by being simple to implement
+ and massively scalable.
+ .
+ OpenStack Placement provides an HTTP service for managing, selecting,
+ and claiming providers of classes of inventory representing available
+ resources in a cloud.
+ .
+ This package provides the placement API frontend for managing resource
+ providers.
+
+Package: python3-placement
+Architecture: all
+Section: python
+Depends:
+ placement-common (= ${source:Version}),
+ python3-jsonschema (>= 3.2.0),
+ python3-keystonemiddleware (>= 4.18.0),
+ python3-microversion-parse (>= 0.2.1),
+ python3-os-resource-classes (>= 1.1.0),
+ python3-os-traits (>= 3.3.0),
+ python3-oslo.concurrency (>= 3.26.0),
+ python3-oslo.config (>= 1:6.7.0),
+ python3-oslo.context (>= 1:2.22.0),
+ python3-oslo.db (>= 8.6.0),
+ python3-oslo.i18n (>= 3.15.3),
+ python3-oslo.log (>= 4.3.0),
+ python3-oslo.middleware (>= 3.31.0),
+ python3-oslo.policy (>= 4.4.0),
+ python3-oslo.serialization (>= 2.25.0),
+ python3-oslo.upgradecheck (>= 1.3.0),
+ python3-oslo.utils (>= 4.5.0),
+ python3-oslo.versionedobjects (>= 1.31.2),
+ python3-pbr (>= 3.1.1),
+ python3-pkg-resources (>= 21.0.0),
+ python3-requests (>= 2.25.0),
+ python3-routes (>= 2.3.1),
+ python3-sqlalchemy (>= 1.4.0),
+ python3-webob (>= 1:1.8.2),
+ ${misc:Depends},
+ ${python3:Depends},
+Description: OpenStack Placement - Python 3 libraries
+ OpenStack is a reliable cloud infrastructure. Its mission is to produce
+ the ubiquitous cloud computing platform that will meet the needs of public
+ and private cloud providers regardless of size, by being simple to implement
+ and massively scalable.
+ .
+ OpenStack Placement provides an HTTP service for managing, selecting,
+ and claiming providers of classes of inventory representing available
+ resources in a cloud.
+ .
+ This package contains the Python 3 placement libraries.
+
+Package: placement-common
+Architecture: all
+Depends:
+ adduser,
+ ${misc:Depends},
+Description: OpenStack Placement - common files
+ OpenStack is a reliable cloud infrastructure. Its mission is to produce
+ the ubiquitous cloud computing platform that will meet the needs of public
+ and private cloud providers regardless of size, by being simple to implement
+ and massively scalable.
+ .
+ OpenStack Placement provides an HTTP service for managing, selecting,
+ and claiming providers of classes of inventory representing available
+ resources in a cloud.
+ .
+ This package contains common files.
