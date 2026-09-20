@@ -13,10 +13,13 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: hibiscus-snapshots-${{ github.ref }}
+  group: hibiscus-snapshots-v2-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   plan:
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
@@ -49,6 +52,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Stop superseded runs of this feature pipeline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/cancel-superseded-runs.py
       - id: plan
         env:
           SOURCES: ${{ inputs.sources }}
@@ -62,7 +69,7 @@ jobs:
 
   wave0:
     needs: [plan]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled0 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled0 == 'true' }}
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -148,7 +155,7 @@ jobs:
           if-no-files-found: error
   wave1:
     needs: [plan, wave0]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled1 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled1 == 'true' }}
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -234,7 +241,7 @@ jobs:
           if-no-files-found: error
   wave2:
     needs: [plan, wave0, wave1]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled2 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled2 == 'true' }}
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -320,7 +327,7 @@ jobs:
           if-no-files-found: error
   wave3:
     needs: [plan, wave0, wave1, wave2]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled3 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled3 == 'true' }}
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -406,7 +413,7 @@ jobs:
           if-no-files-found: error
   wave4:
     needs: [plan, wave0, wave1, wave2, wave3]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled4 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled4 == 'true' }}
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -492,7 +499,7 @@ jobs:
           if-no-files-found: error
   wave5:
     needs: [plan, wave0, wave1, wave2, wave3, wave4]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled5 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled5 == 'true' }}
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -578,7 +585,7 @@ jobs:
           if-no-files-found: error
   wave6:
     needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled6 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled6 == 'true' }}
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -664,7 +671,7 @@ jobs:
           if-no-files-found: error
   wave7:
     needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled7 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled7 == 'true' }}
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -750,7 +757,7 @@ jobs:
           if-no-files-found: error
   wave8:
     needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled8 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled8 == 'true' }}
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -836,7 +843,7 @@ jobs:
           if-no-files-found: error
   wave9:
     needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7, wave8]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled9 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled9 == 'true' }}
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -922,7 +929,7 @@ jobs:
           if-no-files-found: error
   wave10:
     needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7, wave8, wave9]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled10 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled10 == 'true' }}
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -1008,7 +1015,7 @@ jobs:
           if-no-files-found: error
   wave11:
     needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7, wave8, wave9, wave10]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled11 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled11 == 'true' }}
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -1094,91 +1101,91 @@ jobs:
           if-no-files-found: error
   tests0:
     needs: [plan, wave0]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled0 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled0 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
     with:
       sources: ${{ needs.plan.outputs.wave0 }}
 
   tests1:
     needs: [plan, wave1]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled1 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled1 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
     with:
       sources: ${{ needs.plan.outputs.wave1 }}
 
   tests2:
     needs: [plan, wave2]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled2 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled2 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
     with:
       sources: ${{ needs.plan.outputs.wave2 }}
 
   tests3:
     needs: [plan, wave3]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled3 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled3 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
     with:
       sources: ${{ needs.plan.outputs.wave3 }}
 
   tests4:
     needs: [plan, wave4]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled4 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled4 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
     with:
       sources: ${{ needs.plan.outputs.wave4 }}
 
   tests5:
     needs: [plan, wave5]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled5 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled5 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
     with:
       sources: ${{ needs.plan.outputs.wave5 }}
 
   tests6:
     needs: [plan, wave6]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled6 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled6 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
     with:
       sources: ${{ needs.plan.outputs.wave6 }}
 
   tests7:
     needs: [plan, wave7]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled7 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled7 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
     with:
       sources: ${{ needs.plan.outputs.wave7 }}
 
   tests8:
     needs: [plan, wave8]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled8 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled8 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
     with:
       sources: ${{ needs.plan.outputs.wave8 }}
 
   tests9:
     needs: [plan, wave9]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled9 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled9 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
     with:
       sources: ${{ needs.plan.outputs.wave9 }}
 
   tests10:
     needs: [plan, wave10]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled10 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled10 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
     with:
       sources: ${{ needs.plan.outputs.wave10 }}
 
   tests11:
     needs: [plan, wave11]
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled11 == 'true' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled11 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
     with:
       sources: ${{ needs.plan.outputs.wave11 }}
 
   summary:
     needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7, wave8, wave9, wave10, wave11, tests0, tests1, tests2, tests3, tests4, tests5, tests6, tests7, tests8, tests9, tests10, tests11]
-    if: ${{ always() && needs.plan.result == 'success' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
