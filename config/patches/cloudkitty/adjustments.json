@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "3e96adcb1f02c93d89d67f30e17d8568aa9f11779af338e15cc6e4448f37f993",
+  "replace_files": [
+    {
+      "name": "control",
+      "sha256": "0554a70d1c79fb900b5f37a90bfdf5f39a417b4a696f0143216538efe71ed9ab",
+      "replacement": "control",
+      "replacement_sha256": "5eafb30f10b7d6d2f38b1ff66e92b2408cb02d3bf0b84a30a77155988520cc62",
+      "reason": "Pinned CloudKitty requirements.txt now requires python-observabilityclient>=1.1.0 and collectors import observabilityclient. Add its Debian package to both build and Python runtime dependencies; preserve all collector tests."
+    }
+  ]
+}

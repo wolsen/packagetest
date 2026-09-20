@@ -1,0 +1,214 @@
+Source: cloudkitty
+Section: net
+Priority: optional
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+XSBC-Original-Maintainer: Debian OpenStack <team+openstack@tracker.debian.org>
+Uploaders:
+ Thomas Goirand <zigo@debian.org>,
+ Michal Arbet <michal.arbet@ultimum.io>,
+Build-Depends:
+ debhelper-compat (= 11),
+ dh-python,
+ openstack-pkg-tools,
+ po-debconf,
+ pybuild-plugin-pyproject,
+ python3-all,
+ python3-pbr,
+ python3-setuptools,
+ python3-sphinx,
+Build-Depends-Indep:
+ python3-observabilityclient (>= 1.1.0),
+ python3-alembic,
+ python3-cotyledon,
+ python3-coverage,
+ python3-datetimerange,
+ python3-dateutil,
+ python3-ddt,
+ python3-doc8,
+ python3-flask,
+ python3-flask-restful,
+ python3-gabbi,
+ python3-gnocchiclient,
+ python3-hacking,
+ python3-influxdb,
+ python3-influxdb-client,
+ python3-iso8601,
+ python3-keystoneauth1,
+ python3-keystoneclient,
+ python3-keystonemiddleware,
+ python3-kombu,
+ python3-openstackdocstheme,
+ python3-os-api-ref,
+ python3-oslo.concurrency,
+ python3-oslo.config,
+ python3-oslo.context,
+ python3-oslo.db,
+ python3-oslo.i18n,
+ python3-oslo.log,
+ python3-oslo.messaging,
+ python3-oslo.middleware,
+ python3-oslo.policy,
+ python3-oslo.upgradecheck,
+ python3-oslo.utils,
+ python3-oslotest,
+ python3-pastedeploy,
+ python3-pecan,
+ python3-pygments,
+ python3-reno,
+ python3-rx,
+ python3-sphinxcontrib-pecanwsme,
+ python3-sphinxcontrib.httpdomain,
+ python3-sqlalchemy,
+ python3-stestr,
+ python3-stevedore,
+ python3-testscenarios,
+ python3-tooz,
+ python3-voluptuous,
+ python3-wsme,
+ subunit,
+Standards-Version: 4.4.1
+Vcs-Browser: https://salsa.debian.org/openstack-team/services/cloudkitty
+Vcs-Git: https://salsa.debian.org/openstack-team/services/cloudkitty.git
+Homepage: https://github.com/openstack/cloudkitty
+
+Package: cloudkitty-api
+Architecture: all
+Depends:
+ adduser,
+ cloudkitty-common (= ${source:Version}),
+ debconf,
+ python3-openstackclient,
+ python3-pastescript,
+ q-text-as-data,
+ uwsgi-plugin-python3,
+ ${misc:Depends},
+ ${python3:Depends},
+Description: OpenStack Rating as a Service - API server
+ CloudKitty aims at filling the gap between metrics collection systems like
+ ceilometer and a billing system.
+ .
+ Every metrics are collected, aggregated and processed through different rating
+ modules. You can then query CloudKitty's storage to retrieve processed data
+ and easily generate reports.
+ .
+ Most parts of CloudKitty are modular so you can easily extend the base code to
+ address your particular use case.
+ .
+ This package contains the Cloudkitty API server.
+
+Package: cloudkitty-common
+Architecture: all
+Depends:
+ adduser,
+ dbconfig-common,
+ debconf,
+ python3-cloudkitty (= ${source:Version}),
+ ${misc:Depends},
+ ${python3:Depends},
+Description: OpenStack Rating as a Service - common files
+ CloudKitty aims at filling the gap between metrics collection systems like
+ ceilometer and a billing system.
+ .
+ Every metrics are collected, aggregated and processed through different rating
+ modules. You can then query CloudKitty's storage to retrieve processed data
+ and easily generate reports.
+ .
+ Most parts of CloudKitty are modular so you can easily extend the base code to
+ address your particular use case.
+ .
+ This package contains common files for Cloudkitty.
+
+Package: cloudkitty-doc
+Architecture: all
+Section: doc
+Depends:
+ python3-os-api-ref,
+ ${misc:Depends},
+ ${sphinxdoc:Depends},
+Description: OpenStack Rating as a Service - Documentation
+ CloudKitty aims at filling the gap between metrics collection systems like
+ ceilometer and a billing system.
+ .
+ Every metrics are collected, aggregated and processed through different rating
+ modules. You can then query CloudKitty's storage to retrieve processed data
+ and easily generate reports.
+ .
+ Most parts of CloudKitty are modular so you can easily extend the base code to
+ address your particular use case.
+ .
+ This package contains the documentation.
+
+Package: cloudkitty-processor
+Architecture: all
+Depends:
+ adduser,
+ cloudkitty-common (= ${source:Version}),
+ ${misc:Depends},
+ ${python3:Depends},
+Description: OpenStack Rating as a Service - processor
+ CloudKitty aims at filling the gap between metrics collection systems like
+ ceilometer and a billing system.
+ .
+ Every metrics are collected, aggregated and processed through different rating
+ modules. You can then query CloudKitty's storage to retrieve processed data
+ and easily generate reports.
+ .
+ Most parts of CloudKitty are modular so you can easily extend the base code to
+ address your particular use case.
+ .
+ This package contains the Cloudkitty processor daemon.
+
+Package: python3-cloudkitty
+Architecture: all
+Section: python
+Depends:
+ python3-observabilityclient (>= 1.1.0),
+ python3-alembic,
+ python3-cotyledon,
+ python3-datetimerange,
+ python3-dateutil,
+ python3-flask,
+ python3-flask-restful,
+ python3-gnocchiclient,
+ python3-influxdb,
+ python3-influxdb-client,
+ python3-iso8601,
+ python3-keystoneauth1,
+ python3-keystoneclient,
+ python3-keystonemiddleware,
+ python3-oslo.concurrency,
+ python3-oslo.config,
+ python3-oslo.context,
+ python3-oslo.db,
+ python3-oslo.i18n,
+ python3-oslo.log,
+ python3-oslo.messaging,
+ python3-oslo.middleware,
+ python3-oslo.policy,
+ python3-oslo.upgradecheck,
+ python3-oslo.utils,
+ python3-pastedeploy,
+ python3-pbr,
+ python3-pecan,
+ python3-rx,
+ python3-sqlalchemy,
+ python3-stevedore,
+ python3-tooz,
+ python3-voluptuous,
+ python3-wsme,
+ ${misc:Depends},
+ ${python3:Depends},
+Conflicts:
+ python-cloudkitty,
+Description: OpenStack Rating as a Service - Python library
+ CloudKitty aims at filling the gap between metrics collection systems like
+ ceilometer and a billing system.
+ .
+ Every metrics are collected, aggregated and processed through different rating
+ modules. You can then query CloudKitty's storage to retrieve processed data
+ and easily generate reports.
+ .
+ Most parts of CloudKitty are modular so you can easily extend the base code to
+ address your particular use case.
+ .
+ This package contains the Python libraries.
