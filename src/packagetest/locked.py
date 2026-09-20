@@ -61,8 +61,12 @@ def load_lock(path: Path) -> dict:
         if subprocess.run(['dpkg', '--validate-version', package['version']], capture_output=True).returncode:
             raise ValueError(f'{source}: invalid Debian version')
         acquisition = package['input']
-        if acquisition['kind'] not in {'archive', 'gbp'}:
-            raise ValueError('Only archive and gbp inputs are supported')
+        if acquisition['kind'] not in {'archive', 'gbp', 'prepared-snapshot'}:
+            raise ValueError('Only archive, gbp and prepared-snapshot inputs are supported')
+        if acquisition['kind'] == 'prepared-snapshot':
+            if not _hex(acquisition.get('dsc_sha256'), 64) or not _hex(acquisition.get('upstream_sha'), 40):
+                raise ValueError('Prepared snapshots require source checksum and upstream SHA')
+            continue
         snapshot = acquisition.get('snapshot')
         if snapshot:
             if acquisition['kind'] != 'gbp' or acquisition.get('import_mode') != 'new' or 'tarball' in acquisition:
@@ -113,8 +117,11 @@ class StageFailure(RuntimeError):
 
 
 class LockedBuild:
-    def __init__(self, lock: dict, root: Path, *, timeout: float = 3600):
+    def __init__(self, lock: dict, root: Path, *, timeout: float = 3600,
+                 prepared_sources: dict | None = None, external_artifacts: dict | None = None):
         self.lock = lock
+        self.prepared_sources = prepared_sources or {}
+        self.external_artifacts = external_artifacts or {}
         self.digest = hashlib.sha256(json.dumps(lock, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
         self.root = root.resolve() / f'gen-{self.digest[:12]}-{uuid.uuid4().hex[:8]}'
         self.root.mkdir(parents=True)
@@ -221,6 +228,16 @@ class LockedBuild:
         self.checkout = self.work / package['source']
         self.command('dpkg-source', '--no-check', '-x', str(dsc), str(self.checkout))
         return dsc
+
+    def prepared_source(self, package: dict, source_dir: Path) -> Path:
+        self.enter('prepared-source-validation')
+        dsc = Path(self.prepared_sources[package['source']])
+        if sha256(dsc) != package['input']['dsc_sha256']:
+            raise StageFailure('Prepared snapshot .dsc checksum mismatch')
+        metadata = verify_source(dsc, package['source'], package['version'])
+        for name in [dsc.name, *(name for _, _, name in checksum_entries(metadata))]:
+            shutil.copy2(dsc.parent / name, source_dir / name)
+        return source_dir / dsc.name
 
     def git_source(self, package: dict, source_dir: Path) -> Path:
         self.enter('packaging-checkout')
@@ -334,7 +351,7 @@ class LockedBuild:
             self.manifest.update(result='FAILED', error=str(exc), finished_at=_now())
             self.save()
             return 1
-        completed = {}
+        completed = dict(self.external_artifacts)
         failed = set()
         for package in self.lock['packages']:
             source = package['source']
@@ -351,7 +368,10 @@ class LockedBuild:
             source_dir.mkdir(parents=True)
             binary_dir.mkdir()
             try:
-                dsc = self.archive_source(package, source_dir) if package['input']['kind'] == 'archive' else self.git_source(package, source_dir)
+                kind = package['input']['kind']
+                acquire = {'archive': self.archive_source, 'gbp': self.git_source,
+                           'prepared-snapshot': self.prepared_source}[kind]
+                dsc = acquire(package, source_dir)
                 record['source_artifacts'] = [{'file': path.name, 'sha256': sha256(path)}
                                               for path in sorted(source_dir.iterdir()) if path.is_file()]
                 self.enter('binary-build')
@@ -360,9 +380,9 @@ class LockedBuild:
                         f'--dist={target.get("distribution", target["suite"])}', f'--arch={target["architecture"]}', '--arch-all',
                         f'--build-dir={binary_dir}', '--no-run-lintian']
                 record['dependency_artifacts'] = []
-                for dep in package.get('depends_on', []):
+                for dep in package.get('depends_on', []) + package.get('external_dependencies', []):
                     for artifact in completed[dep]:
-                        path = artifact['path']
+                        path = Path(artifact['path'])
                         if sha256(path) != artifact['sha256']:
                             raise StageFailure(f'Dependency artifact changed after validation: {path}')
                         argv.append(f'--extra-package={path}')
@@ -382,14 +402,14 @@ class LockedBuild:
                         raise StageFailure(f'Build did not use required dependency {dep}={version}')
                 self.enter('lintian')
                 lintian_args = []
-                if target.get('profile') == 'noble-uca-epoxy':
+                if target.get('profile') == 'noble-uca-epoxy' or target['suite'] == 'resolute':
                     # Noble's Lintian knows Ubuntu suites but not UCA pocket
                     # names. Extend its distribution data; disable no checks.
                     overlay = self.root / 'lintian'
                     data = overlay / 'vendors/ubuntu/main/data/changes-file/known-dists'
                     data.parent.mkdir(parents=True, exist_ok=True)
                     installed = Path('/usr/share/lintian/vendors/ubuntu/main/data/changes-file/known-dists')
-                    data.write_text(installed.read_text() + '\nnoble-epoxy\n')
+                    data.write_text(installed.read_text() + '\n' + distribution + '\n')
                     record['lintian_distribution_data_sha256'] = sha256(data)
                     lintian_args = ['--include-dir', str(overlay), '--profile', 'ubuntu']
                 self.command('lintian', *lintian_args, '--fail-on=error', str(binary_dir / validation['changes']), cwd=binary_dir)

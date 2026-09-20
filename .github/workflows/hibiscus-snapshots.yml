@@ -1,0 +1,1143 @@
+name: OpenStack 2026.2 snapshot pipeline
+on:
+  push:
+    branches: [codex/hibiscus-snapshot-pipeline]
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: Comma-separated pilot sources, empty builds the complete catalog
+        type: string
+        default: ''
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: hibiscus-snapshots-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      sources: ${{ steps.plan.outputs.sources }}
+      wave0: ${{ steps.plan.outputs.wave0 }}
+      enabled0: ${{ steps.plan.outputs.enabled0 }}
+      wave1: ${{ steps.plan.outputs.wave1 }}
+      enabled1: ${{ steps.plan.outputs.enabled1 }}
+      wave2: ${{ steps.plan.outputs.wave2 }}
+      enabled2: ${{ steps.plan.outputs.enabled2 }}
+      wave3: ${{ steps.plan.outputs.wave3 }}
+      enabled3: ${{ steps.plan.outputs.enabled3 }}
+      wave4: ${{ steps.plan.outputs.wave4 }}
+      enabled4: ${{ steps.plan.outputs.enabled4 }}
+      wave5: ${{ steps.plan.outputs.wave5 }}
+      enabled5: ${{ steps.plan.outputs.enabled5 }}
+      wave6: ${{ steps.plan.outputs.wave6 }}
+      enabled6: ${{ steps.plan.outputs.enabled6 }}
+      wave7: ${{ steps.plan.outputs.wave7 }}
+      enabled7: ${{ steps.plan.outputs.enabled7 }}
+      wave8: ${{ steps.plan.outputs.wave8 }}
+      enabled8: ${{ steps.plan.outputs.enabled8 }}
+      wave9: ${{ steps.plan.outputs.wave9 }}
+      enabled9: ${{ steps.plan.outputs.enabled9 }}
+      wave10: ${{ steps.plan.outputs.wave10 }}
+      enabled10: ${{ steps.plan.outputs.enabled10 }}
+      wave11: ${{ steps.plan.outputs.wave11 }}
+      enabled11: ${{ steps.plan.outputs.enabled11 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: plan
+        env:
+          SOURCES: ${{ inputs.sources }}
+        run: python3 scripts/nightly-plan.py --sources "$SOURCES"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan/
+          retention-days: 14
+          if-no-files-found: error
+
+  wave0:
+    needs: [plan]
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled0 == 'true' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.wave0) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
+      - uses: actions/download-artifact@v4
+        if: steps.dependencies.outputs.needed == 'true'
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack same-run producers
+        run: |
+          mkdir -p inputs outputs
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            directory="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$directory"
+            tar -xzf "$bundle" -C "$directory" --no-same-owner
+          done
+      - name: Prepare Resolute builder
+        run: |
+          set -o pipefail
+          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+      - name: Build snapshot against this run's producers
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -o pipefail
+          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
+            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
+      - name: Bundle packages and complete failure evidence
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs bundles
+          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
+          sudo chmod a+r "bundles/$SOURCE.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ matrix.source }}
+          path: bundles/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+      - name: Record infrastructure failures without a build manifest
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs
+          if [ ! -f outputs/result.json ]; then
+            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: status-build-${{ matrix.source }}
+          path: outputs/result.json
+          retention-days: 14
+          if-no-files-found: error
+  wave1:
+    needs: [plan, wave0]
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled1 == 'true' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.wave1) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
+      - uses: actions/download-artifact@v4
+        if: steps.dependencies.outputs.needed == 'true'
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack same-run producers
+        run: |
+          mkdir -p inputs outputs
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            directory="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$directory"
+            tar -xzf "$bundle" -C "$directory" --no-same-owner
+          done
+      - name: Prepare Resolute builder
+        run: |
+          set -o pipefail
+          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+      - name: Build snapshot against this run's producers
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -o pipefail
+          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
+            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
+      - name: Bundle packages and complete failure evidence
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs bundles
+          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
+          sudo chmod a+r "bundles/$SOURCE.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ matrix.source }}
+          path: bundles/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+      - name: Record infrastructure failures without a build manifest
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs
+          if [ ! -f outputs/result.json ]; then
+            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: status-build-${{ matrix.source }}
+          path: outputs/result.json
+          retention-days: 14
+          if-no-files-found: error
+  wave2:
+    needs: [plan, wave0, wave1]
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled2 == 'true' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.wave2) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
+      - uses: actions/download-artifact@v4
+        if: steps.dependencies.outputs.needed == 'true'
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack same-run producers
+        run: |
+          mkdir -p inputs outputs
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            directory="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$directory"
+            tar -xzf "$bundle" -C "$directory" --no-same-owner
+          done
+      - name: Prepare Resolute builder
+        run: |
+          set -o pipefail
+          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+      - name: Build snapshot against this run's producers
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -o pipefail
+          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
+            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
+      - name: Bundle packages and complete failure evidence
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs bundles
+          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
+          sudo chmod a+r "bundles/$SOURCE.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ matrix.source }}
+          path: bundles/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+      - name: Record infrastructure failures without a build manifest
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs
+          if [ ! -f outputs/result.json ]; then
+            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: status-build-${{ matrix.source }}
+          path: outputs/result.json
+          retention-days: 14
+          if-no-files-found: error
+  wave3:
+    needs: [plan, wave0, wave1, wave2]
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled3 == 'true' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.wave3) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
+      - uses: actions/download-artifact@v4
+        if: steps.dependencies.outputs.needed == 'true'
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack same-run producers
+        run: |
+          mkdir -p inputs outputs
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            directory="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$directory"
+            tar -xzf "$bundle" -C "$directory" --no-same-owner
+          done
+      - name: Prepare Resolute builder
+        run: |
+          set -o pipefail
+          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+      - name: Build snapshot against this run's producers
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -o pipefail
+          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
+            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
+      - name: Bundle packages and complete failure evidence
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs bundles
+          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
+          sudo chmod a+r "bundles/$SOURCE.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ matrix.source }}
+          path: bundles/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+      - name: Record infrastructure failures without a build manifest
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs
+          if [ ! -f outputs/result.json ]; then
+            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: status-build-${{ matrix.source }}
+          path: outputs/result.json
+          retention-days: 14
+          if-no-files-found: error
+  wave4:
+    needs: [plan, wave0, wave1, wave2, wave3]
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled4 == 'true' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.wave4) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
+      - uses: actions/download-artifact@v4
+        if: steps.dependencies.outputs.needed == 'true'
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack same-run producers
+        run: |
+          mkdir -p inputs outputs
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            directory="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$directory"
+            tar -xzf "$bundle" -C "$directory" --no-same-owner
+          done
+      - name: Prepare Resolute builder
+        run: |
+          set -o pipefail
+          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+      - name: Build snapshot against this run's producers
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -o pipefail
+          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
+            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
+      - name: Bundle packages and complete failure evidence
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs bundles
+          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
+          sudo chmod a+r "bundles/$SOURCE.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ matrix.source }}
+          path: bundles/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+      - name: Record infrastructure failures without a build manifest
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs
+          if [ ! -f outputs/result.json ]; then
+            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: status-build-${{ matrix.source }}
+          path: outputs/result.json
+          retention-days: 14
+          if-no-files-found: error
+  wave5:
+    needs: [plan, wave0, wave1, wave2, wave3, wave4]
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled5 == 'true' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.wave5) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
+      - uses: actions/download-artifact@v4
+        if: steps.dependencies.outputs.needed == 'true'
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack same-run producers
+        run: |
+          mkdir -p inputs outputs
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            directory="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$directory"
+            tar -xzf "$bundle" -C "$directory" --no-same-owner
+          done
+      - name: Prepare Resolute builder
+        run: |
+          set -o pipefail
+          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+      - name: Build snapshot against this run's producers
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -o pipefail
+          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
+            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
+      - name: Bundle packages and complete failure evidence
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs bundles
+          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
+          sudo chmod a+r "bundles/$SOURCE.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ matrix.source }}
+          path: bundles/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+      - name: Record infrastructure failures without a build manifest
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs
+          if [ ! -f outputs/result.json ]; then
+            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: status-build-${{ matrix.source }}
+          path: outputs/result.json
+          retention-days: 14
+          if-no-files-found: error
+  wave6:
+    needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5]
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled6 == 'true' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.wave6) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
+      - uses: actions/download-artifact@v4
+        if: steps.dependencies.outputs.needed == 'true'
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack same-run producers
+        run: |
+          mkdir -p inputs outputs
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            directory="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$directory"
+            tar -xzf "$bundle" -C "$directory" --no-same-owner
+          done
+      - name: Prepare Resolute builder
+        run: |
+          set -o pipefail
+          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+      - name: Build snapshot against this run's producers
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -o pipefail
+          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
+            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
+      - name: Bundle packages and complete failure evidence
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs bundles
+          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
+          sudo chmod a+r "bundles/$SOURCE.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ matrix.source }}
+          path: bundles/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+      - name: Record infrastructure failures without a build manifest
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs
+          if [ ! -f outputs/result.json ]; then
+            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: status-build-${{ matrix.source }}
+          path: outputs/result.json
+          retention-days: 14
+          if-no-files-found: error
+  wave7:
+    needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6]
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled7 == 'true' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.wave7) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
+      - uses: actions/download-artifact@v4
+        if: steps.dependencies.outputs.needed == 'true'
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack same-run producers
+        run: |
+          mkdir -p inputs outputs
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            directory="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$directory"
+            tar -xzf "$bundle" -C "$directory" --no-same-owner
+          done
+      - name: Prepare Resolute builder
+        run: |
+          set -o pipefail
+          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+      - name: Build snapshot against this run's producers
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -o pipefail
+          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
+            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
+      - name: Bundle packages and complete failure evidence
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs bundles
+          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
+          sudo chmod a+r "bundles/$SOURCE.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ matrix.source }}
+          path: bundles/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+      - name: Record infrastructure failures without a build manifest
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs
+          if [ ! -f outputs/result.json ]; then
+            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: status-build-${{ matrix.source }}
+          path: outputs/result.json
+          retention-days: 14
+          if-no-files-found: error
+  wave8:
+    needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7]
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled8 == 'true' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.wave8) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
+      - uses: actions/download-artifact@v4
+        if: steps.dependencies.outputs.needed == 'true'
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack same-run producers
+        run: |
+          mkdir -p inputs outputs
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            directory="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$directory"
+            tar -xzf "$bundle" -C "$directory" --no-same-owner
+          done
+      - name: Prepare Resolute builder
+        run: |
+          set -o pipefail
+          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+      - name: Build snapshot against this run's producers
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -o pipefail
+          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
+            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
+      - name: Bundle packages and complete failure evidence
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs bundles
+          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
+          sudo chmod a+r "bundles/$SOURCE.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ matrix.source }}
+          path: bundles/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+      - name: Record infrastructure failures without a build manifest
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs
+          if [ ! -f outputs/result.json ]; then
+            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: status-build-${{ matrix.source }}
+          path: outputs/result.json
+          retention-days: 14
+          if-no-files-found: error
+  wave9:
+    needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7, wave8]
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled9 == 'true' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.wave9) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
+      - uses: actions/download-artifact@v4
+        if: steps.dependencies.outputs.needed == 'true'
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack same-run producers
+        run: |
+          mkdir -p inputs outputs
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            directory="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$directory"
+            tar -xzf "$bundle" -C "$directory" --no-same-owner
+          done
+      - name: Prepare Resolute builder
+        run: |
+          set -o pipefail
+          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+      - name: Build snapshot against this run's producers
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -o pipefail
+          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
+            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
+      - name: Bundle packages and complete failure evidence
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs bundles
+          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
+          sudo chmod a+r "bundles/$SOURCE.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ matrix.source }}
+          path: bundles/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+      - name: Record infrastructure failures without a build manifest
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs
+          if [ ! -f outputs/result.json ]; then
+            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: status-build-${{ matrix.source }}
+          path: outputs/result.json
+          retention-days: 14
+          if-no-files-found: error
+  wave10:
+    needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7, wave8, wave9]
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled10 == 'true' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.wave10) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
+      - uses: actions/download-artifact@v4
+        if: steps.dependencies.outputs.needed == 'true'
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack same-run producers
+        run: |
+          mkdir -p inputs outputs
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            directory="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$directory"
+            tar -xzf "$bundle" -C "$directory" --no-same-owner
+          done
+      - name: Prepare Resolute builder
+        run: |
+          set -o pipefail
+          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+      - name: Build snapshot against this run's producers
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -o pipefail
+          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
+            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
+      - name: Bundle packages and complete failure evidence
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs bundles
+          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
+          sudo chmod a+r "bundles/$SOURCE.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ matrix.source }}
+          path: bundles/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+      - name: Record infrastructure failures without a build manifest
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs
+          if [ ! -f outputs/result.json ]; then
+            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: status-build-${{ matrix.source }}
+          path: outputs/result.json
+          retention-days: 14
+          if-no-files-found: error
+  wave11:
+    needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7, wave8, wave9, wave10]
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.enabled11 == 'true' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.wave11) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
+      - uses: actions/download-artifact@v4
+        if: steps.dependencies.outputs.needed == 'true'
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack same-run producers
+        run: |
+          mkdir -p inputs outputs
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            directory="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$directory"
+            tar -xzf "$bundle" -C "$directory" --no-same-owner
+          done
+      - name: Prepare Resolute builder
+        run: |
+          set -o pipefail
+          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+      - name: Build snapshot against this run's producers
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          set -o pipefail
+          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
+            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
+      - name: Bundle packages and complete failure evidence
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs bundles
+          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
+          sudo chmod a+r "bundles/$SOURCE.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ matrix.source }}
+          path: bundles/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+      - name: Record infrastructure failures without a build manifest
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p outputs
+          if [ ! -f outputs/result.json ]; then
+            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: status-build-${{ matrix.source }}
+          path: outputs/result.json
+          retention-days: 14
+          if-no-files-found: error
+  autopkgtest:
+    needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7, wave8, wave9, wave10, wave11]
+    if: ${{ always() && needs.plan.result == 'success' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.sources) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE" --include-self
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack candidate packages
+        run: |
+          mkdir -p inputs test-results
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            destination="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$destination"
+            tar -xzf "$bundle" -C "$destination" --no-same-owner
+          done
+      - name: Check successful source build before VM provisioning
+        id: candidate
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os
+          from pathlib import Path
+          source = os.environ['SOURCE']
+          manifests = [json.loads(p.read_text()) for p in Path('inputs').rglob('generation-manifest.json')]
+          ready = any(m.get('result') == 'SUCCEEDED' and any(p['source'] == source and p.get('result') == 'SUCCEEDED' for p in m.get('packages', [])) for m in manifests)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('ready=' + str(ready).lower() + '\n')
+          if not ready:
+              output = Path('test-results/result')
+              output.mkdir(parents=True, exist_ok=True)
+              (output / 'result.json').write_text(json.dumps({'source': source, 'result': 'BLOCKED', 'error': 'No successful source build available'}, indent=2) + '\n')
+          PYCODE
+      - name: Prepare isolated autopkgtest VM
+        id: image
+        if: steps.candidate.outputs.ready == 'true'
+        run: |
+          image=$(bash scripts/prepare-autopkgtest.sh resolute "$RUNNER_TEMP/autopkgtest-image")
+          echo "path=$image" >> "$GITHUB_OUTPUT"
+      - name: Test installed snapshot packages
+        if: steps.candidate.outputs.ready == 'true'
+        env:
+          SOURCE: ${{ matrix.source }}
+          TEST_IMAGE: ${{ steps.image.outputs.path }}
+        run: |
+          set -o pipefail
+          env PYTHONPATH=src python3 scripts/nightly-autopkgtest.py --catalog nightly-plan/catalog.json \
+            --source "$SOURCE" --inputs inputs --output test-results/result --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" --image "$TEST_IMAGE" \
+            2>&1 | tee test-results/autopkgtest.log
+      - name: Preserve preparation errors and package status
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p test-results/result
+          if [ -f "$RUNNER_TEMP/autopkgtest-image/prepare.log" ]; then
+            cp "$RUNNER_TEMP/autopkgtest-image/prepare.log" test-results/prepare.log
+          fi
+          python3 - <<'PYCODE'
+          import json, os
+          from pathlib import Path
+          path = Path('test-results/result/result.json')
+          if not path.exists():
+              path.write_text(json.dumps({'source': os.environ['SOURCE'], 'result': 'INFRA_ERROR', 'error': 'Autopkgtest setup did not complete'}, indent=2) + '\n')
+          PYCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: status-autopkgtest-${{ matrix.source }}
+          path: test-results/result/result.json
+          retention-days: 14
+          if-no-files-found: error
+      - name: Bundle autopkgtest evidence
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p test-results test-bundles
+          sudo tar -czf "test-bundles/$SOURCE.tar.gz" -C test-results .
+          sudo chmod a+r "test-bundles/$SOURCE.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: autopkgtest-${{ matrix.source }}
+          path: test-bundles/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+  summary:
+    needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7, wave8, wave9, wave10, wave11, autopkgtest]
+    if: ${{ always() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: status-*
+          path: statuses
+      - name: Aggregate every requested source without hiding missing jobs
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --summary-inputs statuses --output summary
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pipeline-summary
+          path: summary/
+          retention-days: 14
+          if-no-files-found: error

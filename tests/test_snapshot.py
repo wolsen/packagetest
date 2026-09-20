@@ -16,8 +16,9 @@ def test_snapshot_version_uses_commit_date_and_sorts_after_release():
     assert debian_compare('6.9.0', version) == -1
     assert debian_compare(version, '6.9.1') == -1
     assert snapshot_version('7.0.0.0rc1', 1789374948, 3, 'abcdef0123').startswith('7.0.0~rc1+git')
-    with pytest.raises(ValueError, match='after its base tag'):
-        snapshot_version('6.9.0', 1789374948, 0, 'abcdef0123')
+    assert snapshot_version('6.9.0', 1789374948, 0, 'abcdef0123') == '6.9.0+git20260914.0.abcdef0'
+    with pytest.raises(ValueError, match='negative'):
+        snapshot_version('6.9.0', 1789374948, -1, 'abcdef0123')
 
 
 def sdist(path, timestamp, *, version='6.9.0+git20260914.3.7045af0', missing=None):
@@ -78,3 +79,10 @@ def test_portable_sdist_removes_umask_variation_and_preserves_executable(tmp_pat
             assert archive.getmember('project/run').mode == 0o755
             assert archive.getmember('project/AUTHORS').mode == 0o644
     assert outputs[0] == outputs[1]
+
+
+def test_snapshot_rc_python_version_is_canonical():
+    from packagetest.snapshot import snapshot_pep440_version
+    assert snapshot_pep440_version('33.0.0~rc1+git20260911.2.8cd693a') == '33.0.0rc1+git20260911.2.8cd693a'
+    assert snapshot_pep440_version('33.0.0~b2+git20260811.0.8cd693a') == '33.0.0b2+git20260811.0.8cd693a'
+    assert snapshot_pep440_version('6.9.0+git20260903.2.8fe7cb0') == '6.9.0+git20260903.2.8fe7cb0'

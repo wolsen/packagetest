@@ -8,7 +8,7 @@ import uuid
 
 from .commands import CommandRunner
 from .locked import load_lock
-from .snapshot import build_snapshot, snapshot_version
+from .snapshot import build_snapshot, snapshot_version, snapshot_pep440_version
 
 
 class Resolver:
@@ -52,7 +52,7 @@ def select_commit(resolver, checkout: Path, ref: str, cutoff: str | None) -> dic
     return {'ref': ref, 'resolved_branch_tip': tip, 'cutoff': cutoff, 'sha': sha,
             'resolved_at': datetime.now(timezone.utc).isoformat(), 'base_tag': base,
             'base_tag_sha': base_sha, 'commits_since_tag': count, 'commit_timestamp': str(epoch),
-            'pep440_version': version.replace('~', '.'), 'upstream_version': version}
+            'pep440_version': snapshot_pep440_version(version), 'upstream_version': version}
 
 
 def create_snapshot_lock(template: Path, output: Path, root: Path, *, ref='master', cutoff=None) -> dict:

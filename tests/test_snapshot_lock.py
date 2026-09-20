@@ -40,8 +40,9 @@ def test_select_branch_and_cutoff(tmp_path):
         select_commit(resolver, repo, 'master', '2026-01-03')
     with pytest.raises(ValueError, match='No branch commit'):
         select_commit(resolver, repo, 'master', '2025-01-03T00:00:00Z')
-    with pytest.raises(ValueError, match='after its base tag'):
-        select_commit(resolver, repo, 'master', '2026-01-01T23:00:00Z')
+    at_tag = select_commit(resolver, repo, 'master', '2026-01-01T23:00:00Z')
+    assert at_tag['commits_since_tag'] == 0
+    assert '+git20260101.0.' in at_tag['upstream_version']
 
 
 def test_existing_reviewed_lock_never_overwritten(tmp_path):

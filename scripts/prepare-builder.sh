@@ -7,7 +7,7 @@ if [[ $(. /etc/os-release; echo "$ID:$VERSION_ID") != ubuntu:24.04 ]]; then
 fi
 profile=${1:-noble}
 suite=$profile
-case "$profile" in noble|stonking|noble-uca-epoxy) ;; *) echo 'Supported targets: noble, stonking, noble-uca-epoxy' >&2; exit 2 ;; esac
+case "$profile" in noble|resolute|stonking|noble-uca-epoxy) ;; *) echo 'Supported targets: noble, resolute, stonking, noble-uca-epoxy' >&2; exit 2 ;; esac
 if [[ "$profile" == noble-uca-epoxy ]]; then suite=noble; fi
 chroot_name="$profile-amd64-sbuild"
 sudo apt-get update
@@ -21,9 +21,9 @@ sudo sbuild-adduser "$USER"
 if ! schroot --list | grep -qx "chroot:$chroot_name"; then
     sudo mkdir -p /srv/chroot
     repositories=()
-    if [[ "$suite" == noble ]]; then
-        repositories+=(--extra-repository='deb http://archive.ubuntu.com/ubuntu noble-updates main universe')
-        repositories+=(--extra-repository='deb http://security.ubuntu.com/ubuntu noble-security main universe')
+    if [[ "$suite" == noble || "$suite" == resolute ]]; then
+        repositories+=(--extra-repository="deb http://archive.ubuntu.com/ubuntu $suite-updates main universe")
+        repositories+=(--extra-repository="deb http://security.ubuntu.com/ubuntu $suite-security main universe")
     fi
     includes=()
     if [[ "$profile" == noble-uca-epoxy ]]; then

@@ -10,13 +10,21 @@ from pathlib import Path
 
 
 def snapshot_version(base: str, timestamp: int, count: int, sha: str) -> str:
-    if count < 1:
-        raise ValueError('Snapshot must be after its base tag; use a release lock at a tag')
+    if count < 0:
+        raise ValueError('Snapshot commit count cannot be negative')
     from .versioning import upstream_version_to_debian_version
     debian_base = upstream_version_to_debian_version(base).rsplit('-', 1)[0]
     date = datetime.fromtimestamp(timestamp, timezone.utc).strftime('%Y%m%d')
     return f'{debian_base}+git{date}.{count}.{sha[:7]}'
 
+
+
+def snapshot_pep440_version(version: str) -> str:
+    """Translate Debian prerelease ordering to canonical Python metadata."""
+    normalized = re.sub(r'~(?=(?:a|b|rc)[0-9])', '', version)
+    if '~' in normalized:
+        raise ValueError('Unsupported Debian prerelease marker for Python metadata')
+    return normalized
 
 def canonical_sdist(source: Path, destination: Path, *, epoch: int, version: str, archive_format: str = "portable-v1"):
     """Keep generated sdist contents; normalize archive headers for repeatability."""
@@ -63,7 +71,7 @@ def build_snapshot(build, package: dict, destination: Path) -> dict:
     version = snapshot_version(spec['base_tag'], epoch, count, actual_sha)
     if count != spec['commits_since_tag'] or epoch != int(spec['commit_timestamp']) or version != package['input']['upstream_version']:
         raise ValueError('Snapshot date/count/version differs from lock')
-    if spec['pep440_version'] != version.replace('~', '.'):
+    if spec['pep440_version'] != snapshot_pep440_version(version):
         raise ValueError('Snapshot PEP 440 version differs from Debian upstream version')
     venv = upstream.parent / 'venv'
     build.command('python3', '-m', 'venv', str(venv))
