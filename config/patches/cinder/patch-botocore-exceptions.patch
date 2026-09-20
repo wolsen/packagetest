@@ -1,0 +1,25 @@
+Description: Refresh the Ubuntu botocore exception compatibility patch after Hibiscus moved optional boto3 imports into a try/except block. Continue using botocore.exceptions.ReadTimeoutError rather than removed vendored urllib3 exceptions.
+Forwarded: not-needed
+Author: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Last-Update: 2026-09-20
+
+--- a/cinder/backup/drivers/s3.py
++++ b/cinder/backup/drivers/s3.py
+@@ -83,8 +83,6 @@
+     import boto3
+     from botocore.config import Config
+     from botocore import exceptions as boto_exc
+-    from botocore.vendored.requests.packages.urllib3 import exceptions as \
+-        urrlib_exc
+ except ImportError:
+     boto3 = None
+ 
+@@ -388,7 +386,7 @@
+                 resp = self.conn.get_object(**get_args)
+                 return resp.get('Body').read()
+             except (socket.timeout, socket.error,
+-                    urrlib_exc.ReadTimeoutError,
++                    boto_exc.ReadTimeoutError,
+                     boto_exc.IncompleteReadError) as e:
+                 last_exception = e
+                 continue

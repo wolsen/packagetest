@@ -1,0 +1,20 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Subject: Refresh reproducible_build.patch for Hibiscus
+Forwarded: no
+
+Refresh existing reproducible default argument adaptation against reformatted constructor; preserve runtime concurrency behavior.
+
+--- a/taskflow/conductors/backends/impl_executor.py
++++ b/taskflow/conductors/backends/impl_executor.py
+@@ -116,8 +116,10 @@
+         engine_options=None,
+         wait_timeout=None,
+         log=None,
+-        max_simultaneous_jobs=MAX_SIMULTANEOUS_JOBS,
++        max_simultaneous_jobs=None,
+     ):
++        if max_simultaneous_jobs is None:
++            max_simultaneous_jobs = MAX_SIMULTANEOUS_JOBS
+         super().__init__(
+             name,
+             jobboard,

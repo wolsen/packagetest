@@ -1,0 +1,33 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Subject: Refresh patch-test-base.patch for Hibiscus
+Forwarded: no
+
+Refresh the existing TestSkipped compatibility patch against new upstream imports. Preserve skip semantics and all test bodies.
+
+--- a/ceilometer/tests/base.py
++++ b/ceilometer/tests/base.py
+@@ -16,7 +16,6 @@
+ import functools
+ import os
+ import tempfile
+-import unittest
+ from unittest import mock
+ 
+ import fixtures
+@@ -24,6 +23,7 @@
+ from oslo_log import log
+ import oslo_messaging.conffixture
+ from oslotest import base
++from testtools import testcase
+ import yaml
+ 
+ import ceilometer
+@@ -103,7 +103,7 @@
+         try:
+             return func(*args, **kwargs)
+         except ceilometer.NotImplementedError as e:
+-            raise unittest.SkipTest(str(e))
++            raise testcase.TestSkipped(str(e))
+     return skip_if_not_implemented
+ 
+ 

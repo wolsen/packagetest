@@ -1,0 +1,52 @@
+Source: octavia-tempest-plugin
+Section: net
+Priority: optional
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+XSBC-Original-Maintainer: Debian OpenStack <team+openstack@tracker.debian.org>
+Uploaders:
+ Thomas Goirand <zigo@debian.org>,
+Build-Depends:
+ debhelper-compat (= 11),
+ dh-python,
+ golang-any,
+ openstack-pkg-tools,
+ python3-all,
+ python3-pbr,
+ python3-setuptools,
+Standards-Version: 4.5.0
+Vcs-Browser: https://salsa.debian.org/openstack-team/tempest/octavia-tempest-plugin
+Vcs-Git: https://salsa.debian.org/openstack-team/tempest/octavia-tempest-plugin.git
+Homepage: https://opendev.org/openstack/octavia-tempest-plugin
+
+Package: octavia-tempest-plugin
+Architecture: any
+Static-Built-Using: ${misc:Static-Built-Using}
+Depends:
+ python3-barbicanclient,
+ python3-cryptography,
+ python3-dateutil,
+ python3-h2,
+ python3-httpx,
+ python3-keystoneauth1,
+ python3-openssl,
+ python3-oslo.config,
+ python3-oslo.log,
+ python3-oslo.serialization,
+ python3-oslo.utils,
+ python3-oslotest,
+ python3-pbr,
+ python3-requests,
+ python3-tenacity,
+ python3-testtools,
+ tempest,
+ ${misc:Depends},
+ ${python3:Depends},
+Provides:
+ ${python3:Provides},
+Description: OpenStack Integration Test Suite - Octavia plugin
+ Tempest is a set of integration tests to be run against a live Openstack
+ cluster in order to make sure that all components are working as expected.
+ Tempest will start and stop virtual machine in order to check that your
+ cloud is working as expected.
+ .
+ This package contains the Octavia plugin.

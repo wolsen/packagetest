@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "72165bdf2bac8a0c7f024523f45498347b3d515e570df7f2251b0954db44e40e",
+  "drop_patches": [
+    {
+      "name": "remove-broken-test.patch",
+      "sha256": "824aaa2246bc0e19fe2c40f1a9dd84168fa91b998b56caa7d4b86c311c7d28a5",
+      "upstream_file": "ironic_python_agent/tests/unit/test_hardware.py",
+      "upstream_file_sha256": "16bd65b8f52afc09f60121e05fa62f1faee41347727c85da0e6b9520c8856137",
+      "reason": "Restore upstream RAID skip-list tests: upstream rewrote and expanded this coverage alongside skip-block-device fixes d4391345 and88f03538. Do not remove newly maintained tests using the2023 archive workaround."
+    }
+  ]
+}

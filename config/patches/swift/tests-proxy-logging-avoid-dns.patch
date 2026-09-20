@@ -1,0 +1,36 @@
+Description: Refresh existing Ubuntu test adaptation against pinned Swift snapshot.
+Forwarded: not-needed
+Last-Update: 2026-09-20
+
+--- a/test/unit/common/middleware/test_proxy_logging.py
++++ b/test/unit/common/middleware/test_proxy_logging.py
+@@ -27,6 +27,7 @@
+ 
+ from swift.common.statsd_client import LabelsMap
+ from swift.common.utils import get_swift_logger, split_path, md5
++from swift.common.utils import logs as swift_logs
+ from swift.common.middleware import proxy_logging
+ from swift.common.registry import register_sensitive_header, \
+     register_sensitive_param, get_sensitive_headers
+@@ -534,8 +535,8 @@
+             'log_statsd_sample_rate_factor': .04,
+             'log_statsd_metric_prefix': 'foo',
+         }
+-        with mock.patch('swift.common.statsd_client.StatsdClient',
+-                        FakeStatsdClient):
++        with mock.patch('swift.common.statsd_client.StatsdClient', FakeStatsdClient), \
++             mock.patch.object(swift_logs.ThreadSafeSysLogHandler, 'createSocket', return_value=None):
+             app = proxy_logging.ProxyLoggingMiddleware(FakeApp(), conf)
+ 
+         self.assertFalse(app.log_hdrs)
+@@ -588,8 +589,8 @@
+             'log_statsd_sample_rate_factor': .04,
+             'log_statsd_metric_prefix': 'foo',
+         }
+-        with mock.patch('swift.common.statsd_client.StatsdClient',
+-                        FakeStatsdClient):
++        with mock.patch('swift.common.statsd_client.StatsdClient', FakeStatsdClient), \
++             mock.patch.object(swift_logs.ThreadSafeSysLogHandler, 'createSocket', return_value=None):
+             app = proxy_logging.ProxyLoggingMiddleware(FakeApp(), conf)
+ 
+         self.assertTrue(app.log_hdrs)

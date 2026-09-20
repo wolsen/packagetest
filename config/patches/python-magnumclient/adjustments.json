@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "87f5c1aca256fed577d88307c0eb6f1579c6888462fa04215dae89689fd3f019",
+  "replace_files": [
+    {
+      "name": "patches/remove-basic-privacy-breach.patch",
+      "sha256": "2706c482e8525bc704b1d9ac41564254412f2476ac3c7d8da66dd578275ea56f",
+      "replacement": "remove-basic-privacy-breach.patch",
+      "replacement_sha256": "b8762d88fcfade19a873b6fb1e576c6ff5703a21cf7b0288ef6c688a134656b4",
+      "reason": "Refresh changed upstream context while preserving the existing packaging behavior and all test coverage."
+    }
+  ]
+}

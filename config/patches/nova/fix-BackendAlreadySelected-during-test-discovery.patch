@@ -1,0 +1,30 @@
+Description: Refresh existing Ubuntu BackendAlreadySelected handling after Hibiscus moved poison_eventlet before backend initialization and added startup logging. Preserve the original catch, warning and return behavior without removing upstream backend selection or poisoning.
+Forwarded: not-needed
+Last-Update: 2026-09-20
+
+--- a/nova/monkey_patch.py
++++ b/nova/monkey_patch.py
+@@ -171,9 +171,20 @@
+ 
+         # We asked not to monkey patch so we will run in native threading mode
+         import oslo_service.backend as service
+-        # NOTE(gibi): This will raise if the backend is already initialized
+-        # with Eventlet
+-        service.init_backend(service.BackendType.THREADING)
++        from oslo_service.backend import exceptions as service_exceptions
++        try:
++            # NOTE(gibi): This will raise if the backend is already initialized
++            # with Eventlet
++            service.init_backend(service.BackendType.THREADING)
++        except service_exceptions.BackendAlreadySelected:
++            # This can happen during test discovery when other tests have
++            # already initialized the eventlet backend. Log a warning and
++            # continue - the actual service startup would fail but test
++            # discovery can proceed.
++            from oslo_log import log as logging
++            LOG = logging.getLogger(__name__)
++            LOG.warning("Backend already initialized, skipping threading init")
++            return
+ 
+         from oslo_log import log as logging
+         LOG = logging.getLogger(__name__)

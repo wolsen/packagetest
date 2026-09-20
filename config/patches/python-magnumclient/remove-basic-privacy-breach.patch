@@ -1,0 +1,23 @@
+Description: Refresh existing Debian adaptation against pinned snapshot.
+Forwarded: not-needed
+Last-Update: 2026-09-20
+
+--- a/README.rst
++++ b/README.rst
+@@ -1,16 +1,6 @@
+ =================================
+ Python bindings to the Magnum API
+ =================================
+-
+-.. image:: https://governance.openstack.org/tc/badges/python-magnumclient.svg
+-
+-.. image:: https://img.shields.io/pypi/v/python-magnumclient.svg
+-    :target: https://pypi.org/project/python-magnumclient/
+-    :alt: Latest Version
+-
+-.. image:: https://img.shields.io/pypi/dm/python-magnumclient.svg
+-    :target: https://pypi.org/project/python-magnumclient/
+-    :alt: Downloads
+ 
+ This is a client library for Magnum built on the Magnum API. It
+ provides a Python API (the ``magnumclient`` module) and a command-line

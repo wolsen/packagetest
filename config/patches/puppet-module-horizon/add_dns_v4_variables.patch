@@ -1,0 +1,17 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Subject: Refresh add_dns_v4_variables.patch for Hibiscus
+Forwarded: no
+
+Refresh existing DNS parameter declarations against current upstream parameter types without changing defaults.
+
+--- a/manifests/init.pp
++++ b/manifests/init.pp
+@@ -685,6 +685,8 @@
+   $horizon_upload_mode                                 = undef,
+   $default_boot_source                                 = undef,
+   $system_scope_services                               = undef,
++  $default_nameserver_1                              = '9.9.9.9',
++  $default_nameserver_2                              = '149.112.112.112',
+   Boolean $show_diff                                   = false,
+ ) inherits horizon::params {
+   include horizon::deps

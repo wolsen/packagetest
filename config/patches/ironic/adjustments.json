@@ -1,0 +1,40 @@
+{
+  "archive_dsc_sha256": "c76cc6c262e1310d65f8c65ed65cc0a67bef0b7826b8d4c38b20f86c98c2cd12",
+  "drop_patches": [
+    {
+      "name": "0001-Ensure-kernel_append_params-are-valid-kernel-paramet.patch",
+      "sha256": "0db38bf1d8ae4accf8134d40cadbf86565462769e3a1fa532df131cfe77ef992",
+      "upstream_file": "ironic/common/kernel_parameters.py",
+      "upstream_file_sha256": "fd78f4ef4795db11243435e7fd00838071cf1b53cd98194776e8bd5a2433e0a4",
+      "reason": "Security fix already present in pinned upstream history: c6c91d649fc3a295aaaffd0ab34d34c61b893749 Ensure kernel_append_params are valid kernel parameters\na885a0544d46f18d373e685f877bd8a17d3eba89 Update configuration value in iRMC\n5feb39844ab1a3f266669f01b6a13f39462b4612 Allow reusing defaults in per-node kernel_append_params\n9a8b501e5c66a1f31adcfcc342f677a6288188fc Merge \"Clean up kernel_append_params for Redfish and iLO\"\ndb200f98800bf9d5831dae0d6fc1ba7f29d95e59 Merge \"Clean up kernel_append_params for iRMC\"\n6c7d5e2626518b324c54e7bf594b81557d820728 Merge \"Clean up kernel_append_params for PXE/iPXE\"\n722326f6751d37302c4ece5849c827e7cc4dd14e Clean up kernel_append_params for iRMC\ne51404c8e709e0b8b1ee0430869a9dd7083cf048 Clean up kernel_append_params for Redfish and iLO\n2a73f5a84e06b370d0b04997cc0787497e111642 Clean up kernel_append_params for PXE/iPXE\ne49ccfbdc1b555a277087b9e497285a824911408 Merge \"Add `instance_info/kernel_append_params` to `redfish`\"\n605f7445701b2d8b2161b53a64f68943d6e09c9f Add `instance_info/kernel_append_params` to `redfish`. Retain upstream protection and tests without reapplying archive backport."
+    },
+    {
+      "name": "0002-security-disable-driver_info-level-pxe_template-over.patch",
+      "sha256": "67a228759539f129833eca0414b3917f7866a9488fa06149b41e6cfbc87d179d",
+      "upstream_file": "ironic/conf/pxe.py",
+      "upstream_file_sha256": "dfdad2567400c0ec5855ec5f737a46401dc5f4ae184f38c7e87a92006044ed22",
+      "reason": "Security fix already present in pinned upstream history: e07527aa47e5e60725bea1efb041c426a294bf0f security: disable driver_info level pxe_template override. Retain upstream protection and tests without reapplying archive backport."
+    },
+    {
+      "name": "0003-security-directory-transversal-ISO9660-support.patch",
+      "sha256": "c6353bb61a6efbaad9e519f76087b8ccd7ddf5c8a7266736ea34e8060df075b7",
+      "upstream_file": "ironic/common/exception.py",
+      "upstream_file_sha256": "6f21345a90b490a04c3fbd8761f9dfd576f0df93d290f988b1111f46e527d39f",
+      "reason": "Security fix already present in pinned upstream history: b78ada41d24833f3fffb754fb173baa947452141 security: directory transversal ISO9660 support. Retain upstream protection and tests without reapplying archive backport."
+    },
+    {
+      "name": "fix-pysnmp-7x-compat.patch",
+      "sha256": "b289d7c9c2978f86d4f93e1bf17413e7a1b73a977c875d9ac614d24afb0547ab",
+      "upstream_file": "requirements.txt",
+      "upstream_file_sha256": "d7ccfd1abf4cce1fff3bbc8b407c1f452a1cfe739de192001d0c9eb3bedce24d",
+      "reason": "Upstream removed unsupported SNMP drivers and pysnmp dependencies (7ceef452d); compatibility patch targets deleted driver code."
+    },
+    {
+      "name": "fix-sushy-connect-timeout-compat.patch",
+      "sha256": "8a86464a9e7c9cc86049b54a563cd338eb1431f58a04cb9a265fd4435eaac368",
+      "upstream_file": "requirements.txt",
+      "upstream_file_sha256": "d7ccfd1abf4cce1fff3bbc8b407c1f452a1cfe739de192001d0c9eb3bedce24d",
+      "reason": "Upstream now requires sushy>=5.12.0, whose connect_timeout API is native; preserve native timeout handling and upstream tests rather than the archive workaround for sushy5.9."
+    }
+  ]
+}

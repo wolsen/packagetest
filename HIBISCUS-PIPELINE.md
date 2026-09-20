@@ -6,7 +6,7 @@ Target: Ubuntu 26.04 (Resolute), amd64. The workflow builds candidate packages; 
 
 `config/hibiscus-catalog.json` includes 170 cycle deliverables and 27 independently released build dependencies. Another 41 deliverables have no mapped Resolute source and remain explicit exclusions. Release metadata revisions and archive index checksums are recorded.
 
-The plan resolves references once. Declared `stable/2026.2` branches take precedence. Each build checks out its frozen commit and applies checksum-pinned Ubuntu archive packaging. Snapshot versions contain commit date, distance from the base tag, and abbreviated SHA; commits at a tag use distance zero. Python sdists retain generated metadata. Puppet sources use deterministic Git archives.
+The plan resolves references once. Declared `stable/2026.2` branches take precedence. Each build checks out its frozen commit and applies checksum-pinned Ubuntu archive packaging. Snapshot versions contain commit date, distance from the base tag, and abbreviated SHA; commits at a tag use distance zero. Python sdists retain generated metadata. Swift explicitly opts out of a generated ChangeLog. Gnocchi uses its maintained GitHub repository and pinned setuptools-scm tools; the retired requestsexceptions dependency uses its last source commit, recorded explicitly in the catalog. Puppet sources use deterministic Git archives.
 
 ## Parallel builds and artifacts
 
@@ -18,7 +18,7 @@ Consumers validate artifact run ID, attempt, target, frozen catalog entry, check
 
 ## Tests and reports
 
-Autopkgtests use separate QEMU guests with 4 GiB RAM and two CPUs on KVM-capable GitHub runners. Built source packages and exact candidate binaries are tested. PASS, FAIL, SKIP, NO_TESTS, INFRA_ERROR, and BLOCKED remain distinct; missing or skipped tests are not passes.
+Autopkgtests start after each build wave while subsequent builds proceed. They use separate QEMU guests with 4 GiB RAM and two CPUs on KVM-capable GitHub runners. Built source packages and exact candidate binaries are tested. PASS, FAIL, SKIP, NO_TESTS, INFRA_ERROR, and BLOCKED remain distinct; missing or skipped tests are not passes.
 
 Artifacts `build-SOURCE` and `autopkgtest-SOURCE` contain tar bundles of results and logs. Small `status-*` artifacts feed `pipeline-summary`. Retention is 14 days.
 

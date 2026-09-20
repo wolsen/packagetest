@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "ae0f905d8da303b0322b37b1ead0d6670889d5a60323947a235ee3aa307daa08",
+  "drop_patches": [
+    {
+      "name": "fix-wrong-syspath-in-docs-conf.py.patch",
+      "sha256": "07ff336967013ce869240fa4299b6de7ef750f1295f5b8971fa7e97c4d4c5404",
+      "upstream_file": "doc/source/conf.py",
+      "upstream_file_sha256": "f876ae0f3374721b3ee71afae29945a2abdc587e75a8ff68c94ddd33e2abda2d",
+      "reason": "Upstream removed the sys.path additions entirely, so the obsolete deletion patch is unnecessary."
+    }
+  ]
+}

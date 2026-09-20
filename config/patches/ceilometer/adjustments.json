@@ -1,0 +1,19 @@
+{
+  "archive_dsc_sha256": "2c3ded162fbbcc2e8a81715b41493086c9606495ad77addf9670ebba7495ae01",
+  "replace_files": [
+    {
+      "name": "patches/skip-RGW-tests-if-awscurl-not-available.patch",
+      "sha256": "0cb461e244861c060de9dddc0babc0ecb92f39f1b07ff2e9da7ce80b8ac5ee08",
+      "replacement": "skip-RGW-tests-if-awscurl-not-available.patch",
+      "replacement_sha256": "1b68a5254f94906c2dea62e896abe28554a10cb0fd5251a3a2573e8d5f7974f5",
+      "reason": "Refresh existing optional awscurl availability guards after upstream moved test base imports from oslotest to ceilometer.tests. Preserve all RGW tests and scenarios when awscurl is available; preserve the archive existing conditional skip when absent."
+    },
+    {
+      "name": "patches/patch-test-base.patch",
+      "sha256": "302b42926b2d4a78f30def2c4e20df0c1854f32228b7e0223431c7542e5cf06d",
+      "replacement": "patch-test-base.patch",
+      "replacement_sha256": "bb5bfd880e0c7c2008a0c710d425d2d33a18b489503df572b9fbefa2a771cd35",
+      "reason": "Refresh the existing TestSkipped compatibility patch against new upstream imports. Preserve skip semantics and all test bodies."
+    }
+  ]
+}

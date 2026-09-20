@@ -1,0 +1,63 @@
+{
+  "archive_dsc_sha256": "24570658793c5095bfb403a3e119d48b4cd755b85f551040bfc9b863d853b318",
+  "replace_files": [
+    {
+      "name": "patches/install-missing-files.patch",
+      "sha256": "eb462da9df8faeb64ec82f3277ea87cd9502a542a006cad2addbd3d4210bc1d2",
+      "replacement": "install-missing-files.patch",
+      "replacement_sha256": "e6b5ecb3a40bc960b435d2539c65a7fabf47cb4374fbbe5f8a61b797fc0564c2",
+      "reason": "Refresh patch against snapshot sdist while preserving its packaging behavior and all tests."
+    }
+  ],
+  "drop_patches": [
+    {
+      "name": "CVE-2026-40213_CVE-2026-40214_2_Fix_cyborg-status_upgrade_check_tests.patch",
+      "sha256": "69800aaf7a88d61269d824f8b3ed29316d0d5c927cd29c4f5bfd3b42f7f75603",
+      "upstream_file": "cyborg/tests/base.py",
+      "upstream_file_sha256": "87a64dccf98412561ba8b6fdf9524b113b6c9efeaf753a8837c42cd820286699",
+      "reason": "Superseded by upstream commit 9dbfb38cdfffa5b6c21fcdecd4ba4ead10dfb9a8 (Fix cyborg-status upgrade check tests), an ancestor of the pinned snapshot. Preserve upstream security fixes and tests without applying the archive backport twice."
+    },
+    {
+      "name": "CVE-2026-40213_CVE-2026-40214_3_Fix_rule-allow_policy_bypass_on_device_deployable_attribute_APIs.patch",
+      "sha256": "74a6762369cfa3f97c32c9ff99dd89b6f51e93891203df07844d62256f9c6851",
+      "upstream_file": "cyborg/common/authorize_wsgi.py",
+      "upstream_file_sha256": "e3417f7a82e56ef0d7798cc924a54b2540f4934616ec59d688bf065741ccf17c",
+      "reason": "Superseded by upstream commit 9c313b007fd09301b487ba500089636a09a02609 (Fix rule:allow policy bypass on device/deployable/attribute APIs), an ancestor of the pinned snapshot. Preserve upstream security fixes and tests without applying the archive backport twice."
+    },
+    {
+      "name": "CVE-2026-40213_CVE-2026-40214_4_Set_project_id_on_ARQ_creation_and_binding.patch",
+      "sha256": "8b235c883487874e527fec8ccfefab52713948d95ce967750cc5a06b3b6f3528",
+      "upstream_file": "cyborg/api/controllers/v2/arqs.py",
+      "upstream_file_sha256": "1a4d49ecfc10def7adf7055c60dda2a660526bafe7354d8dd1e1cf53c3cf2557",
+      "reason": "Superseded by upstream commit 15f72aca9555aad98bdf7ac0dc09782cbc3ac47c (Set project_id on ARQ creation and binding), an ancestor of the pinned snapshot. Preserve upstream security fixes and tests without applying the archive backport twice."
+    },
+    {
+      "name": "CVE-2026-40213_CVE-2026-40214_5_Refactor_session_handling_and_align_test_contexts.patch",
+      "sha256": "b04d75e0e550f1aa0abc009be46e552ed8f2f4103662f900fcfec3e31a1ad476",
+      "upstream_file": "cyborg/tests/base.py",
+      "upstream_file_sha256": "87a64dccf98412561ba8b6fdf9524b113b6c9efeaf753a8837c42cd820286699",
+      "reason": "Superseded by upstream commit 75467de9f767fe552c891a262891f62b38f63ab6 (Refactor session handling and align test contexts), an ancestor of the pinned snapshot. Preserve upstream security fixes and tests without applying the archive backport twice."
+    },
+    {
+      "name": "CVE-2026-40213_CVE-2026-40214_6_Add_project_id_backfill_for_existing_ARQs.patch",
+      "sha256": "e1387e6c7b3493d230239b19f859d3de2824af5a7c38ceeb1b3cbbc7c970624e",
+      "upstream_file": "cyborg/agent/manager.py",
+      "upstream_file_sha256": "de7537e26b44d745db99ca5c18a72f599bc212c7b142671aa97a84906bb7b920",
+      "reason": "Superseded by upstream commit 2a4d3656b91cbaae0b9be6791d26629f98d0c4b0 (Add project_id backfill for existing ARQs), an ancestor of the pinned snapshot. Preserve upstream security fixes and tests without applying the archive backport twice."
+    },
+    {
+      "name": "CVE-2026-40213_CVE-2026-40214_7_Enforce_project-scoped_access_for_ARQs.patch",
+      "sha256": "cc11560914b3c6ed4bc1c10a315767d66f76bf21b5ffea0c933b044e11de28ed",
+      "upstream_file": "cyborg/api/controllers/v2/arqs.py",
+      "upstream_file_sha256": "1a4d49ecfc10def7adf7055c60dda2a660526bafe7354d8dd1e1cf53c3cf2557",
+      "reason": "Superseded by upstream commit ebfe43710988b764b969d5f2301e22069da670d7 (Enforce project-scoped access for ARQs), an ancestor of the pinned snapshot. Preserve upstream security fixes and tests without applying the archive backport twice."
+    },
+    {
+      "name": "CVE-2026-40213_CVE-2026-40214_8_Require_service_token_for_bound_ARQ_operations.patch",
+      "sha256": "dab384994c600305bebe421017235fa7d3fd8e8d47992e8360458cfcae16baf6",
+      "upstream_file": "cyborg/api/controllers/v2/arqs.py",
+      "upstream_file_sha256": "1a4d49ecfc10def7adf7055c60dda2a660526bafe7354d8dd1e1cf53c3cf2557",
+      "reason": "Superseded by upstream commit 9e38e24905ae705c22fdbb66ba21464b4f397d6d (Require service token for bound ARQ operations), an ancestor of the pinned snapshot. Preserve upstream security fixes and tests without applying the archive backport twice."
+    }
+  ]
+}

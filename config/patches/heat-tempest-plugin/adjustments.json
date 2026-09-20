@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "1c77e75a24fed3385a02f1b6bfbb522916da13cff0480ddabdb5fd2f55c60ea9",
+  "replace_files": [
+    {
+      "name": "patches/add-oslo.config-entry-point.patch",
+      "sha256": "a96608d9e0938e1ce2abdd8083a5899ed872beee743169b4d199f42a007b8f06",
+      "replacement": "add-oslo.config-entry-point.patch",
+      "replacement_sha256": "0c9e32a1c0ef61bdd4a3bc64c2f776f421b895a53caf3be4af1cc427609bb258",
+      "reason": "Refresh patch against snapshot sdist while preserving its packaging behavior and all tests."
+    }
+  ]
+}

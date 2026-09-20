@@ -1,0 +1,21 @@
+{
+  "archive_dsc_sha256": "012f0ab2ec59710e813d9535c09ffb6a5e2165e67e2ceb991fb54a3174d9fec5",
+  "drop_patches": [
+    {
+      "name": "fix-simple-crypto-none-kek.patch",
+      "sha256": "ca3bd414ec35d1694198b52b0c77cc11fce77bd91fbdef1e199fe916f1986cf8",
+      "upstream_file": "barbican/plugin/crypto/simple_crypto.py",
+      "upstream_file_sha256": "c82dd5727336d3b11e592933c963a81c44351fc3c76e43a92189973287e0c5a6",
+      "upstream_commit": "a9f7478e36292eff97647934d863d579a81c9fff",
+      "reason": "Upstream commit fixes unconfigured KEK with a truthiness check and explicitly configures the same test KEK before constructing SimpleCryptoPlugin. Both Ubuntu patch effects are already present; retain upstream production code and test coverage unchanged."
+    },
+    {
+      "name": "fix-test-crypto-setup-kek.patch",
+      "sha256": "2ad68daae8b3c0b2ab11085e82859b266a1ca7a3ef0a8b66b7e35b9d0eb5aec0",
+      "upstream_file": "barbican/tests/plugin/crypto/test_crypto.py",
+      "upstream_file_sha256": "a2b6e6a669b4c2a2d6e6645b013893a96a593f99201525b1d27815e393bde4b4",
+      "upstream_commit": "a9f7478e36292eff97647934d863d579a81c9fff",
+      "reason": "Upstream commit fixes unconfigured KEK with a truthiness check and explicitly configures the same test KEK before constructing SimpleCryptoPlugin. Both Ubuntu patch effects are already present; retain upstream production code and test coverage unchanged."
+    }
+  ]
+}

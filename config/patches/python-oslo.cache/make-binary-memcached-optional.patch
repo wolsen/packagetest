@@ -1,0 +1,48 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Subject: Refresh make-binary-memcached-optional.patch for Hibiscus
+Forwarded: no
+
+Refresh existing optional binary-memcached backend import against upstream type annotations. Preserve runtime ImportError on backend construction without dependency and retain all tests.
+
+--- a/oslo_cache/_bmemcache_pool.py
++++ b/oslo_cache/_bmemcache_pool.py
+@@ -22,7 +22,10 @@
+     import eventlet  # type: ignore[import-not-found]
+ except ImportError:
+     eventlet = None
+-import bmemcached
++try:
++    import bmemcached
++except ImportError:
++    bmemcached = None
+ from oslo_cache._memcache_pool import MemcacheClientPool
+ from oslo_log import log
+ 
+@@ -37,7 +40,13 @@
+     )
+ 
+ 
+-class _BMemcacheClient(bmemcached.Client):  # type: ignore
++if bmemcached is not None:
++    _BMemcacheClientBases = (bmemcached.Client,)  # type: ignore[assignment]
++else:
++    _BMemcacheClientBases = (object,)  # type: ignore[assignment]
++
++
++class _BMemcacheClient(*_BMemcacheClientBases):  # type: ignore[misc]
+     """Thread global memcache client
+ 
+     As client is inherited from threading.local we have to restore object
+@@ -72,6 +81,12 @@
+         unused_timeout: float,
+         conn_get_timeout: float | None = None,
+     ) -> None:
++        if bmemcached is None:
++            raise ImportError(
++                "python-binary-memcached is required for the bmemcache "
++                "backend. Install it with: apt install "
++                "python3-binary-memcached"
++            )
+         super().__init__(
+             urls,
+             arguments,

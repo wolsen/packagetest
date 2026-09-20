@@ -13,6 +13,7 @@ import json
 import re
 from pathlib import Path
 import shutil
+import subprocess
 import tarfile
 from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
@@ -26,6 +27,10 @@ BUILD_REQUIREMENTS = [
     {'name': 'pbr', 'version': '7.0.3', 'sha256': 'ff223894eb1cd271a98076b13d3badff3bb36c424074d26334cd25aebeecea6b'},
     {'name': 'setuptools', 'version': '80.9.0', 'sha256': '062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922'},
     {'name': 'wheel', 'version': '0.45.1', 'sha256': '708e7481cc80179af0e556bbf0cc00b8444c7321e2700b8d8580231d13017248'},
+]
+SCM_REQUIREMENTS = [
+    {'name': 'setuptools-scm', 'version': '8.3.1', 'sha256': '332ca0d43791b818b841213e76b1971b7711a960761c5bea5fc5cdb5196fbce3'},
+    {'name': 'packaging', 'version': '25.0', 'sha256': '29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484'},
 ]
 
 
@@ -114,6 +119,40 @@ def packaging_adjustments(entry: dict, tree: Path, config_root: Path | None = No
     series_path.write_text('\n'.join(series) + '\n')
     return applied
 
+
+def already_applied_patches(tree: Path) -> list[dict]:
+    """Omit a quilt patch only if its complete inverse applies without fuzz.
+
+    Also require that the forward patch does not apply, so ambiguous repeated
+    contexts do not qualify. Both probes are dry runs; upstream is unchanged.
+    """
+    series = tree / 'debian/patches/series'
+    if not series.exists():
+        return []
+    lines = series.read_text().splitlines()
+    omitted = []
+    for index, line in enumerate(lines):
+        words = line.split()
+        if not words or words[0].startswith('#') or len(words) != 1:
+            continue
+        name = Path(words[0])
+        if name.is_absolute() or '..' in name.parts:
+            raise ValueError('Unsafe quilt patch path')
+        patch = tree / 'debian/patches' / name
+        data = patch.read_bytes()
+        args = ['patch', '--dry-run', '--force', '--fuzz=0', '-p1']
+        reverse = subprocess.run(args + ['--reverse'], input=data, cwd=tree, capture_output=True)
+        if reverse.returncode:
+            continue
+        forward = subprocess.run(args, input=data, cwd=tree, capture_output=True)
+        if forward.returncode:
+            lines[index] = '# Fully present upstream (verified reverse dry run): ' + str(name)
+            omitted.append({'action': 'omit-already-applied-patch', 'name': str(name),
+                            'sha256': sha256(patch), 'reverse_probe': reverse.stdout.decode(errors='replace')})
+    if omitted:
+        series.write_text('\n'.join(lines) + '\n')
+    return omitted
+
 def extract_snapshot(archive: Path, destination: Path) -> None:
     destination.mkdir()
     with tarfile.open(archive) as source:
@@ -196,7 +235,8 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None)
             snapshot = git_archive(build, checkout, selected, orig, source)
         else:
             snapshot_spec = {**selected, 'repository': entry['upstream_repository'],
-                             'build_requirements': BUILD_REQUIREMENTS, 'archive_format': 'portable-v1'}
+                             'build_requirements': BUILD_REQUIREMENTS + (SCM_REQUIREMENTS if entry.get('snapshot_version_backend') == 'setuptools-scm' else []),
+                             'version_backend': entry.get('snapshot_version_backend', 'pbr'), 'archive_format': 'portable-v1'}
             snapshot = build_snapshot(build, {'source': source, 'input': {'snapshot': snapshot_spec, 'upstream_version': upstream}}, orig)
         tree = build.root / f'{source}-{upstream}'
         extract_snapshot(orig, tree)
@@ -205,6 +245,7 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None)
         shutil.copytree(packaging_tree / 'debian', tree / 'debian', symlinks=True)
         ubuntu_maintainer(tree / 'debian' / 'control')
         report['packaging_adjustments'] = packaging_adjustments(entry, tree)
+        report['packaging_adjustments'].extend(already_applied_patches(tree))
         build.command('dch', '--newversion', version, '--distribution', 'resolute', '--force-distribution',
                       'Nightly OpenStack 2026.2 snapshot from pinned upstream commit ' + selected['sha'] + '.',
                       cwd=tree, env={'DEBFULLNAME': 'Packaging Build Agent', 'DEBEMAIL': 'packaging-agent@example.invalid'})

@@ -1,0 +1,10 @@
+Description: Preserve Debian packaging integration against the snapshot sdist.
+Forwarded: not-needed
+Last-Update: 2026-09-20
+
+--- a/MANIFEST.in
++++ b/MANIFEST.in
+@@ -1,2 +1,3 @@
+ prune pci-sim
+ prune devstack
++recursive-include cyborg *

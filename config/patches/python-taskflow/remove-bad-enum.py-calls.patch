@@ -1,0 +1,23 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Subject: Refresh remove-bad-enum.py-calls.patch for Hibiscus
+Forwarded: no
+
+Refresh existing removal of incompatible enum.__new__ override against upstream formatting; retain string Enum inheritance.
+
+--- a/taskflow/utils/misc.py
++++ b/taskflow/utils/misc.py
+@@ -48,14 +48,6 @@
+ class StrEnum(str, enum.Enum):
+     """An enumeration that is also a string and can be compared to strings."""
+ 
+-    def __new__(cls, *args, **kwargs):
+-        for a in args:
+-            if not isinstance(a, str):
+-                raise TypeError(
+-                    "Enumeration '%s' (%s) is not"
+-                    " a string" % (a, type(a).__name__)
+-                )
+-        return super().__new__(cls, *args, **kwargs)
+ 
+ 
+ class StringIO(io.StringIO):

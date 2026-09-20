@@ -1,0 +1,53 @@
+Description: Enable setuptools package discovery
+ The pyproject.toml metadata listed only the top-level masakarimonitors
+ package. With setuptools this omits subpackages such as
+ masakarimonitors.cmd, while console scripts still import those modules.
+ .
+ Backport the pending upstream packaging update to discover all
+ masakarimonitors subpackages and clean up deprecated setuptools metadata.
+Origin: upstream, https://review.opendev.org/c/openstack/masakari-monitors/+/987140
+Forwarded: https://review.opendev.org/c/openstack/masakari-monitors/+/987140
+Author: Ivan Anfimov <lazekteam@gmail.com>
+Last-Update: 2026-06-04
+
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -9,14 +9,13 @@ authors = [
+     {name = "OpenStack", email = "openstack-discuss@lists.openstack.org"},
+ ]
+ readme = {file = "README.rst", content-type = "text/x-rst"}
+-license = {text = "Apache-2.0"}
++license = "Apache-2.0"
+ dynamic = ["version", "dependencies"]
+ requires-python = ">=3.11"
+ classifiers = [
+   "Environment :: OpenStack",
+   "Intended Audience :: Information Technology",
+   "Intended Audience :: System Administrators",
+-  "License :: OSI Approved :: Apache Software License",
+   "Operating System :: POSIX :: Linux",
+   "Programming Language :: Python",
+   "Programming Language :: Python :: 3",
+@@ -32,10 +31,8 @@ classifiers = [
+ Homepage = "https://docs.openstack.org/masakari-monitors/latest/"
+ Repository = "https://opendev.org/openstack/masakari-monitors"
+ 
+-[tool.setuptools]
+-packages = [
+-    "masakarimonitors"
+-]
++[tool.setuptools.packages.find]
++include = ["masakarimonitors*"]
+ 
+ [project.entry-points."oslo.config.opts"]
+ "masakarimonitors.conf" = "masakarimonitors.conf.opts:list_opts"
+--- a/setup.py
++++ b/setup.py
+@@ -15,6 +15,4 @@
+ 
+ import setuptools
+ 
+-setuptools.setup(
+-    setup_requires=['pbr>=2.0.0'],
+-    pbr=True)
++setuptools.setup(pbr=True)

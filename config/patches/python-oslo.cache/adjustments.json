@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "0a250162d44035b4108cd2d88c0a06c9bba1e6644c4c777c9e4367c9f213257e",
+  "replace_files": [
+    {
+      "name": "patches/make-binary-memcached-optional.patch",
+      "sha256": "f39f272a42e114e52bc237c683e1908e03b48ebffae1ac21ddcd313d2a74651c",
+      "replacement": "make-binary-memcached-optional.patch",
+      "replacement_sha256": "bf5dfb03f44cd8c8fbf269012716e37359af3c16c3094bf9eeb6050052a06f4b",
+      "reason": "Refresh existing optional binary-memcached backend import against upstream type annotations. Preserve runtime ImportError on backend construction without dependency and retain all tests."
+    }
+  ]
+}

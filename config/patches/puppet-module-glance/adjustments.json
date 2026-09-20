@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "8370c3b3a62ec29e703cebf1cc7840bbe05957cd3c3274de528c52feb0259e65",
+  "drop_patches": [
+    {
+      "name": "patch-out-glance_image-scheduled-after-glance-service.patch",
+      "sha256": "d735f80ba959adb2b9d08c4ee1efd62dd772d019628ddaca67cda228ede3f673",
+      "upstream_file": "manifests/deps.pp",
+      "upstream_file_sha256": "2bc9b4878665d48298ddec3adee9569fb8f0e3640ddbdc37cbad766bf66274f7",
+      "reason": "Upstream removed Glance_image resource scheduling entirely. The problematic dependency edge no longer exists; retain current upstream resource graph."
+    }
+  ]
+}

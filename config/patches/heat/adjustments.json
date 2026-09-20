@@ -1,0 +1,22 @@
+{
+  "archive_dsc_sha256": "d3d98ee1c513ac50b6237c35e2ca972883bfbdac97487b62a2a63b79e698010f",
+  "replace_files": [
+    {
+      "name": "patches/drop-zun.patch",
+      "sha256": "a75b5048c21bb7c91ec400c1b32f7764563cd737947e7a917092ccd630142a10",
+      "replacement": "drop-zun.patch",
+      "replacement_sha256": "c22294512179652cb44f48a7d9a3c99f6b8de554621aa7550891911228b8515e",
+      "reason": "Refresh the existing Ubuntu omission of Zun integration against Hibiscus source. Preserve the original four module/test deletions and dependency/plugin removal; only current source context and setuptools-generated setup.cfg whitespace differ."
+    }
+  ],
+  "drop_patches": [
+    {
+      "name": "lp2114984-preserve-auto-populated-binding-profile-fields-durin.patch",
+      "sha256": "9e23658be97aa045976dcc4e6173a8dc8c7ce961f02cc1126cbd9ad50b70ce2d",
+      "upstream_file": "heat/engine/resources/openstack/neutron/port.py",
+      "upstream_file_sha256": "d56a5d87134816a5ea3a7694c65a99ef17b331cf46c8ce351db4297438731ee3",
+      "upstream_commit": "099b6dea629df424006bd13469b4ca53aa036082",
+      "reason": "Already present verbatim in Hibiscus: reverse dry-run patch -R -p1 -F0 succeeds for both port.py three-way binding-profile merge and test_neutron_port.py regression test on pristine upstream snapshot. Keep upstream implementation and test unchanged."
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "45ef20e1ba2ed1eea4f1ed70785c2f565a7ae537aabba71827e41276eb4225b6",
+  "drop_patches": [
+    {
+      "name": "fix-subcommand-test-python314.patch",
+      "sha256": "fc35aff5fefc0aacc4a3c1bd27441eca905be7763befd16589f2cd111e1a4c35",
+      "upstream_file": "oslo_config/tests/test_cfg.py",
+      "upstream_file_sha256": "5eaca5f8c46d6cb6af09053006985a252e524bc5abbecd7f85f7f8509e2a0e68",
+      "reason": "Upstream test_sub_command_multiple already checks Python3.14 ValueError, Python3.12.5 ArgumentError and older SystemExit; keep its current test and stderr fixture unchanged."
+    }
+  ]
+}

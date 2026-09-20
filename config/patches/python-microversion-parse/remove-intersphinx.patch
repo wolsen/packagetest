@@ -1,0 +1,16 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Subject: Refresh remove-intersphinx.patch for Hibiscus
+Forwarded: no
+
+Refresh existing offline documentation build adaptation after upstream added trailing commas; retain autodoc and theme extensions.
+
+--- a/doc/source/conf.py
++++ b/doc/source/conf.py
+@@ -31,7 +31,6 @@
+ # ones.
+ extensions = [
+     'sphinx.ext.autodoc',
+-    'sphinx.ext.intersphinx',
+     'openstackdocstheme',
+ ]
+ 

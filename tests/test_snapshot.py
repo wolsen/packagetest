@@ -86,3 +86,13 @@ def test_snapshot_rc_python_version_is_canonical():
     assert snapshot_pep440_version('33.0.0~rc1+git20260911.2.8cd693a') == '33.0.0rc1+git20260911.2.8cd693a'
     assert snapshot_pep440_version('33.0.0~b2+git20260811.0.8cd693a') == '33.0.0b2+git20260811.0.8cd693a'
     assert snapshot_pep440_version('6.9.0+git20260903.2.8fe7cb0') == '6.9.0+git20260903.2.8fe7cb0'
+
+
+def test_declared_changelog_opt_out_still_requires_exact_version(tmp_path):
+    source = tmp_path / 'source.tar.gz'
+    sdist(source, 1, missing='ChangeLog')
+    canonical_sdist(source, tmp_path / 'out.tar.gz', epoch=1,
+                    version='6.9.0+git20260914.3.7045af0', required_metadata=('AUTHORS', 'PKG-INFO'))
+    with pytest.raises(ValueError, match='version differs'):
+        canonical_sdist(source, tmp_path / 'wrong.tar.gz', epoch=1,
+                        version='0.0.0', required_metadata=('AUTHORS', 'PKG-INFO'))

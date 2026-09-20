@@ -1,0 +1,249 @@
+Description: Preserve Ubuntu stdlib JSON migration against current snapshot metadata.
+Author: Corey Bryant <corey.bryant@canonical.com>
+Forwarded: no
+Last-Update: 2026-09-20
+
+--- a/gnocchiclient/v1/archive_policy.py
++++ b/gnocchiclient/v1/archive_policy.py
+@@ -11,7 +11,7 @@
+ #    License for the specific language governing permissions and limitations
+ #    under the License.
+ 
+-import ujson
++import json
+ 
+ from gnocchiclient.v1 import base
+ 
+@@ -41,7 +41,7 @@
+         """
+         return self._post(
+             self.url, headers={'Content-Type': "application/json"},
+-            data=ujson.dumps(archive_policy)).json()
++            data=json.dumps(archive_policy)).json()
+ 
+     def update(self, name, archive_policy):
+         """Update an archive policy.
+@@ -55,7 +55,7 @@
+         return self._patch(
+             self.url + '/' + name,
+             headers={'Content-Type': "application/json"},
+-            data=ujson.dumps(archive_policy)).json()
++            data=json.dumps(archive_policy)).json()
+ 
+     def delete(self, name):
+         """Delete an archive policy.
+--- a/gnocchiclient/v1/archive_policy_rule.py
++++ b/gnocchiclient/v1/archive_policy_rule.py
+@@ -11,7 +11,7 @@
+ #    License for the specific language governing permissions and limitations
+ #    under the License.
+ 
+-import ujson
++import json
+ 
+ from gnocchiclient.v1 import base
+ 
+@@ -36,7 +36,7 @@
+         """Create an archive policy rule."""
+         return self._post(
+             self.url, headers={'Content-Type': "application/json"},
+-            data=ujson.dumps(archive_policy_rule)).json()
++            data=json.dumps(archive_policy_rule)).json()
+ 
+     def update(self, name, new_name):
+         """Update an archive policy rule.
+@@ -50,7 +50,7 @@
+         return self._patch(
+             self.url + '/' + name,
+             headers={'Content-Type': "application/json"},
+-            data=ujson.dumps({'name': new_name})).json()
++            data=json.dumps({'name': new_name})).json()
+ 
+     def delete(self, name):
+         """Delete an archive policy rule.
+--- a/gnocchiclient/v1/metric.py
++++ b/gnocchiclient/v1/metric.py
+@@ -18,7 +18,7 @@
+ 
+ import iso8601
+ 
+-import ujson
++import json
+ 
+ from gnocchiclient import utils
+ from gnocchiclient.v1 import base
+@@ -107,7 +107,7 @@
+         if resource_id is None:
+             return self._post(
+                 self.metric_url, headers={'Content-Type': "application/json"},
+-                data=ujson.dumps(metric)).json()
++                data=json.dumps(metric)).json()
+ 
+         if name is None:
+             raise TypeError(
+@@ -116,7 +116,7 @@
+         return self._post(
+             self.resource_url % resource_id,
+             headers={'Content-Type': "application/json"},
+-            data=ujson.dumps({name: metric})).json()[0]
++            data=json.dumps({name: metric})).json()[0]
+ 
+     # FIXME(jd): remove refetch_metric when LP#1497171 is fixed
+     @removals.removed_kwarg("refetch_metric")
+@@ -153,7 +153,7 @@
+         if resource_id is None:
+             metric = self._post(
+                 self.metric_url, headers={'Content-Type': "application/json"},
+-                data=ujson.dumps(metric)).json()
++                data=json.dumps(metric)).json()
+             # FIXME(sileht): create and get have a
+             # different output: LP#1497171
+             if refetch_metric:
+@@ -170,7 +170,7 @@
+         metric = self._post(
+             self.resource_url % resource_id,
+             headers={'Content-Type': "application/json"},
+-            data=ujson.dumps(metric))
++            data=json.dumps(metric))
+         return self.get(metric_name, resource_id)
+ 
+     def delete(self, metric, resource_id=None):
+@@ -207,7 +207,7 @@
+             url = self.resource_url % resource_id + metric + "/measures"
+         return self._post(
+             url, headers={'Content-Type': "application/json"},
+-            data=ujson.dumps(measures))
++            data=json.dumps(measures))
+ 
+     def batch_metrics_measures(self, measures):
+         """Add measurements to metrics.
+@@ -218,7 +218,7 @@
+         return self._post(
+             self.metric_batch_url,
+             headers={'Content-Type': "application/json"},
+-            data=ujson.dumps(measures))
++            data=json.dumps(measures))
+ 
+     def batch_resources_metrics_measures(self, measures, create_metrics=False):
+         """Add measurements to named metrics if resources.
+@@ -230,7 +230,7 @@
+         return self._post(
+             self.resources_batch_url,
+             headers={'Content-Type': "application/json"},
+-            data=ujson.dumps(measures),
++            data=json.dumps(measures),
+             params=dict(create_metrics=create_metrics))
+ 
+     def get_measures(self, metric, start=None, stop=None, aggregation=None,
+@@ -337,7 +337,7 @@
+                         resource_type, metrics,
+                         utils.dict_to_querystring(params)),
+                     headers={'Content-Type': "application/json"},
+-                    data=ujson.dumps(query)).json()
++                    data=json.dumps(query)).json()
+             else:
+                 params['filter'] = query
+                 measures = self._post(
+--- a/gnocchiclient/v1/resource.py
++++ b/gnocchiclient/v1/resource.py
+@@ -11,7 +11,7 @@
+ #    License for the specific language governing permissions and limitations
+ #    under the License.
+ 
+-import ujson
++import json
+ 
+ from gnocchiclient import utils
+ from gnocchiclient.v1 import base
+@@ -103,7 +103,7 @@
+         return self._post(
+             self.url + resource_type,
+             headers={'Content-Type': "application/json"},
+-            data=ujson.dumps(resource)).json()
++            data=json.dumps(resource)).json()
+ 
+     def update(self, resource_type, resource_id, resource):
+         """Update a resource.
+@@ -118,7 +118,7 @@
+         return self._patch(
+             self.url + resource_type + "/" + resource_id,
+             headers={'Content-Type': "application/json"},
+-            data=ujson.dumps(resource)).json()
++            data=json.dumps(resource)).json()
+ 
+     def delete(self, resource_id):
+         """Delete a resource.
+@@ -138,7 +138,7 @@
+             return self._delete(
+                 self.url + resource_type + "/",
+                 headers={'Content-Type': "application/json"},
+-                data=ujson.dumps(query)).json()
++                data=json.dumps(query)).json()
+         return self._delete(
+             self.url + resource_type + "/?filter=" + query,
+             headers={'Content-Type': "application/json"}).json()
+@@ -176,7 +176,7 @@
+ 
+         if isinstance(query, dict):
+             page_url = url % utils.dict_to_querystring(params)
+-            data = ujson.dumps(query)
++            data = json.dumps(query)
+         else:
+             params['filter'] = query
+             page_url = url % utils.dict_to_querystring(params)
+--- a/gnocchiclient/v1/resource_type.py
++++ b/gnocchiclient/v1/resource_type.py
+@@ -11,7 +11,7 @@
+ #    License for the specific language governing permissions and limitations
+ #    under the License.
+ 
+-import ujson
++import json
+ 
+ from gnocchiclient.v1 import base
+ 
+@@ -32,7 +32,7 @@
+         return self._post(
+             self.url,
+             headers={'Content-Type': "application/json"},
+-            data=ujson.dumps(resource_type)).json()
++            data=json.dumps(resource_type)).json()
+ 
+     def get(self, name):
+         """Get a resource type.
+@@ -62,4 +62,4 @@
+         return self._patch(
+             self.url + name,
+             headers={'Content-Type': "application/json-patch+json"},
+-            data=ujson.dumps(operations)).json()
++            data=json.dumps(operations)).json()
+--- a/gnocchiclient/v1/aggregates.py
++++ b/gnocchiclient/v1/aggregates.py
+@@ -15,7 +15,7 @@
+ 
+ import iso8601
+ 
+-import ujson
++import json
+ 
+ from gnocchiclient import utils
+ from gnocchiclient.v1 import base
+@@ -76,7 +76,7 @@
+         aggregates = self._post("v1/aggregates?%s" % (
+             utils.dict_to_querystring(params)),
+             headers={'Content-Type': "application/json"},
+-            data=ujson.dumps(data)).json()
++            data=json.dumps(data)).json()
+ 
+         if search is not None and groupby is not None:
+             for group in aggregates:
+--- a/setup.cfg
++++ b/setup.cfg
+@@ -26,7 +26,6 @@
+ 	gnocchiclient
+ install_requires = 
+ 	cliff>=2.10 # Apache-2.0
+-	ujson
+ 	keystoneauth1>=2.0.0
+ 	futurist
+ 	iso8601

@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "fdb467548b04d8b00f444dcf35db0498570a8f23e805d82442fceea59a9691f2",
+  "replace_files": [
+    {
+      "name": "patches/ubuntu_settings.patch",
+      "sha256": "5bc7550f1cea058be18bd5716382b7b2d6dcd60c89d53918fe17d7a32bc21c41",
+      "replacement": "ubuntu_settings.patch",
+      "replacement_sha256": "24e8a06d85f6d83ed8bc8c1ceab83ad1f07bdc8492e0d38d4fc27d0a20be74e2",
+      "reason": "Refresh final local-settings context while retaining every Ubuntu default and all test patches."
+    }
+  ]
+}

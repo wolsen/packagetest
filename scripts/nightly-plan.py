@@ -88,6 +88,12 @@ def freeze(entry):
     ref = entry['upstream_ref']
     repository = entry['upstream_repository']
     try:
+        if re.fullmatch(r'[0-9a-f]{40}', ref):
+            # Reviewed immutable source selection (e.g. a retired dependency).
+            # prepare_source verifies the object exists in its full clone.
+            entry['upstream_sha'] = ref
+            entry.pop('upstream_resolution_error', None)
+            return entry
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/-]*', ref) or '..' in ref:
             raise ValueError(f'Invalid branch: {ref}')
         result = subprocess.run(['git', 'ls-remote', '--exit-code', repository, f'refs/heads/{ref}'],

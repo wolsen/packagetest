@@ -1,0 +1,26 @@
+{
+  "archive_dsc_sha256": "f41732238a9e064a93dad61f4c93b7d7b33888f030dfd22dddd15373ec3cd47c",
+  "replace_files": [
+    {
+      "name": "patches/skip-if-https-proxy.patch",
+      "sha256": "bcdf1e20e2ea347fc0044ba2f378510fdc483798c0d3a1826f7738c8e82add8f",
+      "replacement": "skip-if-https-proxy.patch",
+      "replacement_sha256": "d4ce68a0863b9269bddf1799a6b203b4c3cffdce4c6914ffc5cf8f4705a7183b",
+      "reason": "Refresh the existing HTTPS-proxy-only test skip patch after upstream added unittest import. Retain precisely the same five conditional skips and run all tests normally when https_proxy is absent."
+    },
+    {
+      "name": "patches/fix-BackendAlreadySelected-during-test-discovery.patch",
+      "sha256": "647184ccea90d8c08487e9d073dbf1fcce524fe40cda8ea7149977cd8f814a4e",
+      "replacement": "fix-BackendAlreadySelected-during-test-discovery.patch",
+      "replacement_sha256": "82878a73472d9c17748cbbefadf3b10ce1cba91bcc5a0a4db8f498a33374fa2b",
+      "reason": "Refresh existing Ubuntu BackendAlreadySelected handling after Hibiscus moved poison_eventlet before backend initialization and added startup logging. Preserve the original catch, warning and return behavior without removing upstream backend selection or poisoning."
+    },
+    {
+      "name": "patches/fix-test_threading_selected_by_default-env-var.patch",
+      "sha256": "f8d3cf6888f0e12c569a2b0e4effb0c740b191ad2dfda20dd33d223d630319a9",
+      "replacement": "fix-test_threading_selected_by_default-env-var.patch",
+      "replacement_sha256": "6e4c95a5f5c1973f107d5d57b3f4ab8a29fb4c1749322b03d856e2c11379db97",
+      "reason": "Refresh existing missing-environment-variable test fix around Hibiscus native-thread mode precondition. Preserve all current test conditions while using pop with a default instead of unconditional del."
+    }
+  ]
+}

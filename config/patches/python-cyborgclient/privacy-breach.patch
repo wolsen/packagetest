@@ -1,0 +1,26 @@
+Description: Refresh existing Debian adaptation against pinned snapshot.
+Forwarded: not-needed
+Last-Update: 2026-09-20
+
+--- a/README.rst
++++ b/README.rst
+@@ -1,19 +1,12 @@
+ ========================
+ Team and repository tags
+ ========================
+-
+-.. image:: https://governance.openstack.org/tc/badges/python-cyborgclient.svg
+-    :target: https://governance.openstack.org/tc/reference/tags/index.html
+ 
+ .. Change things from this point on
+ 
+ ===============================
+ python-cyborgclient
+ ===============================
+-
+-.. image:: https://img.shields.io/pypi/v/python-cyborgclient.svg
+-    :target: https://pypi.python.org/pypi/python-cyborgclient/
+-    :alt: Latest Version
+ 
+ python-cyborgclient is a python bindings to the OpenStack Cyborg API. There's
+ a command-line interface via the OpenStack client plugin. The client

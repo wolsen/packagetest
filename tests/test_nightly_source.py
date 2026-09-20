@@ -86,3 +86,40 @@ def test_patch_adaptation_requires_exact_source_and_patch_checksums(tmp_path):
     actions = packaging_adjustments(entry, tree, config.parent)
     assert actions[0]['action'] == 'omit-obsolete-patch'
     assert (tree / 'debian' / 'patches' / 'series').read_text() == '# Superseded upstream: fix.patch\n'
+
+
+def test_only_complete_already_applied_patch_is_omitted(tmp_path):
+    from packagetest.nightly_source import already_applied_patches
+    patches = tmp_path / 'debian/patches'
+    patches.mkdir(parents=True)
+    (patches / 'series').write_text('fix.patch\n')
+    (patches / 'fix.patch').write_text('--- a/code\n+++ b/code\n@@ -1,2 +1,2 @@\n context\n-vulnerable\n+fixed\n')
+    code = tmp_path / 'code'
+    code.write_text('context\nvulnerable\n')
+    assert already_applied_patches(tmp_path) == []
+    code.write_text('context\nfixed\n')
+    assert already_applied_patches(tmp_path)[0]['name'] == 'fix.patch'
+    assert code.read_text() == 'context\nfixed\n'
+    assert (patches / 'series').read_text().startswith('# Fully present upstream')
+
+
+def test_replacement_packaging_requires_both_checksums(tmp_path):
+    from packagetest.nightly_source import packaging_adjustments
+    from packagetest.artifacts import sha256
+    tree = tmp_path / 'tree'
+    (tree / 'debian').mkdir(parents=True)
+    original = tree / 'debian/rules'
+    original.write_text('old rules\n')
+    cfg = tmp_path / 'config/sample'
+    cfg.mkdir(parents=True)
+    replacement = cfg / 'rules'
+    replacement.write_text('new rules\n')
+    spec = {'archive_dsc_sha256': 'a' * 64, 'replace_files': [
+        {'name': 'rules', 'sha256': sha256(original), 'replacement': 'rules',
+         'replacement_sha256': sha256(replacement)}]}
+    (cfg / 'adjustments.json').write_text(json.dumps(spec))
+    entry = {'source': 'sample', 'archive_source': {'sha256': 'a' * 64}}
+    assert packaging_adjustments(entry, tree, cfg.parent)[0]['action'] == 'replace-packaging-file'
+    assert original.read_text() == 'new rules\n'
+    with pytest.raises(ValueError, match='checksum guard'):
+        packaging_adjustments(entry, tree, cfg.parent)

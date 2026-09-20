@@ -1,0 +1,19 @@
+Description: Refresh existing Debian adaptation against pinned snapshot.
+Forwarded: not-needed
+Last-Update: 2026-09-20
+
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -71,10 +71,8 @@
+ [project.entry-points."cliff.demo.hooked"]
+ sample-hook = "cliffdemo.hook:Hook"
+ 
+-[tool.setuptools]
+-packages = [
+-    "cliff"
+-]
++[tool.setuptools.packages.find]
++include = ["cliff*"]
+ 
+ [tool.mypy]
+ python_version = "3.11"

@@ -1,0 +1,19 @@
+{
+  "archive_dsc_sha256": "dd742d209e65438c652d45e9794b2d0c1140da752460161569c887a05454e323",
+  "replace_files": [
+    {
+      "name": "patches/debian-fixup.patch",
+      "sha256": "9a5755bf29e2820fd6af0a4721a308e192ee56df7366f06b0abf5374d25ff899",
+      "replacement": "debian-fixup.patch",
+      "replacement_sha256": "90c48b942f75f632e036bfbddf163ea5b600546d2ec0c0537f8685911f821286",
+      "reason": "Refresh existing Debian configuration fragments and www-data WSGI ownership against current aligned parameter declarations; retain all original distro behavior."
+    },
+    {
+      "name": "patches/add_dns_v4_variables.patch",
+      "sha256": "8f7f1df4902a950e9958a81b2b95ef1f1eadb4b1201c94e1f86638fb612d2894",
+      "replacement": "add_dns_v4_variables.patch",
+      "replacement_sha256": "3cd1b2c59336c0245c2ddff0bb007dd279c971ff581d354be305d446d2b53fe4",
+      "reason": "Refresh existing DNS parameter declarations against current upstream parameter types without changing defaults."
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "9b1550784f0702753ee6767aba1af36466ea9ca932ba09b331f9158330087a89",
+  "replace_files": [
+    {
+      "name": "patches/skip-tests.patch",
+      "sha256": "027318756a1f4cb621970aefd13dd4ac241e72e827437e27b67c4099e39ace83",
+      "replacement": "skip-tests.patch",
+      "replacement_sha256": "3b1fb7b93ba7495237f584b29e48c5f864571bbb32f428385db512d016ee3564",
+      "reason": "Preserve exactly the three pre-existing Ubuntu intermittent-test exclusions; no additional tests skipped."
+    }
+  ]
+}

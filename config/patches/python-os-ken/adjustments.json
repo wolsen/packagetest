@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "eb33111bfad8826dcffea0391b037a1dd770a2b1ca8c0646f97e7c2bd06e14cc",
+  "drop_patches": [
+    {
+      "name": "add-native-loopingcall-to-bgp.patch",
+      "sha256": "de9ed64f7d9f3ce8be992d8d96266f9658a1bb84ea161c0162990649e7825128",
+      "upstream_file": "os_ken/services/protocols/bgp/utils/thrding.py",
+      "upstream_file_sha256": "7413a423f20a587840d7d2516acd7d13f000d1dbf1f34ec82b72b711a8856a80",
+      "reason": "Upstream includes native LoopingCall and ThreadingIOFactory and routes base/peer/processor through utils.LoopingCall and utils.IOFactory. Existing eventlet/native dispatch supersedes the archived backport."
+    }
+  ]
+}

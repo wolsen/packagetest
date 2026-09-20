@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "f5eab353e62f5911d15cb35850f8e97bcbe6b5100e4eb527550d1e297c7882d6",
+  "drop_patches": [
+    {
+      "name": "fix-py314-resource-annotations.patch",
+      "sha256": "082952bc8eb1ed125e718dbf6b47ec12e2ed245c9dae9736356f304f73418b38",
+      "upstream_file": "openstack/resource.py",
+      "upstream_file_sha256": "a969b4539107561fb21f916c2c99f41dd973496f1d88e3e05824adacc33fa1f9",
+      "reason": "Snapshot already imports annotations from __future__; subsequent import restructuring makes reverse patch context stale. Preserve existing postponed annotation semantics."
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+Description: Refresh existing missing-environment-variable test fix around Hibiscus native-thread mode precondition. Preserve all current test conditions while using pop with a default instead of unconditional del.
+Forwarded: not-needed
+Last-Update: 2026-09-20
+
+--- a/nova/tests/unit/test_utils.py
++++ b/nova/tests/unit/test_utils.py
+@@ -1408,7 +1408,7 @@
+             self.skipTest("This test can only be run in native threaded mode")
+ 
+         with mock.patch.dict(os.environ):
+-            del os.environ["OS_NOVA_DISABLE_EVENTLET_PATCHING"]
++            os.environ.pop("OS_NOVA_DISABLE_EVENTLET_PATCHING", None)
+             monkey_patch.patch(backend='threading')
+ 
+         init_backend.assert_called_once_with(

@@ -17,6 +17,20 @@ from urllib.parse import urlparse
 ALIASES = {'keystoneauth': 'python-keystoneauth1',
            'puppet-openstack_extras': 'puppet-module-openstack-extras'}
 
+# Explicit upstream migrations/retirements; archive dependencies still need a
+# source snapshot, but a tombstone branch is not usable source code.
+UPSTREAM_OVERRIDES = {
+    'python-gnocchiclient': {
+        'upstream_repository': 'https://github.com/gnocchixyz/python-gnocchiclient',
+        'upstream_ref': 'master', 'branch_policy': 'maintained-upstream-moved-from-opendev',
+        'snapshot_version_backend': 'setuptools-scm',
+    },
+    'python-requestsexceptions': {
+        'upstream_ref': 'bb64d8a07b515947cf000c375b017026a01f7a4f',
+        'branch_policy': 'last-source-commit-before-upstream-retirement',
+    },
+}
+
 
 def paragraphs(text: str) -> list[dict[str, str]]:
     result = []
@@ -158,6 +172,7 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
             break
         packages.update({source: candidates[source] for source in additions})
     for source, item in packages.items():
+        item.update(UPSTREAM_OVERRIDES.get(source, {}))
         item['build_dependencies'] = sorted({binary_sources[binary] for binary in dependency_names(item['build_depends']) if binary in binary_sources and binary_sources[binary] in packages} - {source})
     revision = subprocess.check_output(['git', '-C', str(releases), 'rev-parse', 'HEAD'], text=True).strip()
     return {'schema_version': 1, 'series': series, 'codename': codename, 'suite': suite,

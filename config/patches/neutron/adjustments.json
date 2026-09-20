@@ -1,0 +1,21 @@
+{
+  "archive_dsc_sha256": "c0228b36ba821edd1561ede036b56e7452f79a3eb532dc670d994790de4fe646",
+  "drop_patches": [
+    {
+      "name": "fix-metadata-gzip-double-decode.patch",
+      "sha256": "7c8d06a20822ba1f8c5d44a3dce0efa515a4a10329a47d78d9df4e556cf2f147",
+      "upstream_file": "neutron/common/metadata.py",
+      "upstream_file_sha256": "32638f0d713e472bc049c4a018e5e00ca8cf3996c3c321b599d580682e3bab1f",
+      "upstream_commit": "d70bdc9df51f46ea6d64c3c11ce09054c86fa155",
+      "reason": "Upstream metadata header cleanup supersedes the Ubuntu gzip workaround: checks payload magic, removes stale content-encoding for decoded bodies, preserves compressed user data, and also recalculates content-length/transfer-encoding. Commit is an ancestor of pinned Hibiscus SHA; retain its complete implementation."
+    },
+    {
+      "name": "lp2150285-keep-mod-wsgi-operational.patch",
+      "sha256": "43246d4738e7858ea8b833e192dd64628b4379a420229e0f661df22d62270958",
+      "upstream_file": "neutron/common/wsgi_utils.py",
+      "upstream_file_sha256": "fd16483f1748d3c1bdf62897acfb78f0f8836fd601495c2e38448d042b781c19",
+      "upstream_commit": "05d53abd2c8c7f5090254ac935ccf50d20586c97",
+      "reason": "Hibiscus upstream implements server-agnostic worker election and group start-time, plus explicit mod_wsgi worker count support (ancestor commits 51cf77e, 8056655, 05d53ab). Retain upstream implementation and test_wsgi_utils regression suite; downstream one-cycle shim targets deleted get_api_worker_id API and says to drop when upstream supports mod_wsgi."
+    }
+  ]
+}

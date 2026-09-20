@@ -5546,9 +5546,9 @@
       "membership": "independent-build-dependency",
       "release_type": "library",
       "team": "Telemetry",
-      "upstream_repository": "https://opendev.org/openstack/python-gnocchiclient",
+      "upstream_repository": "https://github.com/gnocchixyz/python-gnocchiclient",
       "upstream_ref": "master",
-      "branch_policy": "release-metadata-no-stable-branch",
+      "branch_policy": "maintained-upstream-moved-from-opendev",
       "all_upstream_repositories": [
         "openstack/python-gnocchiclient"
       ],
@@ -5584,7 +5584,8 @@
         "python-keystonemiddleware",
         "python-openstackclient",
         "python-osc-lib"
-      ]
+      ],
+      "snapshot_version_backend": "setuptools-scm"
     },
     {
       "deliverable": "hacking",
@@ -8441,8 +8442,8 @@
       "release_type": "library",
       "team": "OpenStackSDK",
       "upstream_repository": "https://opendev.org/openstack/requestsexceptions",
-      "upstream_ref": "master",
-      "branch_policy": "release-metadata-no-stable-branch",
+      "upstream_ref": "bb64d8a07b515947cf000c375b017026a01f7a4f",
+      "branch_policy": "last-source-commit-before-upstream-retirement",
       "all_upstream_repositories": [
         "openstack/requestsexceptions"
       ],

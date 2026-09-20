@@ -1,0 +1,19 @@
+{
+  "archive_dsc_sha256": "f26fe36ed900f301e7f8ba72bb743b61da3a02c5ea20e90c56fd5913d5601aff",
+  "replace_files": [
+    {
+      "name": "patches/patch-botocore-exceptions.patch",
+      "sha256": "3e2ec1ab4979f4c90be54016ff1c571911fa653b9b02298a47a4b592ddfc2954",
+      "replacement": "patch-botocore-exceptions.patch",
+      "replacement_sha256": "dd2404555c6f1e820929b3c908cd05e1646b01e6c599fea0936fd2c18ad69c4d",
+      "reason": "Refresh the Ubuntu botocore exception compatibility patch after Hibiscus moved optional boto3 imports into a try/except block. Continue using botocore.exceptions.ReadTimeoutError rather than removed vendored urllib3 exceptions."
+    },
+    {
+      "name": "patches/skip-moto-tests.patch",
+      "sha256": "3225db3e3be02e29a4ec7131d2e9126dba50ef0b8263f9695157349cc7f70d80",
+      "replacement": "skip-moto-tests.patch",
+      "replacement_sha256": "7524c3b4b22c459f34c366bdcb1e8930ec53d4cb410ebed82290c57ab4aeb2e4",
+      "reason": "Refresh Ubuntu existing optional-moto test compatibility patch after upstream removed the adjacent eventlet.tpool import. Preserve existing mock_aws/mock_s3 fallback and absence-only skip without adding test exclusions."
+    }
+  ]
+}

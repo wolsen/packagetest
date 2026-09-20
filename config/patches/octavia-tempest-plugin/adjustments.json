@@ -1,0 +1,19 @@
+{
+  "archive_dsc_sha256": "939f766011733d4ab1acb60d7bf79fc0204aec79c88fc61fd41848859a7221af",
+  "replace_files": [
+    {
+      "name": "control",
+      "sha256": "44f8813469e59ab32eb2829ae606fb3a6563245d0224183202e0e0d28a51f2b0",
+      "replacement": "control",
+      "replacement_sha256": "ac4cfcf0b52bc94401e48579f35605b27cf40c973c67201b48db33b40a1178b3",
+      "reason": "The plugin contains a Go ELF test server compiled from shipped source, so its binary package must be Architecture:any. Static-Built-Using records the exact Go runtime source package/version."
+    },
+    {
+      "name": "rules",
+      "sha256": "dc36cab33044d44f74e8b3b13ef34b34e7c34f2cd7d7202c209faa1dfa9f96fb",
+      "replacement": "rules",
+      "replacement_sha256": "3c570e465b95fb95dbbc52918a0cd0c2dfab61947c5c4be3035cfdb76a8cfd7c",
+      "reason": "Keep compiling the supplied Go source, disable implicit toolchain/module downloads, and record exact standard-library source provenance. A single-path static-link exception is intentional because Tempest uploads this helper into guest images including CirrOS; dynamically linking Ubuntu libc would break portability. All other Lintian errors remain enabled."
+    }
+  ]
+}

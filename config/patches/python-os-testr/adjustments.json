@@ -1,0 +1,19 @@
+{
+  "archive_dsc_sha256": "ad7505c867757b08394919887a49cb3efb9b6172fe4807a77da5cff6265a545e",
+  "drop_patches": [
+    {
+      "name": "remove-broken-test_trace.patch",
+      "sha256": "c3a8c0aa53022d9c0305f9b50728217e28979767ac364ed06c13610f57ef1ff2",
+      "upstream_file": "os_testr/tests/test_subunit_trace.py",
+      "upstream_file_sha256": "bd31428ba2eb0fcb36ce6f577483a60df40c57063af05fb7cd861f1a93017037",
+      "reason": "Restore upstream test_trace instead of deleting it: upstream replaced obsolete six.binary_type with bytes and fixed subunit compatibility. Direct python3 -m unittest os_testr.tests.test_subunit_trace.TestSubunitTrace.test_trace passed on the pinned pristine snapshot; no test skip introduced."
+    },
+    {
+      "name": "fix-compat-with-subunit.patch",
+      "sha256": "e2aaaffda6b05a715f93ea0357d1a0343f1b4eaa75f40ffca814f96baec9d3a0",
+      "upstream_file": "os_testr/subunit_trace.py",
+      "upstream_file_sha256": "3cce1c04ec2db3d8c5c3f648681d1742b4493da2fb90a16175b151a2d78ccf41",
+      "reason": "Upstream imports CatFiles directly and uses timezone-aware datetime.now(datetime.timezone.utc) for both timestamps, incorporating every effect of this archive patch."
+    }
+  ]
+}

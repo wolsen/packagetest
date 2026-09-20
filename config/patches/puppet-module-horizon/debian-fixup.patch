@@ -1,0 +1,192 @@
+Description: Refresh existing Debian configuration fragments and www-data WSGI ownership against current aligned parameter declarations; retain all original distro behavior.
+Forwarded: no
+
+--- a/manifests/init.pp
++++ b/manifests/init.pp
+@@ -779,6 +779,24 @@
+     require => Anchor['horizon::config::begin'],
+   }
+ 
++  file { '/etc/openstack-dashboard/local_settings.d/_0001_debian_debug.py':
++    ensure  => file,
++    content => template('horizon/_0001_debian_debug.py.erb'),
++    require => Anchor['horizon::config::begin'],
++  }
++
++  file { '/etc/openstack-dashboard/local_settings.d/_0005_debian_webroot.py':
++    ensure  => file,
++    content => template('horizon/_0005_debian_webroot.py.erb'),
++    require => Anchor['horizon::config::begin'],
++  }
++
++  file { '/etc/openstack-dashboard/local_settings.d/_0006_debian_cache.py':
++    ensure  => file,
++    content => template('horizon/_0006_debian_cache.py.erb'),
++    require => Anchor['horizon::config::begin'],
++  }
++
+   if $compress_offline {
+     if $facts['os']['family'] == 'Debian' {
+       exec { 'refresh_horizon_django_compress':
+--- a/manifests/params.pp
++++ b/manifests/params.pp
+@@ -36,8 +36,6 @@
+       $policy_dir                        = undef
+       $root_url                          = '/horizon'
+       $static_path                       = '/var/lib'
+-      $wsgi_user                         = 'horizon'
+-      $wsgi_group                        = 'horizon'
+       $pymemcache_package                = 'python3-pymemcache'
+       $python_redis_package              = 'python3-redis'
+       $cloudkitty_dashboard_package_name = 'python3-cloudkitty-dashboard'
+@@ -51,11 +49,15 @@
+           $package_name      = 'openstack-dashboard-apache'
+           $httpd_config_file = '/etc/apache2/sites-available/openstack-dashboard-alias-only.conf'
+           $django_wsgi       = '/usr/share/openstack-dashboard/wsgi.py'
++          $wsgi_user         = 'www-data'
++          $wsgi_group        = 'www-data'
+         }
+         default: {
+           $package_name      = 'openstack-dashboard'
+           $httpd_config_file = '/etc/apache2/conf-available/openstack-dashboard.conf'
+           $django_wsgi       = '/usr/share/openstack-dashboard/openstack_dashboard/wsgi.py'
++          $wsgi_user         = 'horizon'
++          $wsgi_group        = 'horizon'
+         }
+       }
+     }
+--- a/templates/local_settings.py.erb
++++ b/templates/local_settings.py.erb
+@@ -10,8 +10,6 @@
+ SITE_BRANDING = '<%= @site_branding %>'
+ 
+ <% end -%>
+-WEBROOT = '<%= @root_url %>'
+-
+ # Required for Django 1.5.
+ # If horizon is running in production (DEBUG is False), set this
+ # with the list of host/domain names that the application can serve.
+@@ -22,6 +20,13 @@
+ ALLOWED_HOSTS = ['<%= @allowed_hosts.join("', '") %>', ]
+ <% else -%>
+ ALLOWED_HOSTS = ['<%= @allowed_hosts %>', ]
++<% end -%>
++
++# Setting this to True, will add a new "Retrieve Password" action on instance,
++# allowing Admin session password retrieval/decryption.
++#OPENSTACK_ENABLE_PASSWORD_RETRIEVE = False
++<% if @password_retrieve -%>
++OPENSTACK_ENABLE_PASSWORD_RETRIEVE = True
+ <% end -%>
+ 
+ # Set SSL proxy settings:
+@@ -413,13 +418,6 @@
+   <%-end-%>
+ <% end -%>
+ })
+-<% end -%>
+-
+-# Setting this to True, will add a new "Retrieve Password" action on instance,
+-# allowing Admin session password retrieval/decryption.
+-#OPENSTACK_ENABLE_PASSWORD_RETRIEVE = False
+-<% if @password_retrieve -%>
+-OPENSTACK_ENABLE_PASSWORD_RETRIEVE = True
+ <% end -%>
+ 
+ # This setting controls whether SimpleTenantUsage nova API is used in the usage
+@@ -744,31 +742,6 @@
+ POLICY_FILES_PATH = '<%= @policy_files_path_real %>'
+ <% end -%>
+ 
+-# Map of local copy of service policy files.
+-# Please insure that your identity policy file matches the one being used on
+-# your keystone servers. There is an alternate policy file that may be used
+-# in the Keystone v3 multi-domain case, policy.v3cloudsample.json.
+-# This file is not included in the Horizon repository by default but can be
+-# found at
+-# https://opendev.org/openstack/keystone/src/branch/master/etc/ \
+-# policy.v3cloudsample.json
+-# Having matching policy files on the Horizon and Keystone servers is essential
+-# for normal operation. This holds true for all services and their policy files.
+-#POLICY_FILES = {
+-#    'identity': 'keystone_policy.yaml',
+-#    'compute': 'nova_policy.yaml',
+-#    'volume': 'cinder_policy.yaml',
+-#    'image': 'glance_policy.yaml',
+-#    'network': 'neutron_policy.yaml',
+-#}
+-<% if @policy_files.kind_of?(Hash) -%>
+-POLICY_FILES = {
+-<% @policy_files.sort.each do |service_name,filename| -%>
+-    '<%= service_name -%>': '<%= filename -%>',
+-<% end -%>
+-} # POLICY_FILES
+-<% end -%>
+-
+ # Services for which horizon has extra policies are defined
+ # in POLICY_DIRS by default.
+ #POLICY_DIRS = {
+--- /dev/null
++++ b/templates/_0001_debian_debug.py.erb
+@@ -0,0 +1,5 @@
++# This file is managed by Puppet.
++# Do not edit by hand.
++
++# To enable debug set DEBUG = True
++DEBUG = <%= @django_debug.to_s.capitalize %>
+--- /dev/null
++++ b/templates/_0005_debian_webroot.py.erb
+@@ -0,0 +1,5 @@
++# This file is managed by Puppet.
++# Do not edit by hand.
++
++# To specify path for webroot, set WEBROOT = "/webroot"
++WEBROOT = "/horizon"
+--- /dev/null
++++ b/templates/_0006_debian_cache.py.erb
+@@ -0,0 +1,45 @@
++# This file is managed by Puppet.
++# Do not edit by hand.
++
++# Local memory storage is the quickest and easiest session
++# back end to set up, as it has no external dependencies whatsoever.
++# It has the following significant drawbacks:
++#  - No shared storage across processes or workers.
++#  - No persistence after a process terminates.
++#
++# The local memory back end is enabled as the default for Horizon
++# solely because it has no dependencies. It is not recommended for
++# production use, or even for serious development work.
++#
++# You can use applications such as Memcached or Redis for external
++# caching. These applications offer persistence and shared storage
++# and are useful for small-scale deployments and development.
++#
++# If you comment config below, memcached will be used from
++# local_settings.py
++
++<% if @django_session_engine %>
++SESSION_ENGINE = "<%= @django_session_engine %>"
++<% end %>
++CACHES = {
++    'default': {
++    <% if @cache_options.kind_of?(Hash) %>
++        'OPTIONS': {
++        <% @cache_options.sort.each do |opt_name,opt_val| -%>
++        '<%= opt_name -%>': <%= opt_val -%>,
++        <% end -%>},
++    <% end -%>
++    'BACKEND': '<%= @cache_backend %>',
++    <% if @cache_server_ip %>
++          <% if @cache_server_ip_real.kind_of?(Array) %>
++            <%  split = ":" + @cache_server_port + "','" %>
++        'LOCATION': [ <% @cache_server_ip_real.each do |ip| -%>'<%= ip -%>:<%= @cache_server_port -%>',<% end -%> ],
++          <% else %>
++        'LOCATION': '<%= @cache_server_ip_real %>:<%= @cache_server_port %>',
++          <% end %>
++    <% end %>
++    <% if @cache_server_url %>
++        'LOCATION': '<%= @cache_server_url %>',
++    <% end %>
++    }
++}

@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "720ccbc7e2b6b7a28220cdcb56c957e6f0718eabf5a77920648c008dc925caba",
+  "drop_patches": [
+    {
+      "name": "fix-file-url-python3.14.patch",
+      "sha256": "774af708e4ec7194bdb4cfeacffaffa542d58742800fb5720d2d885bab017307",
+      "upstream_file": "heatclient/common/utils.py",
+      "upstream_file_sha256": "79f8856ee7cf9d56815c0bed63d1b0d4a9a6377b2577f90f7d6d534d99bf88e2",
+      "reason": "Upstream commit01a8118 implements Path.resolve().as_uri() and updates shell and utils tests for Python3.14; do not reapply equivalent archive backport."
+    }
+  ]
+}

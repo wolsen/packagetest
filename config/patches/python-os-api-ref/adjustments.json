@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "44154cff01ec6a3194dde7a3ad53793e1083c0bd8c0cdea47aed250d9cd17b79",
+  "replace_files": [
+    {
+      "name": "patches/move_assets.patch",
+      "sha256": "1c9d64436305f7155ffd1d0f05c1d7d333c38de69898d11b3163c2e9c6d6fda4",
+      "replacement": "move_assets.patch",
+      "replacement_sha256": "1b71bb55c634f4e012064bf941cdad882361dd5f44ff363baa71050126389daa",
+      "reason": "Refresh existing system asset symlinks against typed Hibiscus code; retain distribution-provided assets and libjs-bootstrap behavior."
+    }
+  ]
+}

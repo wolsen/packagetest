@@ -1,0 +1,19 @@
+{
+  "archive_dsc_sha256": "404da5dc82c9b638baa9f48250ee0c9d6baa90f6d93cdba632eb268a911f0dbf",
+  "drop_patches": [
+    {
+      "name": "do-not-include-inspector-policy.patch",
+      "sha256": "d7433ec478b476dee70fbe21fb56c389bcb54eaedd1d95e6266fc26171e230ba",
+      "upstream_file": "metadata.json",
+      "upstream_file_sha256": "5e6d1a6a89506abd17da04c50ee213f6472f0c2d1ec70ff4b5ba49ae52e7439b",
+      "reason": "Upstream commit badee8d removes ironic-inspector support including manifests/inspector.pp; obsolete inspector policy workaround has no remaining target."
+    },
+    {
+      "name": "Allow_standalone_mode_for_Debian.patch",
+      "sha256": "ca74bed1be8a051092650a677cc9a4b639dd4b42f1d7b787a721536293c95496",
+      "upstream_file": "metadata.json",
+      "upstream_file_sha256": "5e6d1a6a89506abd17da04c50ee213f6472f0c2d1ec70ff4b5ba49ae52e7439b",
+      "reason": "Upstream commit badee8d removes ironic-inspector support including inspector and inspector/wsgi/apache manifests; obsolete standalone support patch has no remaining target."
+    }
+  ]
+}

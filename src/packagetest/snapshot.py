@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import gzip
+import configparser
 import io
 import re
 import tarfile
@@ -26,14 +27,15 @@ def snapshot_pep440_version(version: str) -> str:
         raise ValueError('Unsupported Debian prerelease marker for Python metadata')
     return normalized
 
-def canonical_sdist(source: Path, destination: Path, *, epoch: int, version: str, archive_format: str = "portable-v1"):
+def canonical_sdist(source: Path, destination: Path, *, epoch: int, version: str, archive_format: str = "portable-v1",
+                    required_metadata=('AUTHORS', 'ChangeLog', 'PKG-INFO')):
     """Keep generated sdist contents; normalize archive headers for repeatability."""
     if archive_format not in {'legacy', 'portable-v1'}:
         raise ValueError('Unsupported snapshot archive format')
     with tarfile.open(source, 'r:gz') as archive:
         members = archive.getmembers()
         names = {m.name.split('/', 1)[-1] for m in members}
-        if not {'AUTHORS', 'ChangeLog', 'PKG-INFO'}.issubset(names):
+        if 'PKG-INFO' not in required_metadata or not set(required_metadata).issubset(names):
             raise ValueError('Snapshot sdist lacks PBR-generated metadata')
         root_info = next(m for m in members if m.name.split('/', 1)[-1] == 'PKG-INFO')
         metadata = archive.extractfile(root_info).read().decode()
@@ -81,16 +83,41 @@ def build_snapshot(build, package: dict, destination: Path) -> dict:
                   '--only-binary=:all:', '--require-hashes', '-r', str(requirements))
     dist = upstream.parent / 'dist'
     dist.mkdir()
-    build.command(str(venv / 'bin/python'), 'setup.py', 'sdist', f'--dist-dir={dist}', cwd=upstream,
-                  env={'PBR_VERSION': spec['pep440_version'], 'SOURCE_DATE_EPOCH': str(epoch), 'TZ': 'UTC'})
+    env = {'PBR_VERSION': spec['pep440_version'], 'SOURCE_DATE_EPOCH': str(epoch), 'TZ': 'UTC'}
+    version_backend = spec.get('version_backend', 'pbr')
+    if version_backend == 'setuptools-scm':
+        import tomllib
+        project = tomllib.loads((upstream / 'pyproject.toml').read_text())
+        if 'setuptools_scm' not in project.get('tool', {}):
+            raise ValueError('Source does not declare the pinned setuptools-scm backend')
+        env['SETUPTOOLS_SCM_PRETEND_VERSION'] = spec['pep440_version']
+    elif version_backend != 'pbr':
+        raise ValueError('Unsupported snapshot version backend')
+    if (upstream / 'setup.py').exists():
+        build.command(str(venv / 'bin/python'), 'setup.py', 'sdist', f'--dist-dir={dist}', cwd=upstream, env=env)
+    else:
+        import tomllib
+        project = tomllib.loads((upstream / 'pyproject.toml').read_text())
+        backend = project['build-system']['build-backend']
+        if backend not in {'pbr.build', 'setuptools.build_meta'}:
+            raise ValueError('Unpinned source build backend: ' + backend)
+        build.command(str(venv / 'bin/python'), '-c',
+                      'import importlib,sys; importlib.import_module(sys.argv[1]).build_sdist(sys.argv[2])',
+                      backend, str(dist), cwd=upstream, env=env)
     archives = list(dist.glob('*.tar.gz'))
     if len(archives) != 1:
         raise ValueError('Expected exactly one generated snapshot sdist')
+    required_metadata = ['AUTHORS', 'ChangeLog', 'PKG-INFO'] if version_backend == 'pbr' else ['PKG-INFO']
+    config = configparser.ConfigParser(interpolation=None)
+    config.read(upstream / 'setup.cfg')
+    for option, filename in [('skip_changelog', 'ChangeLog'), ('skip_authors', 'AUTHORS')]:
+        if filename in required_metadata and config.getboolean('pbr', option, fallback=False):
+            required_metadata.remove(filename)
     canonical_sdist(archives[0], destination, epoch=epoch, version=spec['pep440_version'],
-                    archive_format=spec.get('archive_format', 'legacy'))
+                    archive_format=spec.get('archive_format', 'legacy'), required_metadata=required_metadata)
     digest = sha256(destination)
     if spec.get('sdist_sha256') and digest != spec['sdist_sha256']:
         raise ValueError(f'Generated snapshot sdist checksum differs from lock: expected {spec["sdist_sha256"]}, got {digest}')
-    return {**spec, 'sdist_sha256': digest, 'sdist_file': destination.name,
+    return {**spec, 'sdist_sha256': digest, 'sdist_file': destination.name, 'required_metadata': required_metadata,
             'python': build.command(str(venv / 'bin/python'), '--version'),
             'installed_build_tools': build.command(str(venv / 'bin/pip'), 'freeze')}

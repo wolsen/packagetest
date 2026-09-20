@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "12fc5b043ebbb4466bbefb12265f04aa638afddfc2800fdde899271b04f4d85a",
+  "replace_files": [
+    {
+      "name": "patches/Fix_missing_version_argument_for_v1_client.patch",
+      "sha256": "1556b6413e597663ffcc24bf1baf851ffae014ab8d31c72a422edb0be7dd80bc",
+      "replacement": "Fix_missing_version_argument_for_v1_client.patch",
+      "replacement_sha256": "7e1206160556309f227a7c5769aedc660788e0cad0fec68e1785fa773f5e8d7b",
+      "reason": "Refresh changed upstream context while preserving the existing packaging behavior and all test coverage."
+    }
+  ]
+}

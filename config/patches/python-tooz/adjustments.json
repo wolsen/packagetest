@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "e642f6114b1257b456b73aeb6c813a1441539bb1d28cac47a5c9db0c9b5dac4e",
+  "replace_files": [
+    {
+      "name": "patches/display-message-when-not-implemented.patch",
+      "sha256": "c89c3ba9073bcb7388c0d58d45635ea3d9d0fb644108308457f0dbe2f5216bf0",
+      "replacement": "display-message-when-not-implemented.patch",
+      "replacement_sha256": "dc2a0efd1ff6d58fde553f6757ff575c5ec9391947cb7d5080bfd2c35844ffc5",
+      "reason": "Refresh existing informative NotImplemented messages against upstream typed methods and generic message text; preserve exception type and all driver behavior."
+    }
+  ]
+}

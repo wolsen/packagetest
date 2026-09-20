@@ -1,0 +1,26 @@
+{
+  "archive_dsc_sha256": "617a3bd6b40b19a0b09aee033f72008dd9b6de7b15c37642ae530306fdc18745",
+  "replace_files": [
+    {
+      "name": "patches/reproducible_build.patch",
+      "sha256": "bc643577470feea32efb5435e2212449995d8fbe25865cbd0d4a9b1b4dc03739",
+      "replacement": "reproducible_build.patch",
+      "replacement_sha256": "c0ca797b3c850ff0d90335d554ac305887132f8fe0ec130471911483d69c7f3d",
+      "reason": "Refresh existing reproducible default argument adaptation against reformatted constructor; preserve runtime concurrency behavior."
+    },
+    {
+      "name": "patches/move-test-requirements-out-of-runtime-requirements.patch",
+      "sha256": "47a0f0c07139f49f74850a8163687bbdde2c4fbcdc9c8fa22ca47b85de1c8efb",
+      "replacement": "move-test-requirements-out-of-runtime-requirements.patch",
+      "replacement_sha256": "7d7d1780ff3f5237aed2037886db8b5074ec405cef6e1509f9fd02bb1cf77b50",
+      "reason": "Refresh existing pydot relocation from runtime to test requirements against current dependency ordering; retain test dependency."
+    },
+    {
+      "name": "patches/remove-bad-enum.py-calls.patch",
+      "sha256": "ef535e1c9cb9c61bea5ac1c2facdd604430a326abfd85d0f6ad6c51e38d520f6",
+      "replacement": "remove-bad-enum.py-calls.patch",
+      "replacement_sha256": "482a2be4525696d4dc4144fae0a0fed21f2e3599ae1cabc393a00a9408466604",
+      "reason": "Refresh existing removal of incompatible enum.__new__ override against upstream formatting; retain string Enum inheritance."
+    }
+  ]
+}

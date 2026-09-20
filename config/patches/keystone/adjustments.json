@@ -1,0 +1,85 @@
+{
+  "archive_dsc_sha256": "15f21fc13670bdf90876defff3c3ed122d5556f57ddae0e7fd3afbe5e0dceb0a",
+  "drop_patches": [
+    {
+      "name": "CVE-2026-33551.patch",
+      "sha256": "7f0844a75499d66071cd091e23ec00fd7d2cabaf70755b25ee154d24148ea173",
+      "upstream_file": "keystone/api/users.py",
+      "upstream_file_sha256": "ead58600c442f53a609f7c31faa9790b189cb0b3e778a5813d9d09a68a1612f9",
+      "upstream_commit": "e88f3888b57786a36e98f2bc87337b7d983ad4a9",
+      "reason": "Security fix and its regression tests are already in the pinned upstream history. Keep upstream protections unchanged; EC2 delegation restrictions were subsequently strengthened by 42d80b5d284078328c4429d4d9995b26c8688d1b."
+    },
+    {
+      "name": "CVE-2026-33551-2.patch",
+      "sha256": "3e5d25855d57dbec285d36acad4011ca05c6b7a3f40a2148f5104c61fe905cc9",
+      "upstream_file": "keystone/tests/unit/test_v3_credential.py",
+      "upstream_file_sha256": "77099201ac2b6cb37e9100193c010d0eabc8809b4600ae7e7740e67a0488d481",
+      "upstream_commit": "c87ce6ed435f01431343d6b2bb6697a640514d27",
+      "reason": "Security fix and its regression tests are already in the pinned upstream history. Keep upstream protections unchanged; EC2 delegation restrictions were subsequently strengthened by 42d80b5d284078328c4429d4d9995b26c8688d1b."
+    },
+    {
+      "name": "CVE-2026-33551-3.patch",
+      "sha256": "6b1b3d785c91a8926ac293bb3ad6c0c0ae631617c8aa3d2d54b0f8badd6a0a46",
+      "upstream_file": "keystone/api/credentials.py",
+      "upstream_file_sha256": "05811034b16b94483a10f26ef44b9bc8d84d22db34aeb2dc3d559165768b57e1",
+      "upstream_commit": "d6a3dc511057d6ac25bd2d75776a4233c5608684",
+      "reason": "Security fix and its regression tests are already in the pinned upstream history. Keep upstream protections unchanged; EC2 delegation restrictions were subsequently strengthened by 42d80b5d284078328c4429d4d9995b26c8688d1b."
+    },
+    {
+      "name": "CVE-2026-33551-4.patch",
+      "sha256": "1d3c5a9358f0e6fd75a43b240b183d26d9a1a3674013522eb8864d6f8bb48bdc",
+      "upstream_file": "keystone/api/os_oauth1.py",
+      "upstream_file_sha256": "03f040683762b53f835dc3755f03a237d757ca5f7bea67a021b746f1a03c83d2",
+      "upstream_commit": "29246c5fd8d1dafbe6cc8cec4c57faf5590cd44e",
+      "reason": "Security fix and its regression tests are already in the pinned upstream history. Keep upstream protections unchanged; EC2 delegation restrictions were subsequently strengthened by 42d80b5d284078328c4429d4d9995b26c8688d1b."
+    },
+    {
+      "name": "cve-2026-43001-ec2-app-cred-project-boundary.patch",
+      "sha256": "80df1c0fe281738d07dfd784704184df424747e201a1289c42f047557c7b3c1c",
+      "upstream_file": "keystone/api/credentials.py",
+      "upstream_file_sha256": "05811034b16b94483a10f26ef44b9bc8d84d22db34aeb2dc3d559165768b57e1",
+      "upstream_commit": "b6fd80996b882890a51f3e2aab41d952d7ff68ae",
+      "reason": "Security fix and its regression tests are already in the pinned upstream history. Keep upstream protections unchanged; EC2 delegation restrictions were subsequently strengthened by 42d80b5d284078328c4429d4d9995b26c8688d1b."
+    },
+    {
+      "name": "lp2150089-enforce-delegation-project-boundary.patch",
+      "sha256": "e058f2e4842dbaa4af9aa28e68d81ffe94c77835df7927806c281c90e9235177",
+      "upstream_file": "keystone/api/_shared/EC2_S3_Resource.py",
+      "upstream_file_sha256": "345e9bf1f228f7fc942af4ae090a5877e56473eff823ffcb8bebcce78a031fdb",
+      "upstream_commit": "f82b093507495227c648df6a9b20cbc18f0cb474",
+      "reason": "Security fix and its regression tests are already in the pinned upstream history. Keep upstream protections unchanged; EC2 delegation restrictions were subsequently strengthened by 42d80b5d284078328c4429d4d9995b26c8688d1b."
+    },
+    {
+      "name": "cve-2026-42998-fix-user-impersonation-app-creds.patch",
+      "sha256": "00ec0ca138011d14a90290c3d2156714a076c4d90621315d352e96dd72d62e61",
+      "upstream_file": "keystone/auth/plugins/core.py",
+      "upstream_file_sha256": "127e525fa76a51f0c12ec700b0ce3fe936795499e80686f0066a7ee79f1d2252",
+      "upstream_commit": "b4f1eb1f13a7559f771b0f4d46c4c59917e82f01",
+      "reason": "Security fix and its regression tests are already in the pinned upstream history. Keep upstream protections unchanged; EC2 delegation restrictions were subsequently strengthened by 42d80b5d284078328c4429d4d9995b26c8688d1b."
+    },
+    {
+      "name": "cve-2026-43000-forbid-trust-ops-app-creds.patch",
+      "sha256": "7ed5fb0e8c6baa58bc3bfd5e755b9672837fb176e34e4d6a80926aad29442855",
+      "upstream_file": "keystone/api/trusts.py",
+      "upstream_file_sha256": "ebe4dfb34dd064bc1d188c128da1341ed3a7657d26d64d1a9264aa5b7379d6d0",
+      "upstream_commit": "14a14473998e7bb2193d316039fde75412517b08",
+      "reason": "Security fix and its regression tests are already in the pinned upstream history. Keep upstream protections unchanged; EC2 delegation restrictions were subsequently strengthened by 42d80b5d284078328c4429d4d9995b26c8688d1b."
+    },
+    {
+      "name": "cve-2026-44394-preserve-expires-at-federated-tokens.patch",
+      "sha256": "b2fa5390349d77f8322f4addeb6e540c652d8ae255c301ceb25afe9148d34ca2",
+      "upstream_file": "keystone/auth/plugins/mapped.py",
+      "upstream_file_sha256": "88f8ac4ea5cd351409e3b4220e3a6b20c9ab3f9fa695aff669aadc6e8e206bf1",
+      "upstream_commit": "f94605302a742598478328426240b1e2b6a0d6e4",
+      "reason": "Security fix and its regression tests are already in the pinned upstream history. Keep upstream protections unchanged; EC2 delegation restrictions were subsequently strengthened by 42d80b5d284078328c4429d4d9995b26c8688d1b."
+    },
+    {
+      "name": "cve-2026-42999-prevent-rbac-policy-bypass.patch",
+      "sha256": "1d4ffebbd8e06b74fa70414d0dff7d1c64c0c848c62a0ea78ddf1f9bce5fdf8f",
+      "upstream_file": "keystone/api/trusts.py",
+      "upstream_file_sha256": "ebe4dfb34dd064bc1d188c128da1341ed3a7657d26d64d1a9264aa5b7379d6d0",
+      "upstream_commit": "a9d6832ae70cbd06dadbbaeb9d4b18a7553fca3b",
+      "reason": "Security fix and its regression tests are already in the pinned upstream history. Keep upstream protections unchanged; EC2 delegation restrictions were subsequently strengthened by 42d80b5d284078328c4429d4d9995b26c8688d1b."
+    }
+  ]
+}

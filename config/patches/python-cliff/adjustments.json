@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "9264eeee514ac50211e18e0db2b7449c539466d0513cdea3389f1c486d125b7b",
+  "replace_files": [
+    {
+      "name": "patches/include-submodules-in-build.patch",
+      "sha256": "32e8b4b62a886799126f14e902cd252c01049a51363bc44e16aed37360ae0b96",
+      "replacement": "include-submodules-in-build.patch",
+      "replacement_sha256": "9b35a7fb3b9c83bbb8a5d23c7842829f25fdf9717032122caa2e27f82c2596f3",
+      "reason": "Refresh changed upstream context while preserving the existing packaging behavior and all test coverage."
+    }
+  ]
+}

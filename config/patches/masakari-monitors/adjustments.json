@@ -1,0 +1,19 @@
+{
+  "archive_dsc_sha256": "190198017cf39dcf1efc8ffaa85a504ff1060032a9c963ecad0dbeaaeb4a9f72",
+  "replace_files": [
+    {
+      "name": "patches/demote-k8s-to-suggests.patch",
+      "sha256": "79ec9745209d3fc637ea0897e01df546a30456b164f43b57bf566fb5687cc10e",
+      "replacement": "demote-k8s-to-suggests.patch",
+      "replacement_sha256": "bf00dd7a6087c63d060f35febb2b14c5ba8f38be49aa966b4caa38179f1c1ca9",
+      "reason": "Refresh unchanged Kubernetes optional-driver adaptation against renamed py-consul context; preserve existing dependencies and error handling."
+    },
+    {
+      "name": "patches/lp2155240-enable-package-discovery.patch",
+      "sha256": "6b479abad2129548e9c15ee693694454f5a56586b6a935096dbd1fe08408da50",
+      "replacement": "lp2155240-enable-package-discovery.patch",
+      "replacement_sha256": "e2c239021f7ede23e802dc1efef92a8dabd930fcf3a0ff7c79326ee6847e82b8",
+      "reason": "Refresh setuptools package discovery fix against upstream Python3.11 requirement; preserve subpackage discovery and console entry points."
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "archive_dsc_sha256": "2fa11552a8e7bb2ef0df7f66578a1132730731545bdab393d24922ee39643186",
+  "drop_patches": [
+    {
+      "name": "cve-2026-41283-add-code-sources-publicize-policy.patch",
+      "sha256": "49d011447d07cdeae1ca2956825c44b282652a5ff41efcbdb7bdbc473234fca0",
+      "upstream_file": "mistral/policies/code_sources.py",
+      "upstream_file_sha256": "6e0bc9d04edccb542fe2316881cc4a8ba1e5af1708109b66b04fa0d7ae63a1fe",
+      "upstream_commit": "7fc88935c3c7ded781c849f5c1ab7b050fa794c4",
+      "reason": "Security fix is already upstream: applying the complete Ubuntu patch with zero fuzz to this upstream commit parent reproduces all changed files byte-for-byte, including policy enforcement and regression tests. Commit is an ancestor of the pinned Hibiscus SHA. Later security patches modify overlapping context, preventing a standalone reverse probe."
+    },
+    {
+      "name": "cve-2026-41283-restrict-code-sources-dynamic-actions.patch",
+      "sha256": "990ad8fbdc8d4046334204f0ec7510a88a4d2e97855aad92e6fbfd419f8e6844",
+      "upstream_file": "mistral/policies/code_sources.py",
+      "upstream_file_sha256": "6e0bc9d04edccb542fe2316881cc4a8ba1e5af1708109b66b04fa0d7ae63a1fe",
+      "upstream_commit": "b03624719f51cc62dbfa151d1381c927a493867b",
+      "reason": "Security fix is already upstream: applying the complete Ubuntu patch with zero fuzz to this upstream commit parent reproduces all changed files byte-for-byte, including policy enforcement and regression tests. Commit is an ancestor of the pinned Hibiscus SHA. Later security patches modify overlapping context, preventing a standalone reverse probe."
+    }
+  ]
+}

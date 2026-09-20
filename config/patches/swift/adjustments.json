@@ -1,0 +1,28 @@
+{
+  "archive_dsc_sha256": "f4f686aa558d39dd1bcdef9fd2e6c6bbfd99c08851b15de8735e892c47056f5b",
+  "replace_files": [
+    {
+      "name": "patches/tests-proxy-logging-avoid-dns.patch",
+      "sha256": "c0a1653efccb18d5f5b9619854ae2d2ab2759f073e8789e0b39722720fc69bcf",
+      "replacement": "tests-proxy-logging-avoid-dns.patch",
+      "replacement_sha256": "107f236dcfc1a1555d441bfc795b74f7412a2ac922950623928554f64084a8b6",
+      "reason": "Refresh changed import context; retain the same existing DNS stubs, header compatibility assertions and version-specific exclusions without adding exclusions."
+    },
+    {
+      "name": "patches/fix-writing-non-ascii-in-headers-in-tests.patch",
+      "sha256": "0d42c9d6b24a331aa4ed583ed67d435f7f0f91a61c6d445bb196141d628573c3",
+      "replacement": "fix-writing-non-ascii-in-headers-in-tests.patch",
+      "replacement_sha256": "9a3a8b229089d3c3608f0664c71817969818b2e478c7a1be198958e899770e36",
+      "reason": "Refresh changed import context; retain the same existing DNS stubs, header compatibility assertions and version-specific exclusions without adding exclusions."
+    }
+  ],
+  "drop_patches": [
+    {
+      "name": "fix-default-progname-python314.patch",
+      "sha256": "93dc083802bd104e47f157780df731dd5cb6f89181c8c5ebdadd723b453ee0ae",
+      "upstream_file": "test/unit/cli/test_manage_shard_ranges.py",
+      "upstream_file_sha256": "b36c720c0c5fc803456ddbb196df622cf914827331e363274f35434c01151774",
+      "reason": "Upstream test already asserts usage prefix and invariant argument text independently of runner name, retaining stronger assertions than the obsolete archive fix."
+    }
+  ]
+}

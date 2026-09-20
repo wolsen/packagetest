@@ -5,7 +5,7 @@
       "name": "fix-test-no-network.patch",
       "sha256": "11c202e04568780bb8a0cbff638b38226cec6ba8380d8849ba09e37ff86b6ad9",
       "upstream_file": "glance/tests/unit/common/test_utils.py",
-      "upstream_file_sha256": "c4a301c6399b2692355800cc82dd1bd8ee53579a9be59dfa9e9d2a4285974b4f",
+      "upstream_file_sha256": "098d35f755322d513c5fb68abc5ce744dd1e174a73f28a5c528ff137724faf24",
       "upstream_commit": "e4e48527b8df85b261e4144a511f114f9e6f6932",
       "reason": "Hibiscus upstream mocks socket.getaddrinfo in both test_validate_uri and test_ignored_filtering_options. The Resolute patch targets the renamed test_validate_import_uri and duplicates those mocks; retain upstream tests unchanged."
     }

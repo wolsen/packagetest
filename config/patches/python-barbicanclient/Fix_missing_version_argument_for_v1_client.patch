@@ -1,0 +1,137 @@
+Description: Refresh existing Debian adaptation against pinned snapshot.
+Forwarded: not-needed
+Last-Update: 2026-09-20
+
+--- a/barbicanclient/client.py
++++ b/barbicanclient/client.py
+@@ -25,8 +25,8 @@
+ 
+ 
+ LOG = logging.getLogger(__name__)
+-_DEFAULT_SERVICE_TYPE = 'key-manager'
+-_DEFAULT_SERVICE_INTERFACE = 'public'
++DEFAULT_SERVICE_TYPE = 'key-manager'
++DEFAULT_SERVICE_INTERFACE = 'public'
+ _DEFAULT_API_VERSION = 'v1'
+ _SUPPORTED_API_VERSION_MAP = {'v1': 'barbicanclient.v1.client.Client'}
+ 
+@@ -205,8 +205,8 @@
+             session.auth = kwargs['auth']
+ 
+     kwargs['version'] = version or _DEFAULT_API_VERSION
+-    kwargs.setdefault('service_type', _DEFAULT_SERVICE_TYPE)
+-    kwargs.setdefault('interface', _DEFAULT_SERVICE_INTERFACE)
++    kwargs.setdefault('service_type', DEFAULT_SERVICE_TYPE)
++    kwargs.setdefault('interface', DEFAULT_SERVICE_INTERFACE)
+ 
+     try:
+         client_path = _SUPPORTED_API_VERSION_MAP[kwargs['version']]
+--- a/barbicanclient/tests/test_barbican.py
++++ b/barbicanclient/tests/test_barbican.py
+@@ -203,9 +203,9 @@
+         barbican_client = self.barbican.create_client(argv)
+         httpclient = barbican_client.secrets._api
+ 
+-        self.assertEqual(client._DEFAULT_SERVICE_INTERFACE,
++        self.assertEqual(client.DEFAULT_SERVICE_INTERFACE,
+                          httpclient.interface)
+-        self.assertEqual(client._DEFAULT_SERVICE_TYPE, httpclient.service_type)
++        self.assertEqual(client.DEFAULT_SERVICE_TYPE, httpclient.service_type)
+         self.assertEqual(client._DEFAULT_API_VERSION, httpclient.version)
+         self.assertIsNone(httpclient.service_name)
+ 
+--- a/barbicanclient/v1/client.py
++++ b/barbicanclient/v1/client.py
+@@ -27,6 +27,7 @@
+ 
+ 
+ LOG = logging.getLogger(__name__)
++DEFAULT_API_VERSION = 'v1'
+ _SUPPORTED_MICROVERSIONS = [(1, 0),
+                             (1, 1),
+                             (1, 2)]
+@@ -43,6 +44,10 @@
+         `barbicanclient.client.Client`.  It's recommended to use that
+         function instead of making instances of this class directly.
+         """
++        kwargs.setdefault('version', 'v1')
++        kwargs.setdefault('service_type', base_client.DEFAULT_SERVICE_TYPE)
++        kwargs.setdefault('interface', base_client.DEFAULT_SERVICE_INTERFACE)
++
+         microversion = self._get_normalized_microversion(
+             kwargs.pop('microversion', None))
+         normalized_microversion = self._get_max_supported_version(
+--- a/functionaltests/client/test_client_connectivity.py
++++ b/functionaltests/client/test_client_connectivity.py
+@@ -97,8 +97,8 @@
+         barbicanclient = client.Client(
+             project_id=CONF.keymanager.project_id,
+             auth=self.auth,
+-            interface=client._DEFAULT_SERVICE_INTERFACE,
+-            service_type=client._DEFAULT_SERVICE_TYPE,
++            interface=client.DEFAULT_SERVICE_INTERFACE,
++            service_type=client.DEFAULT_SERVICE_TYPE,
+             version=client._DEFAULT_API_VERSION)
+ 
+         self.assert_client_can_contact_barbican(barbicanclient)
+@@ -109,7 +109,7 @@
+             client.Client,
+             project_id=CONF.keymanager.project_id,
+             auth=self.auth,
+-            interface=client._DEFAULT_SERVICE_INTERFACE,
++            interface=client.DEFAULT_SERVICE_INTERFACE,
+             service_type='wrong-service-type',
+             version=client._DEFAULT_API_VERSION)
+ 
+@@ -119,7 +119,7 @@
+             project_id=CONF.keymanager.project_id,
+             auth=self.auth,
+             interface='wrong-interface',
+-            service_type=client._DEFAULT_SERVICE_TYPE,
++            service_type=client.DEFAULT_SERVICE_TYPE,
+             version=client._DEFAULT_API_VERSION)
+ 
+         self.assertRaises(
+@@ -127,8 +127,8 @@
+             client.Client,
+             project_id=CONF.keymanager.project_id,
+             auth=self.auth,
+-            interface=client._DEFAULT_SERVICE_INTERFACE,
+-            service_type=client._DEFAULT_SERVICE_TYPE,
++            interface=client.DEFAULT_SERVICE_INTERFACE,
++            service_type=client.DEFAULT_SERVICE_TYPE,
+             service_name='wrong-service-name',
+             version=client._DEFAULT_API_VERSION)
+ 
+@@ -137,8 +137,8 @@
+             client.Client,
+             project_id=CONF.keymanager.project_id,
+             auth=self.auth,
+-            interface=client._DEFAULT_SERVICE_INTERFACE,
+-            service_type=client._DEFAULT_SERVICE_TYPE,
++            interface=client.DEFAULT_SERVICE_INTERFACE,
++            service_type=client.DEFAULT_SERVICE_TYPE,
+             region_name='wrong-region-name',
+             version=client._DEFAULT_API_VERSION)
+ 
+@@ -147,8 +147,8 @@
+                           client.Client,
+                           **{"project_id": CONF.keymanager.project_id,
+                              "auth": self.auth,
+-                             "interface": client._DEFAULT_SERVICE_INTERFACE,
+-                             "service_type": client._DEFAULT_SERVICE_TYPE,
++                             "interface": client.DEFAULT_SERVICE_INTERFACE,
++                             "service_type": client.DEFAULT_SERVICE_TYPE,
+                              "version": 'wrong-version'})
+ 
+         self.assertRaises(exceptions.UnsupportedVersion,
+@@ -162,7 +162,7 @@
+         barbicanclient = client.Client(
+             project_id=CONF.keymanager.project_id,
+             auth=self.auth,
+-            interface=client._DEFAULT_SERVICE_INTERFACE,
+-            service_type=client._DEFAULT_SERVICE_TYPE)
++            interface=client.DEFAULT_SERVICE_INTERFACE,
++            service_type=client.DEFAULT_SERVICE_TYPE)
+ 
+         self.assert_client_can_contact_barbican(barbicanclient)

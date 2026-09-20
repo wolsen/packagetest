@@ -1,0 +1,15 @@
+Description: Refresh existing Debian adaptation against pinned snapshot.
+Forwarded: not-needed
+Last-Update: 2026-09-20
+
+--- a/README.rst
++++ b/README.rst
+@@ -1,8 +1,6 @@
+ ====================
+ python-octaviaclient
+ ====================
+-
+-.. image:: https://governance.openstack.org/tc/badges/python-octaviaclient.svg
+ 
+ Octavia client for OpenStack Load Balancing
+ 

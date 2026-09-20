@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "841616004ece10294764e4092b3167dc66bebd9971ae7d17ae57fdb38f078eb8",
+  "replace_files": [
+    {
+      "name": "patches/drop-ujson.patch",
+      "sha256": "9bd658985bc46a6d82af87b598234f268afb28236066ab38bb93e9b56fba59f9",
+      "replacement": "drop-ujson.patch",
+      "replacement_sha256": "00cf2a041ba37f867c35482337ad7de45801da8505b91adc5e2fc1ce66e9bec2",
+      "reason": "Preserve stdlib JSON imports and calls across the six client modules and remove ujson from current setuptools-formatted install requirements. No tests changed."
+    }
+  ]
+}

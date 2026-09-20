@@ -1,0 +1,118 @@
+name: Test installed Hibiscus snapshots
+on:
+  workflow_call:
+    inputs:
+      sources:
+        description: Frozen source matrix for one completed build wave
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  autopkgtest:
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(inputs.sources) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE" --include-self
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack candidate packages
+        run: |
+          mkdir -p inputs test-results
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            destination="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$destination"
+            tar -xzf "$bundle" -C "$destination" --no-same-owner
+          done
+      - name: Check successful source build before VM provisioning
+        id: candidate
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os
+          from pathlib import Path
+          source = os.environ['SOURCE']
+          manifests = [json.loads(p.read_text()) for p in Path('inputs').rglob('generation-manifest.json')]
+          ready = any(m.get('result') == 'SUCCEEDED' and any(p['source'] == source and p.get('result') == 'SUCCEEDED' for p in m.get('packages', [])) for m in manifests)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('ready=' + str(ready).lower() + '\n')
+          if not ready:
+              output = Path('test-results/result')
+              output.mkdir(parents=True, exist_ok=True)
+              (output / 'result.json').write_text(json.dumps({'source': source, 'result': 'BLOCKED', 'error': 'No successful source build available'}, indent=2) + '\n')
+          PYCODE
+      - name: Prepare isolated autopkgtest VM
+        id: image
+        if: steps.candidate.outputs.ready == 'true'
+        run: |
+          image=$(bash scripts/prepare-autopkgtest.sh resolute "$RUNNER_TEMP/autopkgtest-image")
+          echo "path=$image" >> "$GITHUB_OUTPUT"
+      - name: Test installed snapshot packages
+        if: steps.candidate.outputs.ready == 'true'
+        env:
+          SOURCE: ${{ matrix.source }}
+          TEST_IMAGE: ${{ steps.image.outputs.path }}
+        run: |
+          set -o pipefail
+          env PYTHONPATH=src python3 scripts/nightly-autopkgtest.py --catalog nightly-plan/catalog.json \
+            --source "$SOURCE" --inputs inputs --output test-results/result --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" --image "$TEST_IMAGE" \
+            2>&1 | tee test-results/autopkgtest.log
+      - name: Preserve preparation errors and package status
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p test-results/result
+          if [ -f "$RUNNER_TEMP/autopkgtest-image/prepare.log" ]; then
+            cp "$RUNNER_TEMP/autopkgtest-image/prepare.log" test-results/prepare.log
+          fi
+          python3 - <<'PYCODE'
+          import json, os
+          from pathlib import Path
+          path = Path('test-results/result/result.json')
+          if not path.exists():
+              path.write_text(json.dumps({'source': os.environ['SOURCE'], 'result': 'INFRA_ERROR', 'error': 'Autopkgtest setup did not complete'}, indent=2) + '\n')
+          PYCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: status-autopkgtest-${{ matrix.source }}
+          path: test-results/result/result.json
+          retention-days: 14
+          if-no-files-found: error
+      - name: Bundle autopkgtest evidence
+        if: always()
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p test-results test-bundles
+          sudo tar -czf "test-bundles/$SOURCE.tar.gz" -C test-results .
+          sudo chmod a+r "test-bundles/$SOURCE.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: autopkgtest-${{ matrix.source }}
+          path: test-bundles/*.tar.gz
+          retention-days: 14
+          if-no-files-found: error

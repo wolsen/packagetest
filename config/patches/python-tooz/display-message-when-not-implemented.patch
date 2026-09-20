@@ -1,0 +1,139 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Subject: Refresh display-message-when-not-implemented.patch for Hibiscus
+Forwarded: no
+
+Refresh existing informative NotImplemented messages against upstream typed methods and generic message text; preserve exception type and all driver behavior.
+
+--- a/tooz/coordination.py
++++ b/tooz/coordination.py
+@@ -360,11 +360,11 @@
+         This may also activate :py:meth:`.run_elect_coordinator` (depending
+         on driver implementation).
+         """
+-        raise tooz.NotImplemented("not implemented")
++        raise tooz.NotImplemented("This coordination driver does not implement run_watchers.")
+ 
+     def run_elect_coordinator(self) -> None:
+         """Try to leader elect this coordinator & activate hooks on success."""
+-        raise tooz.NotImplemented("not implemented")
++        raise tooz.NotImplemented("This coordination driver does not implement run_elect_coordinator.")
+ 
+     def watch_join_group(
+         self, group_id: bytes, callback: EventCallback[MemberJoinedGroup]
+@@ -478,7 +478,7 @@
+ 
+         :param group_id: The group where we don't want to be a leader anymore
+         """
+-        raise tooz.NotImplemented("not implemented")
++        raise tooz.NotImplemented("This coordination driver does not implement stand_down_group_leader.")
+ 
+     @property
+     def is_started(self) -> bool:
+@@ -542,14 +542,14 @@
+         :param group_id: the id of the group to create
+         :returns: A CoordAsyncResult of None.
+         """
+-        raise tooz.NotImplemented("not implemented")
++        raise tooz.NotImplemented("This coordination driver does not implement create_group.")
+ 
+     def get_groups(self) -> CoordAsyncResult[list[bytes]]:
+         """Return the list composed by all groups ids asynchronously.
+ 
+         :returns: the list of all created group ids
+         """
+-        raise tooz.NotImplemented("not implemented")
++        raise tooz.NotImplemented("This coordination driver does not implement get_groups.")
+ 
+     def join_group(
+         self, group_id: bytes, capabilities: Capabilities | None = None
+@@ -561,7 +561,7 @@
+             :class:`dict` mapping string keys to arbitrary values.
+         :returns: None
+         """
+-        raise tooz.NotImplemented("not implemented")
++        raise tooz.NotImplemented("This coordination driver does not implement join_group.")
+ 
+     @_retry.retry()
+     def join_group_create(
+@@ -603,7 +603,7 @@
+         :param group_id: the id of the group to leave
+         :returns: None
+         """
+-        raise tooz.NotImplemented("not implemented")
++        raise tooz.NotImplemented("This coordination driver does not implement leave_group.")
+ 
+     def delete_group(self, group_id: bytes) -> CoordAsyncResult[None]:
+         """Delete a group asynchronously.
+@@ -611,14 +611,14 @@
+         :param group_id: the id of the group to leave
+         :returns: None
+         """
+-        raise tooz.NotImplemented("not implemented")
++        raise tooz.NotImplemented("This coordination driver does not implement delete_group.")
+ 
+     def get_members(self, group_id: bytes) -> CoordAsyncResult[set[bytes]]:
+         """Return the set of all member ids of a group asynchronously.
+ 
+         :returns: set of all member ids in the specified group
+         """
+-        raise tooz.NotImplemented("not implemented")
++        raise tooz.NotImplemented("This coordination driver does not implement get_members.")
+ 
+     def get_member_capabilities(
+         self, group_id: bytes, member_id: bytes
+@@ -629,7 +629,7 @@
+         :param member_id: the id of the member
+         :returns: capabilities of a member
+         """
+-        raise tooz.NotImplemented("not implemented")
++        raise tooz.NotImplemented("This coordination driver does not implement get_member_capabilities.")
+ 
+     def get_members_with_capabilities(
+         self, group_id: bytes
+@@ -657,7 +657,7 @@
+         :param member_id: the id of the member
+         :returns: capabilities and statistics of a member
+         """
+-        raise tooz.NotImplemented("not implemented")
++        raise tooz.NotImplemented("This coordination driver does not implement get_member_info.")
+ 
+     def update_capabilities(
+         self, group_id: bytes, capabilities: Capabilities
+@@ -669,7 +669,7 @@
+             :meth:`join_group`
+         :returns: None
+         """
+-        raise tooz.NotImplemented("not implemented")
++        raise tooz.NotImplemented("This coordination driver does not implement update_capabilities.")
+ 
+     def get_leader(self, group_id: bytes) -> CoordAsyncResult[bytes]:
+         """Return the leader for a group.
+@@ -677,7 +677,7 @@
+         :param group_id: the id of the group:
+         :returns: the leader
+         """
+-        raise tooz.NotImplemented("not implemented")
++        raise tooz.NotImplemented("This coordination driver does not implement get_leader.")
+ 
+     def get_lock(self, name: bytes) -> locking.Lock:
+         """Return a distributed lock.
+@@ -688,7 +688,7 @@
+         :param name: The lock name that is used to identify it across all
+                      nodes.
+         """
+-        raise tooz.NotImplemented("not implemented")
++        raise tooz.NotImplemented("This coordination driver does not implement get_lock.")
+ 
+     def heartbeat(self) -> float | None:
+         """Update member status to indicate it is still alive.
+--- a/tooz/drivers/ipc.py
++++ b/tooz/drivers/ipc.py
+@@ -78,7 +78,7 @@
+         timeout: float | None = None,
+     ) -> bool:
+         if shared:
+-            raise tooz.NotImplemented("not implemented")
++            raise tooz.NotImplemented("IPC driver does not support shared locks.")
+ 
+         if (
+             blocking is not True

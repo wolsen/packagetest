@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "4cabb897697872f77e28864b236dc21bef5427bd7c0a82da7cba480a52b6fafa",
+  "replace_files": [
+    {
+      "name": "patches/remove-intersphinx.patch",
+      "sha256": "9517b9e1a3b6e1757feb230c11357ba218e79bb9d6c0c902fbd8564b9c528de6",
+      "replacement": "remove-intersphinx.patch",
+      "replacement_sha256": "0add9810aa7ae4f31cce532da1655ad1ac60eb1d2a35a5c02d536cb5de698884",
+      "reason": "Refresh existing offline documentation build adaptation after upstream added trailing commas; retain autodoc and theme extensions."
+    }
+  ]
+}
