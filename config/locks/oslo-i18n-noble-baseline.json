@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "target": {
+    "suite": "noble",
+    "architecture": "amd64",
+    "backend": "schroot",
+    "chroot": "noble-amd64-sbuild",
+    "mirror": "http://archive.ubuntu.com/ubuntu",
+    "components": [
+      "main",
+      "universe"
+    ],
+    "pockets": [
+      "noble",
+      "noble-updates",
+      "noble-security"
+    ]
+  },
+  "maintainer": {
+    "name": "Packaging Build Agent",
+    "email": "packaging-agent@example.invalid"
+  },
+  "packages": [
+    {
+      "source": "python-oslo.i18n",
+      "version": "6.3.0-0ubuntu1",
+      "expected_binaries": [
+        "python3-oslo.i18n",
+        "python-oslo.i18n-doc"
+      ],
+      "input": {
+        "kind": "archive",
+        "dsc": {
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/python-oslo.i18n/python-oslo.i18n_6.3.0-0ubuntu1.dsc",
+          "sha256": "ace8ea89b58fbef343848eba158dfe34a1daf4e3ae3f0ba9f7b0f8dba9bf28ed"
+        }
+      }
+    }
+  ]
+}

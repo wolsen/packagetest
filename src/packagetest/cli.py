@@ -1,43 +1,22 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
-import shutil
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import UTC, datetime
 from pathlib import Path
 
-from .commands import CommandRunner
 from .config import load_package_definitions
-from .failures import FailureBundle, write_failure_bundle
-from .manifest import write_generation_manifest
-from .models import (
-    TERMINAL_FAILURE_STATES,
-    BuildPlan,
-    BuildState,
-    CommandResult,
-    GenerationManifest,
-    PackageExecutionMetadata,
-    PackageManifest,
-)
-from .packaging import PackageOperationPlan, build_package_operation_plan, classify_packaging_failure, package_operation_commands
-from .planner import build_plan, initial_states
+from .models import BuildPlan
+from .planner import build_plan
 from .release_discovery import OpenStackReleaseResolver, ReleaseDiscoveryError, ResolvedRelease
-from .repository import apt_repository_commands
-from .scheduler import mark_state, next_ready_packages
-from .versioning import openstack_target_to_upstream_version, upstream_version_to_debian_version
+from .locked import LockedBuild, load_lock
 
-SOURCE_ARTIFACT_PATTERNS = ("*.dsc", "*.orig.tar.*", "*.debian.tar.*", "*.changes", "*.buildinfo")
-BINARY_ARTIFACT_PATTERNS = ("*.deb", "*.udeb", "*.ddeb")
 logger = logging.getLogger(__name__)
-
 
 def _default_config_path() -> Path:
     return Path(__file__).resolve().parents[2] / "config" / "vertical_slice.json"
-
 
 def plan_cmd(args: argparse.Namespace) -> int:
     logger.debug("Starting plan command with args: %s", vars(args))
@@ -68,522 +47,6 @@ def plan_cmd(args: argparse.Namespace) -> int:
     logger.debug("Plan command completed with %d release resolution errors", len(resolution_errors))
     return 1 if resolution_errors else 0
 
-
-def build_cmd(args: argparse.Namespace) -> int:
-    logger.debug("Starting build command with args: %s", vars(args))
-    definitions = load_package_definitions(Path(args.config))
-    plan = build_plan(
-        definitions=definitions,
-        requested_sources=args.sources,
-        openstack_target=args.openstack_target,
-        ubuntu_release=args.ubuntu_release,
-        include_dependency_closure=not args.no_dependency_closure,
-        snapshot_at=args.snapshot_at,
-    )
-
-    run_dir = Path(args.run_dir).resolve() / plan.generation_id
-    logs_dir = run_dir / "logs"
-    artifacts_dir = run_dir / "artifacts"
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    artifacts_dir.mkdir(parents=True, exist_ok=True)
-    dependency_repository_dirs = _discover_dependency_repository_dirs(args.dependency_repo)
-    logger.debug("Build run directory: %s", run_dir)
-    logger.debug("Discovered dependency repositories: %s", [str(path) for path in dependency_repository_dirs])
-
-    states = initial_states(plan)
-    resolved_releases, release_resolution_errors = _resolve_package_releases(plan, args)
-    operation_plans: dict[str, PackageOperationPlan] = {}
-    operation_plan_errors: dict[str, str] = {}
-    package_metadata = {}
-    for item in plan.planned_builds:
-        resolved_release = resolved_releases.get(item.source_package)
-        source_hashes: list[str] = []
-        if resolved_release and resolved_release.upstream_ref:
-            source_hashes = [f"{'git' if resolved_release.snapshot_at else 'git-ref'}:{resolved_release.upstream_ref}"]
-        metadata = PackageExecutionMetadata(
-            upstream_tag_or_sha=resolved_release.upstream_ref if resolved_release else plan.openstack_target,
-            upstream_version=resolved_release.version if resolved_release else openstack_target_to_upstream_version(plan.openstack_target),
-            packaging_branch=item.package.packaging_branch or "unknown",
-            generated_debian_version=upstream_version_to_debian_version(
-                resolved_release.version if resolved_release else openstack_target_to_upstream_version(plan.openstack_target)
-            ),
-            source_hashes=source_hashes,
-        )
-        package_metadata[item.source_package] = metadata
-        if item.source_package in release_resolution_errors:
-            operation_plan_errors[item.source_package] = release_resolution_errors[item.source_package]
-            continue
-        try:
-            operation_plans[item.source_package] = build_package_operation_plan(
-                package=item.package,
-                upstream_ref=metadata.upstream_tag_or_sha,
-                upstream_version=metadata.upstream_version,
-                ubuntu_release=plan.ubuntu_release,
-                run_dir=run_dir,
-            )
-        except ValueError as exc:
-            operation_plan_errors[item.source_package] = str(exc)
-        else:
-            metadata.packaging_branch = operation_plans[item.source_package].packaging_branch
-            metadata.build_output_dir = str(operation_plans[item.source_package].packaging_checkout_dir.parent)
-
-    runner = CommandRunner(log_path=logs_dir / "commands.jsonl")
-    logger.debug("Command JSON log path: %s", logs_dir / "commands.jsonl")
-    while any(state == BuildState.WAITING_FOR_DEPENDENCY for state in states.values()):
-        ready = next_ready_packages(plan, states)
-        logger.debug("Ready packages: %s", ready)
-        if not ready:
-            break
-        for source in ready:
-            mark_state(states, source, BuildState.BUILDING)
-            if source in operation_plan_errors:
-                _record_preparation_failure(
-                    source,
-                    plan,
-                    run_dir,
-                    states,
-                    package_metadata[source],
-                    operation_plan_errors[source],
-                    _classify_preparation_failure(operation_plan_errors[source]),
-                )
-                continue
-            _run_package(
-                source,
-                plan,
-                args,
-                run_dir,
-                runner,
-                states,
-                package_metadata[source],
-                operation_plans[source],
-                dependency_repository_dirs=dependency_repository_dirs,
-            )
-    _publish_run_outputs(plan, args, run_dir, runner, states, package_metadata, operation_plans)
-
-    manifests: list[PackageManifest] = []
-    for item in plan.planned_builds:
-        metadata = package_metadata[item.source_package]
-        manifests.append(
-            PackageManifest(
-                source_package=item.source_package,
-                upstream_repo=item.package.upstream_repo,
-                upstream_tag_or_sha=metadata.upstream_tag_or_sha,
-                upstream_version=metadata.upstream_version,
-                packaging_repo=item.package.packaging_repo,
-                packaging_branch=metadata.packaging_branch,
-                packaging_base_sha=metadata.packaging_base_sha,
-                generated_debian_version=metadata.generated_debian_version,
-                source_hashes=metadata.source_hashes,
-                build_dependency_versions=metadata.build_dependency_versions,
-                generated_binary_packages=item.package.binary_packages,
-                generated_binary_hashes=metadata.generated_binary_hashes,
-                runner_environment={"github_actions": str(bool(Path("/home/runner").exists())).lower()},
-                build_started_at=metadata.build_started_at,
-                build_finished_at=metadata.build_finished_at,
-                build_result=states[item.source_package],
-            )
-        )
-
-    write_generation_manifest(
-        run_dir / "generation-manifest.json",
-        GenerationManifest(
-            generation_id=plan.generation_id,
-            openstack_release_target=plan.openstack_target,
-            ubuntu_release=plan.ubuntu_release,
-            package_manifests=manifests,
-            snapshot_at=plan.snapshot_at,
-        ),
-    )
-
-    output: dict[str, object] = {
-        "generation_id": plan.generation_id,
-        "states": {k: v.value for k, v in states.items()},
-    }
-    failures = _collect_failures(run_dir, states)
-    logger.debug("Build command completed states: %s", {k: v.value for k, v in states.items()})
-    if failures:
-        output["failures"] = failures
-    print(json.dumps(output, indent=2))
-    if failures:
-        _print_failure_debug_summary(generation_id=plan.generation_id, run_dir=run_dir, failures=failures)
-        return 1
-    return 0
-
-
-def _run_package(
-    source: str,
-    plan: BuildPlan,
-    args: argparse.Namespace,
-    run_dir: Path,
-    runner: CommandRunner,
-    states: dict[str, BuildState],
-    metadata: PackageExecutionMetadata,
-    operation_plan: PackageOperationPlan,
-    dependency_repository_dirs: list[Path],
-) -> None:
-    logger.debug("Running package build for source=%s", source)
-    package = next(p.package for p in plan.planned_builds if p.source_package == source)
-    metadata.upstream_version = operation_plan.upstream_version
-    metadata.generated_debian_version = operation_plan.generated_debian_version
-    metadata.packaging_branch = operation_plan.packaging_branch
-    metadata.build_output_dir = str(operation_plan.packaging_checkout_dir.parent)
-    metadata.build_started_at = datetime.now(UTC).isoformat()
-
-    commands = package_operation_commands(
-        package=package,
-        operation_plan=operation_plan,
-        ubuntu_release=plan.ubuntu_release,
-        dependency_repository_paths=dependency_repository_dirs if package.build_depends_on_sources else [],
-    )
-    for command, cwd in commands:
-        planned_command = command
-        logger.debug("Planned command for %s: %s (cwd=%s)", source, " ".join(command), cwd)
-        if args.dry_run:
-            command = ["echo", "DRY-RUN:", *command]
-        result = runner.run(command=command, cwd=run_dir if args.dry_run else cwd)
-        if not args.dry_run and operation_plan.packaging_branch_file.exists():
-            resolved_packaging_branch = operation_plan.packaging_branch_file.read_text(encoding="utf-8").strip()
-            if resolved_packaging_branch:
-                metadata.packaging_branch = resolved_packaging_branch
-        if not args.dry_run and result.exit_code == 0 and planned_command[0:2] == ["git", "-C"] and planned_command[-2:] == ["rev-parse", "HEAD"]:
-            metadata.packaging_base_sha = result.stdout.strip() or metadata.packaging_base_sha
-        if result.exit_code != 0:
-            logger.debug(
-                "Package command failed for %s: command=%s exit_code=%d",
-                source,
-                " ".join(result.command),
-                result.exit_code,
-            )
-            states[source] = BuildState.BUILD_FAILED
-            metadata.build_finished_at = datetime.now(UTC).isoformat()
-            write_failure_bundle(
-                out_dir=run_dir / "failures" / source,
-                bundle=FailureBundle(
-                    category=classify_packaging_failure(planned_command, result.stdout, result.stderr),
-                    source_package=source,
-                    generation_id=plan.generation_id,
-                    upstream_sha=None,
-                    packaging_sha=metadata.packaging_base_sha if metadata.packaging_base_sha != "unknown" else None,
-                    failed_command=result.command,
-                    command_exit_code=result.exit_code,
-                ),
-                command_result=result,
-                files={
-                    "debian/control": "",
-                    "debian/rules": "",
-                    "debian/changelog": "",
-                    "debian/patches/series": "",
-                },
-            )
-            return
-
-    if not args.dry_run and not _package_has_publishable_outputs(operation_plan.packaging_checkout_dir.parent):
-        logger.debug("Package %s produced no source package artifacts", source)
-        states[source] = BuildState.BUILD_FAILED
-        metadata.build_finished_at = datetime.now(UTC).isoformat()
-        result = CommandResult(
-            command=["verify-build-output"],
-            cwd=str(operation_plan.packaging_checkout_dir.parent),
-            env_diff={},
-            stdout="",
-            stderr="Expected source package artifact (*.dsc) was not produced.",
-            exit_code=1,
-            duration_seconds=0.0,
-        )
-        write_failure_bundle(
-            out_dir=run_dir / "failures" / source,
-            bundle=FailureBundle(
-                category="SOURCE_GENERATION_FAILURE",
-                source_package=source,
-                generation_id=plan.generation_id,
-                upstream_sha=None,
-                packaging_sha=metadata.packaging_base_sha if metadata.packaging_base_sha != "unknown" else None,
-                failed_command=result.command,
-                command_exit_code=result.exit_code,
-            ),
-            command_result=result,
-            files={
-                "debian/control": "",
-                "debian/rules": "",
-                "debian/changelog": "",
-                "debian/patches/series": "",
-            },
-        )
-        return
-    if not args.dry_run:
-        metadata.generated_binary_hashes = _compute_binary_hashes(operation_plan.packaging_checkout_dir.parent)
-        _stage_package_artifacts(
-            source=source,
-            output_dir=operation_plan.packaging_checkout_dir.parent,
-            run_dir=run_dir,
-        )
-    metadata.build_finished_at = datetime.now(UTC).isoformat()
-    states[source] = BuildState.BUILD_SUCCEEDED
-    logger.debug("Package build succeeded for %s", source)
-
-
-def _record_preparation_failure(
-    source: str,
-    plan: BuildPlan,
-    run_dir: Path,
-    states: dict[str, BuildState],
-    metadata: PackageExecutionMetadata,
-    message: str,
-    category: str,
-) -> None:
-    metadata.build_started_at = datetime.now(UTC).isoformat()
-    metadata.build_finished_at = datetime.now(UTC).isoformat()
-    states[source] = BuildState.BUILD_FAILED
-    result = CommandResult(
-        command=["plan-package-operation"],
-        cwd=str(run_dir),
-        env_diff={},
-        stdout="",
-        stderr=message,
-        exit_code=1,
-        duration_seconds=0.0,
-    )
-    write_failure_bundle(
-        out_dir=run_dir / "failures" / source,
-        bundle=FailureBundle(
-            category=category,
-            source_package=source,
-            generation_id=plan.generation_id,
-            upstream_sha=None,
-            packaging_sha=None,
-            failed_command=result.command,
-            command_exit_code=result.exit_code,
-        ),
-        command_result=result,
-        files={
-            "debian/control": "",
-            "debian/rules": "",
-            "debian/changelog": "",
-            "debian/patches/series": "",
-        },
-    )
-
-
-def _classify_preparation_failure(message: str) -> str:
-    if "No packaging branch configured" in message:
-        return "PACKAGING_POLICY_FAILURE"
-    return "SOURCE_GENERATION_FAILURE"
-
-
-def _collect_failures(run_dir: Path, states: dict[str, BuildState]) -> list[dict[str, object]]:
-    failures: list[dict[str, object]] = []
-    for source, state in sorted(states.items()):
-        if state not in TERMINAL_FAILURE_STATES:
-            continue
-        failure: dict[str, object] = {
-            "source_package": source,
-            "state": state.value,
-        }
-        failure_json = run_dir / "failures" / source / "failure.json"
-        if failure_json.exists():
-            failure["failure_bundle"] = str(failure_json)
-            try:
-                payload = json.loads(failure_json.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                payload = {}
-            if isinstance(payload, dict):
-                category = payload.get("category")
-                failed_command = payload.get("failed_command")
-                command_exit_code = payload.get("command_exit_code")
-                if isinstance(category, str):
-                    failure["category"] = category
-                if isinstance(failed_command, list) and all(isinstance(part, str) for part in failed_command):
-                    failure["failed_command"] = failed_command
-                if isinstance(command_exit_code, int):
-                    failure["command_exit_code"] = command_exit_code
-            analysis_path = failure_json.with_name("analysis.md")
-            if analysis_path.exists():
-                failure["analysis"] = str(analysis_path)
-        failures.append(failure)
-    return failures
-
-
-def _print_failure_debug_summary(*, generation_id: str, run_dir: Path, failures: list[dict[str, object]]) -> None:
-    print(
-        f"Build generation {generation_id} completed with {len(failures)} failure(s).",
-        file=sys.stderr,
-    )
-    print(f"Command logs: {run_dir / 'logs' / 'commands.jsonl'}", file=sys.stderr)
-    for failure in failures:
-        source = failure["source_package"]
-        state = failure["state"]
-        category = failure.get("category", "UNKNOWN")
-        failure_bundle = failure.get("failure_bundle")
-        failed_command = failure.get("failed_command")
-        command_exit_code = failure.get("command_exit_code")
-        print(f"- {source}: state={state}, category={category}", file=sys.stderr)
-        if failed_command:
-            print(f"  failed command: {' '.join(str(part) for part in failed_command)}", file=sys.stderr)
-        if command_exit_code is not None:
-            print(f"  command exit code: {command_exit_code}", file=sys.stderr)
-        if failure_bundle:
-            print(f"  failure bundle: {failure_bundle}", file=sys.stderr)
-        analysis = failure.get("analysis")
-        if analysis:
-            print(f"  analysis template: {analysis}", file=sys.stderr)
-
-
-def _publish_run_outputs(
-    plan: BuildPlan,
-    args: argparse.Namespace,
-    run_dir: Path,
-    runner: CommandRunner,
-    states: dict[str, BuildState],
-    package_metadata: dict[str, PackageExecutionMetadata],
-    operation_plans: dict[str, PackageOperationPlan],
-) -> None:
-    if not states:
-        return
-    publishable_sources = [
-        source
-        for source, state in states.items()
-        if state == BuildState.BUILD_SUCCEEDED
-        and source in operation_plans
-        and _package_has_publishable_outputs(operation_plans[source].packaging_checkout_dir.parent)
-    ]
-    if not publishable_sources:
-        return
-    logger.debug("Publishing outputs for sources: %s", publishable_sources)
-
-    for source in publishable_sources:
-        states[source] = BuildState.PUBLISHING
-
-    publish_dir = run_dir / "apt-repo"
-    publish_dir.mkdir(parents=True, exist_ok=True)
-    pool_dir = publish_dir / "pool"
-    pool_dir.mkdir(parents=True, exist_ok=True)
-    for source in publishable_sources:
-        staged_binary_dir = run_dir / "artifacts" / source / "binary"
-        source_output_dir = operation_plans[source].packaging_checkout_dir.parent
-        binary_input_dir = staged_binary_dir if staged_binary_dir.exists() else source_output_dir
-        _copy_binary_artifacts_to_pool(source=source, output_dir=binary_input_dir, pool_dir=pool_dir)
-    for planned_command in apt_repository_commands(publish_dir, plan.ubuntu_release):
-        logger.debug("APT publish command: %s", " ".join(planned_command))
-        command = ["echo", "DRY-RUN:", *planned_command] if args.dry_run else planned_command
-        result = runner.run(command=command, cwd=run_dir if args.dry_run else publish_dir)
-        if result.exit_code != 0:
-            logger.debug("APT publish command failed with exit_code=%d", result.exit_code)
-            for source in publishable_sources:
-                states[source] = BuildState.PUBLISH_FAILED
-                package_metadata[source].build_finished_at = datetime.now(UTC).isoformat()
-                _write_package_failure(
-                    source=source,
-                    plan=plan,
-                    run_dir=run_dir,
-                    metadata=package_metadata[source],
-                    result=result,
-                    category=classify_packaging_failure(planned_command, result.stdout, result.stderr),
-                )
-            return
-
-    for source in publishable_sources:
-        states[source] = BuildState.PUBLISHED
-        package_metadata[source].build_finished_at = datetime.now(UTC).isoformat()
-
-
-def _write_package_failure(
-    *,
-    source: str,
-    plan: BuildPlan,
-    run_dir: Path,
-    metadata: PackageExecutionMetadata,
-    result: CommandResult,
-    category: str,
-) -> None:
-    write_failure_bundle(
-        out_dir=run_dir / "failures" / source,
-        bundle=FailureBundle(
-            category=category,
-            source_package=source,
-            generation_id=plan.generation_id,
-            upstream_sha=None,
-            packaging_sha=metadata.packaging_base_sha if metadata.packaging_base_sha != "unknown" else None,
-            failed_command=result.command,
-            command_exit_code=result.exit_code,
-        ),
-        command_result=result,
-        files={
-            "debian/control": "",
-            "debian/rules": "",
-            "debian/changelog": "",
-            "debian/patches/series": "",
-        },
-    )
-
-
-def _discover_dependency_repository_dirs(raw_paths: list[str]) -> list[Path]:
-    discovered: list[Path] = []
-    for raw_path in raw_paths:
-        root = Path(raw_path)
-        if not root.exists():
-            continue
-        candidates = [root]
-        candidates.extend(path for path in root.rglob("apt-repo") if path.is_dir())
-        for candidate in candidates:
-            if not candidate.is_dir():
-                continue
-            if _is_apt_repository_dir(candidate):
-                resolved = candidate.resolve()
-                if resolved not in discovered:
-                    discovered.append(resolved)
-    return discovered
-
-
-def _is_apt_repository_dir(path: Path) -> bool:
-    has_dists_layout = any(path.glob("dists/*/Release")) and any(path.glob("dists/*/main/binary-*/Packages*"))
-    return has_dists_layout
-
-
-def _iter_artifacts(output_dir: Path, patterns: tuple[str, ...]) -> list[Path]:
-    artifacts: list[Path] = []
-    for pattern in patterns:
-        artifacts.extend(sorted(output_dir.glob(pattern)))
-    return sorted({path.resolve(): path for path in artifacts}.values(), key=lambda path: path.name)
-
-
-def _copy_binary_artifacts_to_pool(*, source: str, output_dir: Path, pool_dir: Path) -> None:
-    source_pool_dir = pool_dir / source
-    source_pool_dir.mkdir(parents=True, exist_ok=True)
-    for binary_artifact in _iter_artifacts(output_dir, BINARY_ARTIFACT_PATTERNS):
-        shutil.copy2(binary_artifact, source_pool_dir / binary_artifact.name)
-
-
-def _compute_binary_hashes(output_dir: Path) -> list[str]:
-    hashes: list[str] = []
-    for binary_artifact in _iter_artifacts(output_dir, BINARY_ARTIFACT_PATTERNS):
-        digest = hashlib.sha256()
-        with binary_artifact.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
-        hashes.append(f"sha256:{digest.hexdigest()}")
-    return hashes
-
-
-def _stage_package_artifacts(*, source: str, output_dir: Path, run_dir: Path) -> None:
-    source_artifacts = _iter_artifacts(output_dir, SOURCE_ARTIFACT_PATTERNS)
-    binary_artifacts = _iter_artifacts(output_dir, BINARY_ARTIFACT_PATTERNS)
-    destination_root = run_dir / "artifacts" / source
-    destination_source_dir = destination_root / "source"
-    destination_binary_dir = destination_root / "binary"
-    destination_source_dir.mkdir(parents=True, exist_ok=True)
-    destination_binary_dir.mkdir(parents=True, exist_ok=True)
-    for artifact in source_artifacts:
-        shutil.copy2(artifact, destination_source_dir / artifact.name)
-    for artifact in binary_artifacts:
-        shutil.copy2(artifact, destination_binary_dir / artifact.name)
-
-
-def _package_has_publishable_outputs(output_dir: Path) -> bool:
-    if not output_dir.exists():
-        return False
-    return any(output_dir.glob("*.dsc"))
-
-
 def _resolve_package_releases(
     plan: BuildPlan,
     args: argparse.Namespace,
@@ -612,7 +75,6 @@ def _resolve_package_releases(
                 logger.debug("Release resolution failed for %s: %s", source_package, exc)
     return resolved_releases, errors
 
-
 def status_cmd(args: argparse.Namespace) -> int:
     manifest = Path(args.manifest)
     if not manifest.exists():
@@ -621,13 +83,24 @@ def status_cmd(args: argparse.Namespace) -> int:
     print(manifest.read_text(encoding="utf-8"))
     return 0
 
+def build_cmd(args: argparse.Namespace) -> int:
+    try:
+        lock = load_lock(Path(args.plan))
+        if args.dry_run:
+            print(json.dumps({"result": "PLANNED", "lock": lock}, indent=2))
+            return 0
+        build = LockedBuild(lock, Path(args.run_dir), timeout=args.command_timeout)
+        return build.run()
+    except (ValueError, KeyError, OSError) as exc:
+        logger.error("Build preparation failed: %s", exc)
+        return 1
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="packaging")
     _add_logging_flags(parser, default=False)
     sub = parser.add_subparsers(dest="command", required=True)
-
-    p_plan = sub.add_parser("plan")
+    p_plan = sub.add_parser("plan", help="Discover candidate releases; not an executable build lock")
     _add_logging_flags(p_plan, default=argparse.SUPPRESS)
     p_plan.add_argument("--config", default=str(_default_config_path()))
     p_plan.add_argument("--openstack-target", required=True)
@@ -636,35 +109,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_plan.add_argument("--no-dependency-closure", action="store_true", default=False)
     p_plan.add_argument("sources", nargs="+")
     p_plan.set_defaults(func=plan_cmd)
-
-    p_build = sub.add_parser("build")
+    p_build = sub.add_parser("build", help="Build exact inputs from a reviewed schema-v1 lock")
     _add_logging_flags(p_build, default=argparse.SUPPRESS)
-    p_build.add_argument("--config", default=str(_default_config_path()))
-    p_build.add_argument("--openstack-target", required=True)
-    p_build.add_argument("--ubuntu-release", required=True)
-    p_build.add_argument("--snapshot-at")
+    p_build.add_argument("--plan", required=True, help="Path to a schema-v1 build lock")
     p_build.add_argument("--run-dir", default="artifacts")
-    p_build.add_argument("--dry-run", action="store_true", default=False)
-    p_build.add_argument(
-        "--dependency-repo",
-        action="append",
-        default=[],
-        help="Path containing previously published apt-repo artifacts to expose to sbuild.",
-    )
-    p_build.add_argument(
-        "--no-dependency-closure",
-        action="store_true",
-        default=False,
-        help="Build only explicitly requested source packages (used by dependency-layer workflow jobs).",
-    )
-    p_build.add_argument("sources", nargs="+")
+    p_build.add_argument("--command-timeout", type=float, default=3600)
+    p_build.add_argument("--dry-run", action="store_true")
     p_build.set_defaults(func=build_cmd)
-
     p_status = sub.add_parser("status")
     _add_logging_flags(p_status, default=argparse.SUPPRESS)
     p_status.add_argument("--manifest", required=True)
     p_status.set_defaults(func=status_cmd)
-
     return parser
 
 
@@ -678,7 +133,6 @@ def _add_logging_flags(parser: argparse.ArgumentParser, *, default: bool | str) 
         help="Enable verbose debug logging, including command stdout/stderr traces.",
     )
 
-
 def _configure_logging(debug_enabled: bool) -> None:
     logging.basicConfig(
         level=logging.DEBUG if debug_enabled else logging.INFO,
@@ -686,13 +140,11 @@ def _configure_logging(debug_enabled: bool) -> None:
         force=True,
     )
 
-
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     _configure_logging(getattr(args, "debug_logging", False))
     return args.func(args)
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

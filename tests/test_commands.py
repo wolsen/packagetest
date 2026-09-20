@@ -40,3 +40,16 @@ def test_command_runner_emits_debug_logs(tmp_path: Path, caplog):
     assert any("Running command:" in message for message in caplog.messages)
     assert any("Command stdout" in message and "hello" in message for message in caplog.messages)
     assert any("Command stderr" in message and "oops" in message for message in caplog.messages)
+
+
+def test_timeout_kills_command(tmp_path):
+    runner = CommandRunner(tmp_path / 'commands.jsonl', timeout=0.2)
+    result = runner.run(['sleep', '10'], tmp_path)
+    assert result.exit_code == 124
+    assert result.duration_seconds < 3
+
+
+def test_missing_executable_is_logged(tmp_path):
+    runner = CommandRunner(tmp_path / 'commands.jsonl')
+    assert runner.run(['/nonexistent/packaging-tool'], tmp_path).exit_code == 127
+    assert (tmp_path / '0001.stderr.log').read_text()

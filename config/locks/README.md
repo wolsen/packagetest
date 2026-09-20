@@ -1,0 +1,24 @@
+# Build lock reference
+
+A schema-v1 lock is reviewed input to `packaging build --plan FILE`. Discovery output from `packaging plan` has a different schema and cannot be executed directly.
+
+`target` identifies the suite, architecture, schroot backend, and named chroot. `mirror`, `components`, and `pockets` document the expected provisioning profile. Currently `scripts/prepare-builder.sh` implements Noble amd64 with main/universe and release/updates/security, plus Stonking amd64 with main/universe; changing these fields does not reconfigure the builder. Provision a matching chroot before introducing another target.
+
+Each package has a Debian source name, complete Debian version, and required binary names. `input.kind` selects one of:
+
+- `archive`: `dsc.url` and `dsc.sha256` pin an existing source descriptor. Its checksummed component files are downloaded from the same archive directory.
+- `gbp`: repository URL; packaging branch and commit; upstream branch and commit; pristine-tar commit; upstream version and tag; release tarball URL and SHA256. `import_mode: reuse` also pins the peeled upstream tag commit (`upstream_tag_sha`), verifies the existing pristine-tar content, and rejects missing tags. `import_mode: new` requires the tag to be absent and imports without overwriting existing tags.
+
+`maintainer` supplies repository-local Git identity and changelog identity. Epoch changes are rejected. The generated version must sort after the pinned packaging changelog version and use the locked upstream version.
+
+For a future multi-package case, `depends_on` names preceding source nodes. Only successful validated binaries are passed to sbuild with `--extra-package`. `required_build_versions` maps binary dependency names to exact versions that must appear in the consumer's `.buildinfo`. These mechanisms have unit coverage; real dependency-edge validation remains a separate milestone.
+
+A canonicalized lock SHA256 identifies the inputs. Each invocation gets a unique generation directory, so repeated builds never share work trees. Archive build dependency versions and generated changelog timestamps are not fixed by the lock; equal lock hashes do not imply byte-identical output.
+
+## Git snapshots
+
+A gbp input may replace `tarball` with `snapshot` and use `import_mode: new`. The snapshot pins the upstream repository and full SHA, base tag and peeled tag SHA, commit timestamp, commits since the tag, PEP 440 version, and checksum-pinned sdist build tools. The upstream branch SHA is the actual prior packaging import, which may differ from a stale published branch tip.
+
+The executor derives `<base>+git<UTC-commit-date>.<count>.<short-sha>` and rejects inconsistent lock metadata. It generates a proper PBR sdist in a separate checkout and venv, checks AUTHORS/ChangeLog/PKG-INFO, normalizes archive headers, and records the tarball checksum. If `sdist_sha256` is present, regeneration must match it before import. The checked-in snapshot case includes this checksum.
+
+`resolved_at` and `ref` describe how the lock was selected; execution uses the SHA, not the current value of the branch. Updating to a newer snapshot requires a newly reviewed lock and generated sdist checksum.

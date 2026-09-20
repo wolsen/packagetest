@@ -1,138 +1,46 @@
-# DESIGN
+# Packaging executor design
 
-## Goals
+The packaging tools determine how a Debian package is built. The agent selects reviewed inputs, enforces stage checks, and records enough evidence to explain a failed run.
 
-- Automate Ubuntu OpenStack package update workflows using standard Debian/Ubuntu tooling.
-- Keep all important external commands visible and auditable.
-- Build a dependency-aware scheduler that understands package relationships.
-- Produce reproducible generation metadata and rich failure artifacts.
-- Maintain a strict review boundary for AI-proposed fixes.
+## Execution boundary
 
-## Non-goals
+`packaging plan` discovers OpenStack release candidates and a small configured dependency graph. It is advisory. `packaging build --plan LOCK` consumes a separate schema-v1 lock and does no release discovery during execution. This prevents retries from silently changing their source inputs.
 
-- Replacing `gbp`, `quilt`, `dpkg-buildpackage`, or `sbuild`.
-- Launchpad uploads, PPA publication, or long-lived key handling.
-- Hiding packaging mechanics behind custom abstractions.
+`locked.py` implements the stage sequence:
 
-## Reference-guide alignment and intentional differences
+1. Verify tools and the explicitly named schroot.
+2. Download a checksum-pinned archive source, or prepare a checksum/commit-pinned upstream update in an isolated Git checkout.
+3. Verify source identity and every file referenced by its `.dsc`.
+4. Run sbuild in a fresh tarball-backed schroot, with package tests enabled.
+5. Validate actual binary metadata, checksummed `.changes` contents, required binaries, and `.buildinfo` dependency versions.
+6. Run Lintian, failing on errors.
 
-The provided manual packaging guide is a strong workflow reference, but this repository intentionally differs for GitHub-hosted CI:
+The workflow additionally calls `smoke-install.py`. This creates another fresh schroot, installs the built packages, checks the installed version, and exercises Oslo translation. The build manifest's `SUCCEEDED` result covers building and artifact validation; `smoke-install.json` records installation separately. The wrapper and workflow require both to pass.
 
-- **No Launchpad upload path** (`dput`, credentials, merge proposals) in execution steps.
-- **Ephemeral signing only** for local repository metadata where required.
-- **No persistent machine assumptions** (all state is artifact-backed per generation).
-- **Scheduler is Python source of truth**, not workflow YAML logic.
+## Source preparation
 
-## Architecture
+For archive rebuilds, the reviewed `.dsc` digest anchors component checksums. This executor does not independently authenticate `.dsc` signatures.
 
-- `packaging plan`: resolve package definitions and dependencies into a DAG-backed plan.
-- `packaging build`: orchestrate package operations for ready nodes and record command telemetry.
-- `packaging status`: expose persisted generation state/manifest data.
+For upstream updates, the lock separates the upstream project from the Debian source and binary names. It pins packaging, upstream, and pristine-tar commits and an official release sdist. Reusing an existing import requires the pinned peeled tag commit and identical pristine-tar bytes. Creating an import requires the tag to be absent. Neither mode overwrites published tags.
 
-Key modules:
+The executor checks source identity, branch configuration, upstream version, and epoch preservation. It merges upstream, validates the patch queue, returns to the packaging branch, updates and commits the changelog, and requires a clean checkout. gbp exports a fresh source tree and runs unsigned source generation. The deliberate `-nc` source-build policy applies to that fresh export; sbuild performs the normal binary build and tests with resolved build dependencies.
 
-- `config.py` — declarative package definitions.
-- `planner.py` — graph construction and topological ordering.
-- `scheduler.py` — state transitions and ready/blocked handling.
-- `commands.py` — command execution and telemetry capture.
-- `repository.py` — APT repository command generation abstraction.
-- `manifest.py` — generation provenance serialization.
-- `failures.py` — failure bundle materialization.
+## State and evidence
 
-## Packaging lifecycle (per source package)
+Each invocation creates a unique generation directory tied to the canonical lock hash. JSON manifest updates use atomic replacement. Per-command logs retain complete stdout/stderr on disk, bounded diagnostic tails in JSON, exit codes, durations, and process-group timeouts. Failure bundles capture the failing stage, packaging files, patches, Git state, and command diagnostics.
 
-1. Obtain Ubuntu packaging git repository.
-2. Obtain upstream source/tag/snapshot.
-3. Import upstream source (`gbp import-orig`, pristine-tar aware).
-4. Import patch queue (`gbp pq import`), detect refresh/apply failure.
-5. Update packaging metadata/changelog.
-6. Build source package.
-7. Build binaries with `sbuild`.
-8. Publish outputs into generation-scoped APT repository artifacts.
+Source and binary artifacts are stored separately. A zero exit code with missing, corrupt, or incorrectly versioned binaries fails validation. Source hashes, binary hashes, tool versions, builder identity, and installed build dependency versions are retained.
 
-## Dependency DAG model
+For ordered multi-package locks, only validated successful producer binaries are passed to consumers using sbuild `--extra-package`. A declared required dependency version must match `.buildinfo`; failed producers block consumers. This mechanism has unit coverage, but a real producer/consumer integration case is still pending.
 
-The planner models source-level build dependencies and scheduler states:
+## Scope
 
-- `WAITING_FOR_DEPENDENCY`
-- `BUILDING`
-- `BUILD_FAILED`
-- `BUILD_SUCCEEDED`
-- `PUBLISHED`
-- `BLOCKED_BY_FAILED_DEPENDENCY`
+Builder profiles cover Noble amd64 (main/universe with updates/security) and Stonking amd64 (main/universe). The archive dependency set is current at build time and recorded, not snapshot pinned. Equal locks therefore do not promise byte-identical packages.
 
-Dependency deadlocks are represented as scheduling states, not compiler/build failures.
+The current GitHub workflow is one job calling the same provisioning/build scripts used locally. It has not yet been validated remotely. Gump workflow integration is deferred; direct runs in an Ubuntu VM establish tool behavior independently.
 
-## GitHub Actions execution model
+The earlier planner/scheduler/repository abstractions remain for future work. Repository publication, UCA version policy, service package validation, automatic lock generation, signing, and archive uploads are not connected to this executor. Models may eventually propose fixes from captured evidence; automatic patch application is outside the current design.
 
-- Use GitHub Actions as an execution substrate only.
-- Plan artifacts are produced once and consumed by downstream jobs.
-- Dependency layers are represented by job dependencies; ready packages fan out as matrix work.
-- APT repository state is generation-scoped and artifact-backed.
+## Snapshot inputs
 
-## Artifact and repository model
-
-Each generation creates isolated artifacts:
-
-- command logs (`commands.jsonl`)
-- package build outputs
-- APT metadata (`Packages`, `Release`, `InRelease`, `Release.gpg`)
-- generation manifest
-- failure bundles
-
-Repository abstraction is intentionally replaceable so future persistent APT servers can be introduced without redesigning packaging orchestration.
-
-## Build generations, provenance, reproducibility
-
-A generation is identified by `generation_id`. Manifest entries capture:
-
-- release target and Ubuntu series
-- package source/upstream/packaging refs
-- generated versions and hashes
-- dependency versions used
-- runner environment and timestamps
-- terminal build state
-
-Generations are isolated to avoid cross-run package contamination.
-
-## Failure handling
-
-On real packaging/build failure, collect and persist:
-
-- failing command and exit details
-- environment/cwd and full command logs
-- package metadata files (`debian/control`, `debian/rules`, `debian/changelog`, patch series)
-- source/packaging revision context
-
-Failure classes include:
-
-- `PATCH_APPLY_FAILURE`
-- `MISSING_BUILD_DEPENDENCY`
-- `DEPENDENCY_VERSION_CONFLICT`
-- `COMPILATION_FAILURE`
-- `UNIT_TEST_FAILURE`
-- `PACKAGING_POLICY_FAILURE`
-- `REPOSITORY_PUBLISH_FAILURE`
-- `SOURCE_GENERATION_FAILURE`
-- `UNKNOWN`
-
-## AI remediation boundary
-
-The AI stage is optional and strictly review-bound:
-
-- Input: failure bundle
-- Output artifacts only: `analysis.md`, `proposed-fix.patch`
-- No automatic patch application
-- No automatic resume/continue after AI output
-
-## Security model
-
-- No Launchpad publication capability in this repo/workflow.
-- Do not expose unnecessary GitHub tokens into build environments.
-- Do not execute AI-generated shell commands automatically.
-- Separate upstream verification keys from local artifact-signing keys.
-- Destroy ephemeral signing key material at end of run.
-
-## Future shared-repository support
-
-The current artifact-backed repository mechanism is intentionally abstract. Later backends may include a dedicated shared APT server with identical package-consumer semantics from the `sbuild` perspective.
+Snapshot acquisition clones full Git history at the locked SHA and verifies the base-tag commit, ancestry, commit count, and timestamp. A separate venv installs checksum-pinned PBR/setuptools/wheel and generates an sdist with the exact snapshot PBR_VERSION. Archive-header normalization makes this generated source repeatable; a lock can require its expected SHA256. The resulting orig is imported using pristine-tar and follows the same source/binary verification path as a release. Installation additionally checks Python distribution metadata retains the complete snapshot version.

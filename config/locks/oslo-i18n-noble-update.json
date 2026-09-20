@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "target": {
+    "suite": "noble",
+    "architecture": "amd64",
+    "backend": "schroot",
+    "chroot": "noble-amd64-sbuild",
+    "mirror": "http://archive.ubuntu.com/ubuntu",
+    "components": [
+      "main",
+      "universe"
+    ],
+    "pockets": [
+      "noble",
+      "noble-updates",
+      "noble-security"
+    ]
+  },
+  "maintainer": {
+    "name": "Packaging Build Agent",
+    "email": "packaging-agent@example.invalid"
+  },
+  "packages": [
+    {
+      "source": "python-oslo.i18n",
+      "version": "6.4.0-0ubuntu1~packagetest1",
+      "expected_binaries": [
+        "python3-oslo.i18n",
+        "python-oslo.i18n-doc"
+      ],
+      "input": {
+        "kind": "gbp",
+        "repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.i18n",
+        "packaging_branch": "stable/2024.1",
+        "packaging_sha": "5e582a2d7b32eb8eae5e7f8a513baeed1e7403ad",
+        "upstream_branch": "upstream",
+        "upstream_sha": "cfb0811bf65e36a5d6b2ee4ec09216cfecbf3a72",
+        "pristine_tar_sha": "ae4529b9bfe7aee23ae5ce5ed31c4ef2948c5199",
+        "upstream_tag": "6.4.0",
+        "upstream_tag_sha": "419f4ee1335af9e1d0f2d64389c43f206d0eba17",
+        "upstream_version": "6.4.0",
+        "import_mode": "reuse",
+        "tarball": {
+          "url": "https://tarballs.opendev.org/openstack/oslo.i18n/oslo.i18n-6.4.0.tar.gz",
+          "sha256": "66e04c041e9ff17d07e13ec7f48295fbc36169143c72ca2352a3efcc98e7b608"
+        }
+      }
+    }
+  ]
+}

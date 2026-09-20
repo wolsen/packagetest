@@ -1,41 +1,34 @@
-# ROADMAP
+# Roadmap
 
-## Milestone 0 — Foundations (completed in this slice)
+Progress is based on real build evidence, not generated command strings. See `VALIDATION.md` for completed runs.
 
-- [x] Define architecture and boundaries for real-tool packaging orchestration.
-- [x] Add planner/scheduler with dependency-state model.
-- [x] Add generation manifest and failure bundle artifact contracts.
-- [x] Add declarative package configuration for small OpenStack chain.
-- [x] Add CI workflow skeleton showing dependency-aware fan-out.
+## Working library slice
 
-## Milestone 1 — Release discovery and source selection
+- [x] Separate release discovery from execution of reviewed, pinned build inputs.
+- [x] Rebuild the published Noble `python-oslo.i18n` source in an isolated schroot.
+- [x] Prepare the pinned 6.4.0 update with gbp, pristine-tar, patch validation, and a committed changelog.
+- [x] Build actual binaries, validate metadata/checksums/buildinfo, and run Lintian.
+- [x] Install both versions in fresh schroots and run an Oslo translation smoke test.
+- [x] Retain source/binary artifacts, full logs, provenance, and failure diagnostics locally.
+- [x] Repeat the upgrade from the same lock with a fresh checkout, build root, and installation session.
+- [x] Generate and build the latest pinned oslo.i18n Git snapshot on Stonking, with exact installed Python version verification.
+- [ ] Verify the checked-in workflow on GitHub Actions.
 
-- [x] Pull release metadata from `openstack/releases` deliverables and series status.
-- [x] Resolve targets (`2027.1`, `-b1`, `-rc1`, `-final`, snapshots) into project versions/SHAs.
-- [x] Add reproducible snapshot mode (`snapshot-at=<timestamp>`) with recorded upstream SHAs.
+## Next: prove a dependency edge
 
-## Milestone 2 — Real packaging repository operations
+- Build a pinned python-pbr producer and compatible consumer.
+- Exercise the implemented `--extra-package` handoff.
+- Require the producer's exact binary version in the consumer's `.buildinfo`.
+- Prove a failed producer blocks its consumer.
 
-- [x] Clone Ubuntu packaging repositories and checkout correct packaging/upstream/pristine-tar branches.
-- [x] Execute `gbp import-orig` with branch-aware options.
-- [x] Execute `gbp pq import` and classify patch failures.
-- [x] Update `debian/changelog` and package metadata with Debian version semantics.
+## Broader Ubuntu and Cloud Archive support
 
-## Milestone 3 — Real source and binary builds
+- Turn release discovery output into reviewable locks with explicit branch, epoch, prerelease, and UCA version policies.
+- Pin archive snapshots for reproducible build dependency selection.
+- Add target profiles and integration cases for UCA suites and service packages.
+- Add dependency graph expansion and scheduling beyond the small static configuration.
+- Revisit repository publication only when artifact handoff is insufficient.
+- Add review-only automated failure analysis and proposed packaging patches.
+- Return to Gump workflow context handling and artifact lifecycle after tool-level behavior is established.
 
-- [x] Generate source packages and build binaries with `sbuild` on GitHub-hosted runners.
-- [x] Persist source/binary artifacts and logs as generation-scoped artifacts.
-- [x] Ensure dependent builds consume prior-generation packages through standard APT semantics.
-
-## Milestone 4 — Failure intelligence
-
-- [ ] Collect full failure evidence bundles by failure category.
-- [ ] Add optional AI analysis adapter producing review-only patch proposals.
-- [ ] Add PR-oriented output format suitable for human review workflows.
-
-## Milestone 5 — Scale-out and hardening
-
-- [ ] Expand package set beyond vertical slice.
-- [ ] Improve scheduler for larger DAG layers and retries.
-- [ ] Add stronger integration tests using temporary git repositories/chroots.
-- [ ] Harden security and provenance verification in CI.
+Archive upload, signing credentials, automatic patch application, and bit-for-bit reproducibility are not part of the current slice.
