@@ -80,11 +80,29 @@ def test_nightly_rejects_unbuilt_and_wrong_run_inputs(tmp_path, ci, result):
 
 
 @pytest.mark.parametrize('result,expected', [
-    ('PASS', 0), ('SUPERFICIAL', 2), ('SKIP', 2), ('NO_TESTS', 2),
+    ('PASS', 0), ('SUPERFICIAL', 0), ('SKIP', 0), ('NO_TESTS', 0),
     ('FAIL', 1), ('INFRA_ERROR', 1), ('BLOCKED', 1),
 ])
-def test_gate_does_not_promote_coverage_gaps(result, expected):
+def test_ci_exit_status_keeps_coverage_gaps_non_fatal(result, expected):
     assert exit_status(result) == expected
+
+
+@pytest.mark.parametrize('raw,summary,classification', [
+    (8, '* SKIP no tests in this package\n', 'NO_TESTS'),
+    (8, 'autodep8-python3 PASS (superficial)\n', 'SUPERFICIAL'),
+])
+def test_autopkgtest_return_8_is_reported_but_does_not_fail_ci(raw, summary, classification):
+    report = classify(raw, summary)
+    assert report == {
+        'result': classification,
+        'returncode': 8,
+        'tests': [{
+            'name': '*' if classification == 'NO_TESTS' else 'autodep8-python3',
+            'result': 'SKIP' if classification == 'NO_TESTS' else 'PASS',
+            'detail': 'no tests in this package' if classification == 'NO_TESTS' else '(superficial)',
+        }],
+    }
+    assert exit_status(report['result']) == 0
 
 
 @pytest.mark.parametrize('database,result,installed', [

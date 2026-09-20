@@ -38,8 +38,14 @@ def classify(returncode: int, summary: str) -> dict:
 
 
 def exit_status(result: str) -> int:
-    """Only substantive passes satisfy the gate; coverage gaps remain distinct."""
-    return 0 if result == 'PASS' else 2 if result in {'SKIP', 'NO_TESTS', 'SUPERFICIAL'} else 1
+    """Fail CI only for test failures, infrastructure errors, or blocked builds.
+
+    Coverage gaps remain explicit in result.json and the workflow summary, but
+    they do not make the GitHub job fail.  This lets a nightly run distinguish
+    missing or superficial coverage from a broken package without presenting
+    both as the same red job conclusion.
+    """
+    return 0 if result in {'PASS', 'SKIP', 'NO_TESTS', 'SUPERFICIAL'} else 1
 
 
 def candidate_check_script(versions: dict[str, str]) -> str:

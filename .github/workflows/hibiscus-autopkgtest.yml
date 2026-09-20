@@ -3,7 +3,7 @@ on:
   workflow_call:
     inputs:
       sources:
-        description: Frozen source matrix for one completed build wave
+        description: Frozen source matrix for one completed dependency level
         required: true
         type: string
 permissions:
@@ -11,6 +11,7 @@ permissions:
   actions: read
 jobs:
   autopkgtest:
+    name: Autopkgtest · ${{ matrix.source }}
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -94,6 +95,31 @@ jobs:
           if not path.exists():
               path.write_text(json.dumps({'source': os.environ['SOURCE'], 'result': 'INFRA_ERROR', 'error': 'Autopkgtest setup did not complete'}, indent=2) + '\n')
           PYCODE
+      - name: Report classified test outcome
+        if: always()
+        run: |
+          python3 - <<'PYCODE'
+          import json, os
+          from pathlib import Path
+          report = json.loads(Path('test-results/result/result.json').read_text())
+          result = report['result']
+          raw = report.get('returncode', 'not run')
+          tests = report.get('tests', [])
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write(f"## {os.environ['SOURCE']} autopkgtest: {result}\n\n")
+              summary.write(f"Raw autopkgtest return code: `{raw}`.\n\n")
+              if result in {'SUPERFICIAL', 'SKIP', 'NO_TESTS'}:
+                  summary.write('This coverage gap is recorded but does not fail the GitHub job.\n\n')
+              if tests:
+                  summary.write('| Test | Result | Detail |\n|---|---|---|\n')
+                  for test in tests:
+                      detail = test.get('detail', '').replace('|', '\\|')
+                      summary.write(f"| {test['name']} | {test['result']} | {detail} |\n")
+          command = 'notice' if result in {'SUPERFICIAL', 'SKIP', 'NO_TESTS'} else 'error' if result in {'FAIL', 'INFRA_ERROR', 'BLOCKED'} else 'notice'
+          print(f'::{command} title=Autopkgtest {result}::{os.environ["SOURCE"]}: raw return code {raw}')
+          PYCODE
+        env:
+          SOURCE: ${{ matrix.source }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

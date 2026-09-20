@@ -10,9 +10,9 @@ The plan resolves references once. Declared `stable/2026.2` branches take preced
 
 ## Parallel builds and artifacts
 
-The initial graph has eight waves, each allowing 20 concurrent jobs subject to runner availability. Failures do not cancel independent jobs. Missing or failed required producers block consumers.
+The current graph has eight dependency levels, each allowing 20 concurrent jobs subject to runner availability. A dependency level is a topological layer: every package in it can build in parallel because any same-run candidate packages it needs are produced by earlier levels. GitHub job names show `Build dependency level N · SOURCE` and `Test dependency level N packages` so the layout explains both the ordering and the package being handled. Failures do not cancel independent jobs. Missing or failed required producers block consumers.
 
-Cycles are recorded as archive bootstrap edges. Dependencies already available from an earlier wave use that run's candidates; only the remaining cycle edges use archive packages for the first build. A subsequent rebuild of cyclic components is required before claiming the complete set was built against candidate dependencies.
+Cycles are recorded as archive bootstrap edges. Dependencies already available from an earlier dependency level use that run's candidates; only the remaining cycle edges use archive packages for the first build. A subsequent rebuild of cyclic components is required before claiming the complete set was built against candidate dependencies.
 
 `config/hibiscus-candidate-dependencies.json` preserves reviewed dependencies that cannot use archive versions, even inside a cycle. For example, Manila Client requires the candidate OpenStack Client test fixtures, and oslo.service requires the candidate oslo.config serialization API. The reverse cycle edges can still bootstrap from the archive. An explicit pilot must include these mandatory candidates; incompatible mandatory cycles fail planning rather than silently falling back.
 
@@ -22,7 +22,7 @@ Planning incorporates checksum-verified packaging control replacements, so added
 
 ## Tests and reports
 
-Autopkgtests start after each build wave while subsequent builds proceed. They use separate QEMU guests with 4 GiB RAM and two CPUs on KVM-capable GitHub runners. Built source packages and exact candidate binaries are tested. PASS, SUPERFICIAL, FAIL, SKIP, NO_TESTS, INFRA_ERROR, and BLOCKED remain distinct. Generated import checks marked superficial do not satisfy the substantive-test gate; neither do missing or skipped tests.
+Autopkgtests start after each dependency level while subsequent builds proceed. They use separate QEMU guests with 4 GiB RAM and two CPUs on KVM-capable GitHub runners. Built source packages and exact candidate binaries are tested. PASS, SUPERFICIAL, FAIL, SKIP, NO_TESTS, INFRA_ERROR, and BLOCKED remain distinct. Generated import checks marked superficial do not count as substantive coverage; neither do missing or skipped tests. SUPERFICIAL, SKIP, and NO_TESTS are recorded in JSON artifacts and the GitHub step summary but finish the job successfully. FAIL, INFRA_ERROR, and BLOCKED still fail the job.
 
 The initial 197-source coverage audit found 108 sources with explicit tests, 44 with generated superficial imports only, and 45 with no detected package tests (26 Puppet modules, 18 Tempest plugins, and Aetos). Explicit tests range from imports and installation checks to unit suites and service checks; they are not equivalent to full cloud regression coverage.
 

@@ -70,6 +70,7 @@ jobs:
           if-no-files-found: error
 
   wave0:
+    name: Build dependency level 1 · ${{ matrix.source }}
     needs: [plan]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled0 == 'true' }}
     strategy:
@@ -156,6 +157,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   wave1:
+    name: Build dependency level 2 · ${{ matrix.source }}
     needs: [plan, wave0]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled1 == 'true' }}
     strategy:
@@ -242,6 +244,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   wave2:
+    name: Build dependency level 3 · ${{ matrix.source }}
     needs: [plan, wave0, wave1]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled2 == 'true' }}
     strategy:
@@ -328,6 +331,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   wave3:
+    name: Build dependency level 4 · ${{ matrix.source }}
     needs: [plan, wave0, wave1, wave2]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled3 == 'true' }}
     strategy:
@@ -414,6 +418,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   wave4:
+    name: Build dependency level 5 · ${{ matrix.source }}
     needs: [plan, wave0, wave1, wave2, wave3]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled4 == 'true' }}
     strategy:
@@ -500,6 +505,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   wave5:
+    name: Build dependency level 6 · ${{ matrix.source }}
     needs: [plan, wave0, wave1, wave2, wave3, wave4]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled5 == 'true' }}
     strategy:
@@ -586,6 +592,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   wave6:
+    name: Build dependency level 7 · ${{ matrix.source }}
     needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled6 == 'true' }}
     strategy:
@@ -672,6 +679,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   wave7:
+    name: Build dependency level 8 · ${{ matrix.source }}
     needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled7 == 'true' }}
     strategy:
@@ -758,6 +766,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   wave8:
+    name: Build dependency level 9 · ${{ matrix.source }}
     needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled8 == 'true' }}
     strategy:
@@ -844,6 +853,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   wave9:
+    name: Build dependency level 10 · ${{ matrix.source }}
     needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7, wave8]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled9 == 'true' }}
     strategy:
@@ -930,6 +940,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   wave10:
+    name: Build dependency level 11 · ${{ matrix.source }}
     needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7, wave8, wave9]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled10 == 'true' }}
     strategy:
@@ -1016,6 +1027,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   wave11:
+    name: Build dependency level 12 · ${{ matrix.source }}
     needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7, wave8, wave9, wave10]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled11 == 'true' }}
     strategy:
@@ -1102,6 +1114,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   tests0:
+    name: Test dependency level 1 packages
     needs: [plan, wave0]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled0 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
@@ -1109,6 +1122,7 @@ jobs:
       sources: ${{ needs.plan.outputs.wave0 }}
 
   tests1:
+    name: Test dependency level 2 packages
     needs: [plan, wave1]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled1 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
@@ -1116,6 +1130,7 @@ jobs:
       sources: ${{ needs.plan.outputs.wave1 }}
 
   tests2:
+    name: Test dependency level 3 packages
     needs: [plan, wave2]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled2 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
@@ -1123,6 +1138,7 @@ jobs:
       sources: ${{ needs.plan.outputs.wave2 }}
 
   tests3:
+    name: Test dependency level 4 packages
     needs: [plan, wave3]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled3 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
@@ -1130,6 +1146,7 @@ jobs:
       sources: ${{ needs.plan.outputs.wave3 }}
 
   tests4:
+    name: Test dependency level 5 packages
     needs: [plan, wave4]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled4 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
@@ -1137,6 +1154,7 @@ jobs:
       sources: ${{ needs.plan.outputs.wave4 }}
 
   tests5:
+    name: Test dependency level 6 packages
     needs: [plan, wave5]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled5 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
@@ -1144,6 +1162,7 @@ jobs:
       sources: ${{ needs.plan.outputs.wave5 }}
 
   tests6:
+    name: Test dependency level 7 packages
     needs: [plan, wave6]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled6 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
@@ -1151,6 +1170,7 @@ jobs:
       sources: ${{ needs.plan.outputs.wave6 }}
 
   tests7:
+    name: Test dependency level 8 packages
     needs: [plan, wave7]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled7 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
@@ -1158,6 +1178,7 @@ jobs:
       sources: ${{ needs.plan.outputs.wave7 }}
 
   tests8:
+    name: Test dependency level 9 packages
     needs: [plan, wave8]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled8 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
@@ -1165,6 +1186,7 @@ jobs:
       sources: ${{ needs.plan.outputs.wave8 }}
 
   tests9:
+    name: Test dependency level 10 packages
     needs: [plan, wave9]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled9 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
@@ -1172,6 +1194,7 @@ jobs:
       sources: ${{ needs.plan.outputs.wave9 }}
 
   tests10:
+    name: Test dependency level 11 packages
     needs: [plan, wave10]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled10 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
@@ -1179,6 +1202,7 @@ jobs:
       sources: ${{ needs.plan.outputs.wave10 }}
 
   tests11:
+    name: Test dependency level 12 packages
     needs: [plan, wave11]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.enabled11 == 'true' }}
     uses: ./.github/workflows/hibiscus-autopkgtest.yml
@@ -1186,6 +1210,7 @@ jobs:
       sources: ${{ needs.plan.outputs.wave11 }}
 
   summary:
+    name: Summarize all package and test results
     needs: [plan, wave0, wave1, wave2, wave3, wave4, wave5, wave6, wave7, wave8, wave9, wave10, wave11, tests0, tests1, tests2, tests3, tests4, tests5, tests6, tests7, tests8, tests9, tests10, tests11]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' }}
     runs-on: ubuntu-24.04
