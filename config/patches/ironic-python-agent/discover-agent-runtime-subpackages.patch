@@ -1,0 +1,22 @@
+Description: Include agent runtime subpackages in wheels
+Forwarded: no
+
+Explicit root-only setuptools packages omits runtime subpackages including cmd, extensions and metrics_lib. Discover all agent runtime subpackages, excluding tests from installed contents; source unit tests remain unchanged.
+
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -68,8 +68,12 @@
+ [tool.pbr]
+ autodoc_index_modules = true
+ 
+-[tool.setuptools]
+-packages = ["ironic_python_agent"]
++[tool.setuptools.exclude-package-data]
++ironic_python_agent = ["tests/*", "tests/**/*"]
++
++[tool.setuptools.packages.find]
++include = ["ironic_python_agent*"]
++exclude = ["ironic_python_agent.tests*"]
+ 
+ [tool.ruff]
+ line-length = 79

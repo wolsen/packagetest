@@ -1,0 +1,43 @@
+#!/usr/bin/make -f
+
+include /usr/share/openstack-pkg-tools/pkgos.make
+
+IPA_CONF=$(CURDIR)/debian/ironic-python-agent/etc/ironic-python-agent/ironic-python-agent.conf
+
+%:
+	dh $@ --buildsystem=pybuild --with python3
+
+override_dh_auto_build:
+	echo "Do nothing..."
+
+override_dh_auto_test:
+	echo "Do nothing..."
+
+override_dh_auto_install:
+	echo "Do nothing..."
+
+override_dh_auto_clean:
+	rm -rf *.egg-info build
+	rm -f debian/*.init debian/*.service
+	find .  -type d -name __pycache__ -exec rm -r {} \+
+
+override_dh_install:
+	touch ironic_python_agent/metrics_lib/__init__.py
+	pkgos-dh_auto_install --no-py2 --in-tmp
+
+ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
+	# Failing under riscv:
+	# extensions.test_standby.TestStandbyExtension.test_execute_bootc_install
+	pkgos-dh_auto_test --no-py2 'ironic_python_agent\.tests\.unit\.(?!test_inspector\.TestWaitForDhcp\.test_timeout|extensions\.test_standby\.TestStandbyExtension\.test_execute_bootc_install)'
+endif
+	mkdir -p $(CURDIR)/debian/ironic-python-agent/etc/ironic-python-agent
+	PYTHONPATH=$(CURDIR)/debian/tmp/usr/lib/python3/dist-packages oslo-config-generator \
+		--output-file $(IPA_CONF) \
+		--wrap-width 140 \
+		--namespace ironic-python-agent
+	dh_install
+
+	pkgos-fix-config-default $(IPA_CONF) DEFAULT collect_lldp true
+
+override_dh_python3:
+	dh_python3 --shebang=/usr/bin/python3

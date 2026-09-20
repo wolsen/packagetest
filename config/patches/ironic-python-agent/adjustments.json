@@ -8,5 +8,30 @@
       "upstream_file_sha256": "16bd65b8f52afc09f60121e05fa62f1faee41347727c85da0e6b9520c8856137",
       "reason": "Restore upstream RAID skip-list tests: upstream rewrote and expanded this coverage alongside skip-block-device fixes d4391345 and88f03538. Do not remove newly maintained tests using the2023 archive workaround."
     }
+  ],
+  "replace_files": [
+    {
+      "name": "patches/series",
+      "sha256": "4ef168fe5c4ea4a1f1ed68914c3f6d8c7b62ae82a0ba1da3981d38b991cb8c14",
+      "replacement": "series",
+      "replacement_sha256": "871d978bbd9daeeba9b699ae76acf5f96de8fa58bae23cc86a2b211dc4701cd2",
+      "reason": "Enable package discovery fix while retaining archive patches."
+    },
+    {
+      "name": "rules",
+      "sha256": "bdb8d93f1d9e77569e80f429cfbe41d0edd9992a9fcae44d09e13e1d3753c2a7",
+      "replacement": "rules",
+      "replacement_sha256": "ca637903754a73a96fe6eb5529989d9240231f366e6eb543f9024b0b818af14f",
+      "reason": "Apply collect_lldp default to the IPA_CONF generated above; NOVA_CONF is undefined in this agent package."
+    }
+  ],
+  "add_files": [
+    {
+      "name": "patches/discover-agent-runtime-subpackages.patch",
+      "replacement": "discover-agent-runtime-subpackages.patch",
+      "replacement_sha256": "334374d20b3be6fc5360cfdfa4fc396947bcb119cd63ba1ff3fd96f87d008fcd",
+      "mode": "0644",
+      "reason": "Explicit root-only setuptools packages omits runtime subpackages including cmd, extensions and metrics_lib. Discover all agent runtime subpackages, excluding tests from installed contents; source unit tests remain unchanged."
+    }
   ]
 }
