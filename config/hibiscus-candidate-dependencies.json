@@ -1,0 +1,17 @@
+[
+  {
+    "source": "python-oslo.service",
+    "dependency": "python-oslo.config",
+    "reason": "Spawn-worker serialization requires ConfigOptsSerializationError, introduced by oslo.config commit 4c77204 and released in 10.6.0; Resolute's bootstrap version lacks it."
+  },
+  {
+    "source": "python-manilaclient",
+    "dependency": "python-openstackclient",
+    "reason": "Snapshot tests require FakeIdentityClient, renamed by OpenStack Client commit afc5135680323b141ef179307c01018a0fd3b671 and released in 10.1.0. Bootstrap the reverse documentation dependency instead."
+  },
+  {
+    "source": "python-openstackclient",
+    "dependency": "python-openstacksdk",
+    "reason": "Snapshot commands require openstack.block_storage.v3.message (SDK commit e997af6fd72086419ebd89b4fcd4259390fccb4f); the pinned client requires SDK >= 4.19.0. Use the candidate SDK before building the client."
+  }
+]

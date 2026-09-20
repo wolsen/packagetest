@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "f61045b8e64b83f479d4cefc630b44795062fc64c76749481167d593c2839e2b",
+  "replace_files": [
+    {
+      "name": "rules",
+      "sha256": "f99935e430fc803e0050382fce60182b10c208cd7d68f75e6d15c6971042d0c6",
+      "replacement": "rules",
+      "replacement_sha256": "8a0f9ab58799cafe62f9d82917d1b2d7c6c7a4ffddd6f4f2475a27c1f1ca13e6",
+      "reason": "Upstream ironicclient.__init__ obtains its version from importlib.metadata. Regenerate candidate egg-info after clean removes it and keep its source directory on PYTHONPATH during complete unit testing; do not fall back to archive metadata or skip tests."
+    }
+  ]
+}

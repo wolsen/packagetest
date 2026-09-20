@@ -27,6 +27,14 @@ def dependencies(entries, source):
     return result
 
 
+def required_versions(source_fields, producers):
+    """Select exact producer versions from the adapted source's dependencies."""
+    names = dependency_names(', '.join(source_fields.get(key, '') for key in
+                             ('Build-Depends', 'Build-Depends-Indep', 'Build-Depends-Arch')))
+    return {binary['package']: binary['version'] for binaries in producers.values()
+            for binary in binaries if binary['package'] in names}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--catalog', type=Path, required=True)
@@ -70,10 +78,11 @@ def main():
         state['stage'] = 'snapshot-source'
         prepared = prepare_source(entry, args.output / 'source-preparation')
         dsc = Path(prepared['dsc'])
-        version = fields(dsc)['Version']
-        build_names = dependency_names(entry['build_depends'])
-        versions = {b['package']: b['version'] for binaries in producers.values() for b in binaries
-                    if b['package'] in build_names}
+        source_fields = fields(dsc)
+        version = source_fields['Version']
+        # Reviewed packaging adaptations can add or tighten dependencies. Pin
+        # the dependencies of the source we actually build, not its baseline.
+        versions = required_versions(source_fields, producers)
         package = {'source': args.source, 'version': version, 'expected_binaries': entry['binaries'],
                    'external_dependencies': sorted(producers), 'required_build_versions': versions,
                    'input': {'kind': 'prepared-snapshot', 'dsc_sha256': sha256(dsc),

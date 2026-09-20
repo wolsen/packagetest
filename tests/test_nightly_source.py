@@ -123,3 +123,55 @@ def test_replacement_packaging_requires_both_checksums(tmp_path):
     assert original.read_text() == 'new rules\n'
     with pytest.raises(ValueError, match='checksum guard'):
         packaging_adjustments(entry, tree, cfg.parent)
+
+
+def test_add_packaging_tests_are_guarded_and_keep_explicit_mode(tmp_path):
+    import hashlib
+    import json
+    from packagetest.nightly_source import packaging_adjustments
+    tree = tmp_path / 'source'
+    (tree / 'debian').mkdir(parents=True)
+    config = tmp_path / 'config' / 'demo'
+    config.mkdir(parents=True)
+    content = b'#!/bin/sh\necho tested\n'
+    (config / 'script').write_bytes(content)
+    entry = {'source': 'demo', 'archive_source': {'sha256': 'a' * 64}}
+    item = {'name': 'tests/run', 'replacement': 'script', 'mode': '0755',
+            'replacement_sha256': hashlib.sha256(content).hexdigest()}
+    spec = {'archive_dsc_sha256': 'a' * 64, 'add_files': [item]}
+    (config / 'adjustments.json').write_text(json.dumps(spec))
+    assert packaging_adjustments(entry, tree, config.parent)[0]['action'] == 'add-packaging-file'
+    assert (tree / 'debian/tests/run').read_bytes() == content
+    assert (tree / 'debian/tests/run').stat().st_mode & 0o777 == 0o755
+    with pytest.raises(ValueError, match='already exists'):
+        packaging_adjustments(entry, tree, config.parent)
+
+
+@pytest.mark.parametrize('violation', ['traversal', 'digest', 'mode', 'destination-symlink', 'replacement-symlink'])
+def test_add_packaging_tests_reject_unsafe_destinations_and_content(tmp_path, violation):
+    import hashlib
+    import json
+    from packagetest.nightly_source import packaging_adjustments
+    tree = tmp_path / 'source'
+    (tree / 'debian').mkdir(parents=True)
+    config = tmp_path / 'config' / 'demo'
+    config.mkdir(parents=True)
+    content = b'candidate test'
+    (config / 'script').write_bytes(content)
+    item = {'name': 'tests/run', 'replacement': 'script', 'mode': '0755',
+            'replacement_sha256': hashlib.sha256(content).hexdigest()}
+    if violation == 'traversal':
+        item['name'] = '../outside'
+    elif violation == 'digest':
+        item['replacement_sha256'] = '0' * 64
+    elif violation == 'mode':
+        item['mode'] = '4755'
+    elif violation == 'destination-symlink':
+        (tree / 'debian/tests').symlink_to(tmp_path, target_is_directory=True)
+    else:
+        (config / 'script').rename(config / 'real')
+        (config / 'script').symlink_to(config / 'real')
+    (config / 'adjustments.json').write_text(json.dumps({'archive_dsc_sha256': 'a' * 64, 'add_files': [item]}))
+    with pytest.raises(ValueError):
+        packaging_adjustments({'source': 'demo', 'archive_source': {'sha256': 'a' * 64}}, tree, config.parent)
+    assert not (tree / 'debian/tests/run').exists()

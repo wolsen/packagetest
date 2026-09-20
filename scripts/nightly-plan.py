@@ -44,7 +44,7 @@ def components(graph):
     return result
 
 
-def plan_catalog(catalog, sources=None, max_waves=12):
+def plan_catalog(catalog, sources=None, max_waves=12, candidate_dependencies=()):
     catalog = json.loads(json.dumps(catalog))
     entries = {p['source']: p for p in catalog['packages']}
     if len(entries) != len(catalog['packages']):
@@ -66,6 +66,22 @@ def plan_catalog(catalog, sources=None, max_waves=12):
                 for dep in sorted(graph[source] & members):
                     graph[source].remove(dep)
                     bootstrap.append({'source': source, 'dependency': dep, 'reason': 'dependency cycle bootstrap', 'component': group})
+    # Some snapshot APIs are newer than the archive bootstrap packages. Retain
+    # reviewed mandatory candidate edges even inside a cyclic component; the
+    # reverse (often documentation-only) edge can still use the archive.
+    for constraint in candidate_dependencies:
+        source, dep = constraint['source'], constraint['dependency']
+        if source not in entries or dep not in entries:
+            raise ValueError(f'Unknown mandatory candidate dependency: {source} -> {dep}')
+        if dep not in entries[source]['build_dependencies']:
+            raise ValueError(f'Mandatory candidate is not a declared build dependency: {source} -> {dep}')
+        if source not in selected:
+            continue
+        if dep not in selected:
+            raise ValueError(f'{source} requires candidate {dep}; include it in the selected sources')
+        graph[source].add(dep)
+        bootstrap = [edge for edge in bootstrap if (edge['source'], edge['dependency']) != (source, dep)]
+        entries[source].setdefault('required_candidate_dependencies', {})[dep] = constraint['reason']
     completed, waves = set(), []
     while len(completed) < len(graph):
         wave = sorted(s for s, deps in graph.items() if s not in completed and deps <= completed)
@@ -117,6 +133,8 @@ def main():
     parser.add_argument('--sources', default='', help='Comma-separated pilot sources; omitted selects entire catalog')
     parser.add_argument('--no-resolve', action='store_true', help='Offline graph inspection only; not a buildable frozen catalog')
     parser.add_argument('--max-waves', type=int, default=12)
+    parser.add_argument('--candidate-dependencies', type=Path,
+                        default=Path(__file__).resolve().parents[1] / 'config/hibiscus-candidate-dependencies.json')
     parser.add_argument('--dependency-pattern', help='Emit artifact download pattern for one frozen catalog source')
     parser.add_argument('--include-self', action='store_true')
     parser.add_argument('--summary-inputs', type=Path)
@@ -166,7 +184,8 @@ def main():
                 handle.write('needed=' + ('true' if names else 'false') + '\n')
         print(pattern)
         return
-    catalog, plan = plan_catalog(json.loads(args.catalog.read_text()), [s.strip() for s in args.sources.split(',') if s.strip()] or None, args.max_waves)
+    constraints = json.loads(args.candidate_dependencies.read_text())
+    catalog, plan = plan_catalog(json.loads(args.catalog.read_text()), [s.strip() for s in args.sources.split(',') if s.strip()] or None, args.max_waves, constraints)
     if not args.no_resolve:
         with ThreadPoolExecutor(max_workers=16) as workers:
             catalog['packages'] = list(workers.map(freeze, catalog['packages']))

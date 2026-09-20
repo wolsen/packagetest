@@ -1,0 +1,47 @@
+#!/usr/bin/make -f
+
+export PYBUILD_NAME=oslo_config
+
+LAST_CHANGE = $(shell dpkg-parsechangelog -S Date)
+BUILD_DATE  = $(shell LC_ALL=C date -u "+%B %d, %Y" -d "$(LAST_CHANGE)")
+SPHINXOPTS := -D html_last_updated_fmt="$(BUILD_DATE)"
+
+UPSTREAM_GIT := https://github.com/openstack/oslo.config.git
+include /usr/share/openstack-pkg-tools/pkgos.make
+
+%:
+	dh $@ --buildsystem=pybuild --with python3,sphinxdoc
+
+override_dh_auto_clean:
+	rm -rf build
+
+override_dh_auto_build:
+	echo "Do nothing..."
+
+override_dh_auto_install:
+	pkgos-dh_auto_install --no-py2
+	# This is Python str.format input, not an executable shell script.
+	# Its escaped braces become valid Bash after ConfigOpts renders it.
+	install -d debian/python3-oslo.config/usr/share/lintian/overrides
+	printf '%s\n' '# Python format template; rendered completions are syntax-checked separately.' 'python3-oslo.config: shell-script-fails-syntax-check [usr/lib/python3/dist-packages/oslo_config/sources/templates/bash-completion.template]' > debian/python3-oslo.config/usr/share/lintian/overrides/python3-oslo.config
+
+override_dh_python3:
+	dh_python3 --shebang=/usr/bin/python3
+
+override_dh_auto_test:
+ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
+	pkgos-dh_auto_test --no-py2 'oslo_config\.tests\.(?!.*test_generator\.IgnoreDoublesTestCase\.test_list_ignores_doubles.*)'
+endif
+
+override_dh_sphinxdoc:
+ifeq (,$(findstring nodocs, $(DEB_BUILD_OPTIONS)))
+	if PYTHONPATH=$(CURDIR) PYTHON=python3 python3 -m sphinx $(SPHINXOPTS) -b html doc/source $(CURDIR)/debian/python-oslo.config-doc/usr/share/doc/python-oslo.config-doc/html ; then \
+		echo "Sphinx doc built." ; \
+	else \
+		echo "Error building doc." ; \
+		cat /tmp/sphinx-err* ; \
+		exit 1 ; \
+	fi
+	dh_sphinxdoc -O--buildsystem=pybuild
+endif
+

@@ -8,5 +8,14 @@
       "upstream_file_sha256": "5eaca5f8c46d6cb6af09053006985a252e524bc5abbecd7f85f7f8509e2a0e68",
       "reason": "Upstream test_sub_command_multiple already checks Python3.14 ValueError, Python3.12.5 ArgumentError and older SystemExit; keep its current test and stderr fixture unchanged."
     }
+  ],
+  "replace_files": [
+    {
+      "name": "rules",
+      "sha256": "cc7e519ae5d86fdfbbaa74a9b48f475602930defe0e29d23f111e495b39a6848",
+      "replacement": "rules",
+      "replacement_sha256": "e57345dc42c8cf9c1ddc8f7f59def344e7cde6d8f627dd940c49d4090bd29aaf",
+      "reason": "The shipped Bash completion is Python str.format template data with doubled braces and substitution fields. Preserve the template and restrict the syntax-check exception to this exact file. Validated three actual ConfigOpts renderings with bash -n and executed option completion successfully."
+    }
   ]
 }

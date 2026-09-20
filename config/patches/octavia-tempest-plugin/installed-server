@@ -1,0 +1,53 @@
+#!/usr/bin/python3
+"""Exercise the installed Go helper used by Octavia Tempest guest images."""
+import os
+from pathlib import Path
+import socket
+import subprocess
+import time
+import urllib.error
+import urllib.request
+
+# Resolve the packaged executable without importing the source checkout.
+files = subprocess.check_output(['dpkg-query', '-L', 'octavia-tempest-plugin'], text=True).splitlines()
+servers = [Path(p) for p in files if p.endswith('/contrib/test_server/test_server.bin')]
+assert len(servers) == 1 and os.access(servers[0], os.X_OK), servers
+with socket.socket() as probe:
+    probe.bind(('127.0.0.1', 0))
+    port = probe.getsockname()[1]
+identity = 'packagetest-installed-octavia'
+process = subprocess.Popen([str(servers[0]), '-port', str(port), '-id', identity])
+client = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+base = f'http://127.0.0.1:{port}'
+try:
+    deadline = time.monotonic() + 15
+    while True:
+        assert process.poll() is None, 'Packaged test server exited during startup'
+        try:
+            response = client.open(base + '/', timeout=2)
+            break
+        except urllib.error.URLError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.1)
+    with response:
+        assert response.status == 200
+        assert response.read().decode() == identity
+        assert response.headers['Set-Cookie'].startswith('JSESSIONID=' + identity)
+    with client.open(base + '/request?response_code=201', timeout=2) as response:
+        body = response.read().decode()
+        assert response.status == 201 and body.endswith(identity), body
+        assert body.startswith('GET /request?response_code=201 HTTP/1.1'), body
+    with client.open(base + '/stats', timeout=2) as response:
+        stats = dict(line.split('=') for line in response.read().decode().splitlines())
+        assert int(stats['totalConn']) >= 2, stats
+    with client.open(base + '/reset', timeout=2) as response:
+        assert response.read() == b'reset\n'
+    print('Installed Go helper: response, session cookie, request status, counters and reset passed')
+finally:
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()

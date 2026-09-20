@@ -15,5 +15,28 @@
       "replacement_sha256": "3c570e465b95fb95dbbc52918a0cd0c2dfab61947c5c4be3035cfdb76a8cfd7c",
       "reason": "Keep compiling the supplied Go source, disable implicit toolchain/module downloads, and record exact standard-library source provenance. A single-path static-link exception is intentional because Tempest uploads this helper into guest images including CirrOS; dynamically linking Ubuntu libc would break portability. All other Lintian errors remain enabled."
     }
+  ],
+  "add_files": [
+    {
+      "name": "tests/control",
+      "replacement": "tests-control",
+      "replacement_sha256": "78099393c4bb6fd4ccb56a4ef61a8ebc938eaf80e08a738ecde30052d074ddc5",
+      "mode": "0644",
+      "reason": "Explicit installed-package tests for Python Tempest plugin and its embedded Go helper replace autodep8 incorrect Go-library inference. No deployment or full regress-stack run required."
+    },
+    {
+      "name": "tests/installed-server",
+      "replacement": "installed-server",
+      "replacement_sha256": "967bd296a18a4d3675dbfcfb549d909e40400f50cc2df00cace971159a19d0ea",
+      "mode": "0755",
+      "reason": "Explicit installed-package tests for Python Tempest plugin and its embedded Go helper replace autodep8 incorrect Go-library inference. No deployment or full regress-stack run required."
+    },
+    {
+      "name": "tests/plugin-registration",
+      "replacement": "plugin-registration",
+      "replacement_sha256": "b4c63ba9eaf5d5635d329a86dde71bacc62891ebefb14949caa00e59905fca5b",
+      "mode": "0755",
+      "reason": "Explicit installed-package tests for Python Tempest plugin and its embedded Go helper replace autodep8 incorrect Go-library inference. No deployment or full regress-stack run required."
+    }
   ]
 }

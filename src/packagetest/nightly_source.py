@@ -102,6 +102,28 @@ def packaging_adjustments(entry: dict, tree: Path, config_root: Path | None = No
             raise ValueError('Packaging adaptation checksum guard failed: ' + str(name))
         shutil.copyfile(revised, original)
         applied.append({'action': 'replace-packaging-file', **item})
+    for item in spec.get('add_files', []):
+        name, replacement = Path(item['name']), Path(item['replacement'])
+        if (not name.parts or not replacement.parts or name.is_absolute() or replacement.is_absolute()
+                or '..' in name.parts or '..' in replacement.parts):
+            raise ValueError('Unsafe packaging addition path')
+        destination = tree / 'debian' / name
+        revised = path.parent / replacement
+        if any(parent.is_symlink() for parent in [destination, *destination.parents]):
+            raise ValueError('Symlink in packaging addition destination')
+        if any(parent.is_symlink() for parent in [revised, *revised.parents]):
+            raise ValueError('Symlink in packaging addition replacement')
+        if destination.exists():
+            raise ValueError('Packaging addition destination already exists: ' + str(name))
+        if item.get('mode') not in {'0644', '0755'}:
+            raise ValueError('Packaging addition requires explicit mode 0644 or 0755')
+        if sha256(revised) != item['replacement_sha256']:
+            raise ValueError('Packaging addition checksum guard failed: ' + str(name))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with destination.open('xb') as handle:
+            handle.write(revised.read_bytes())
+        destination.chmod(int(item['mode'], 8))
+        applied.append({'action': 'add-packaging-file', **item})
     if not spec.get('drop_patches'):
         return applied
     series_path = tree / 'debian' / 'patches' / 'series'

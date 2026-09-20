@@ -1,0 +1,35 @@
+#!/usr/bin/make -f
+
+include /usr/share/openstack-pkg-tools/pkgos.make
+
+# Keep candidate package metadata visible when test processes change directories.
+export PYTHONPATH := $(CURDIR)
+
+%:
+	dh $@  --with python3,sphinxdoc
+
+override_dh_auto_clean:
+	rm -rf build .stestr *.egg-info doc/source/reference/api
+	find . -iname '*.pyc' -delete
+	for i in $$(find . -type d -iname __pycache__) ; do rm -rf $$i ; done
+
+override_dh_auto_build:
+	# Importing ironicclient now queries importlib.metadata for its version.
+	python3 setup.py egg_info
+
+override_dh_auto_install:
+	pkgos-dh_auto_install --no-py2
+
+override_dh_auto_test:
+ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
+	pkgos-dh_auto_test --no-py2
+endif
+
+override_dh_sphinxdoc:
+ifeq (,$(findstring nodocs, $(DEB_BUILD_OPTIONS)))
+	PYTHONPATH=. python3 -m sphinx -b html doc/source debian/python-ironicclient-doc/usr/share/doc/python-ironicclient-doc/html
+	dh_sphinxdoc
+endif
+
+override_dh_python3:
+	dh_python3 --shebang=/usr/bin/python3

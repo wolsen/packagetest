@@ -8,5 +8,14 @@
       "upstream_file_sha256": "a969b4539107561fb21f916c2c99f41dd973496f1d88e3e05824adacc33fa1f9",
       "reason": "Snapshot already imports annotations from __future__; subsequent import restructuring makes reverse patch context stale. Preserve existing postponed annotation semantics."
     }
+  ],
+  "replace_files": [
+    {
+      "name": "control",
+      "sha256": "440c0c34aca5720a31334a2ade33003d580ecc352f0aeec3a4e56c12d911f0e8",
+      "replacement": "control",
+      "replacement_sha256": "5fbc5f119ff3637e9c1daa4ef72a75ef0bcc4615261c21436fab71dfe7b6cf03",
+      "reason": "New upstream keyring tests require the keyring extra during build; keep auth caching optional at runtime through Suggests."
+    }
   ]
 }

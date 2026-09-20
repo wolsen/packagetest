@@ -1,0 +1,99 @@
+Source: python-manilaclient
+Section: python
+Priority: optional
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+XSBC-Original-Maintainer: Debian OpenStack <team+openstack@tracker.debian.org>
+Uploaders:
+ Thomas Goirand <zigo@debian.org>,
+Build-Depends:
+ debhelper-compat (= 11),
+ dh-python,
+ openstack-pkg-tools,
+ python3-all,
+ python3-pbr,
+ python3-setuptools,
+ python3-sphinx,
+Build-Depends-Indep:
+ python3-coverage,
+ python3-ddt,
+ python3-debtcollector,
+ python3-docutils,
+ python3-fixtures,
+ python3-hacking,
+ python3-iso8601,
+ python3-keystoneauth1,
+ python3-openstackclient (>= 10.1.0),
+ python3-openstackdocstheme,
+ python3-osc-lib,
+ python3-oslo.config,
+ python3-oslo.log,
+ python3-oslo.serialization,
+ python3-oslo.utils,
+ python3-oslotest,
+ python3-prettytable,
+ python3-requests,
+ python3-requests-mock,
+ python3-sphinxcontrib.programoutput,
+ python3-stestr,
+ python3-tempest,
+ python3-testtools,
+ subunit,
+Standards-Version: 4.5.1
+Vcs-Git: https://salsa.debian.org/openstack-team/clients/python-manilaclient.git
+Vcs-Browser: https://salsa.debian.org/openstack-team/clients/python-manilaclient
+Homepage: https://github.com/openstack/python-manilaclient
+
+Package: python-manilaclient-doc
+Section: doc
+Architecture: all
+Depends:
+ ${misc:Depends},
+ ${sphinxdoc:Depends},
+Description: OpenStack shared file system as a service - client doc
+ Manila is an OpenStack project to provide Shared Filesystems as a service.
+ It provides coordinated access to shared or distributed file systems. While
+ the primary consumption of file shares would be across OpenStack Compute
+ instances, the service is also intended to be accessible as an independent
+ capability in line with the modular design established by other OpenStack
+ services. Manila is extensible for multiple backends (to support vendor or
+ file system specific nuances / capabilities) and accommodates any of a
+ variety of shared or distributed file system types.
+ .
+ This package contains the Python client library and command line tool
+ documentation.
+
+Package: python3-manilaclient
+Architecture: all
+Depends:
+ python3-debtcollector,
+ python3-docutils,
+ python3-iso8601,
+ python3-keystoneauth1,
+ python3-osc-lib,
+ python3-oslo.config,
+ python3-oslo.log,
+ python3-oslo.serialization,
+ python3-oslo.utils,
+ python3-pbr,
+ python3-prettytable,
+ python3-requests,
+ ${misc:Depends},
+ ${python3:Depends},
+Breaks:
+ python-manilaclient,
+Replaces:
+ python-manilaclient,
+Recommends:
+ python-manilaclient-doc,
+Description: OpenStack shared file system as a service - Python 3.x client
+ Manila is an OpenStack project to provide Shared Filesystems as a service.
+ It provides coordinated access to shared or distributed file systems. While
+ the primary consumption of file shares would be across OpenStack Compute
+ instances, the service is also intended to be accessible as an independent
+ capability in line with the modular design established by other OpenStack
+ services. Manila is extensible for multiple backends (to support vendor or
+ file system specific nuances / capabilities) and accommodates any of a
+ variety of shared or distributed file system types.
+ .
+ This package contains the Python client library and command line tool for
+ Manila and for Python 3.x.

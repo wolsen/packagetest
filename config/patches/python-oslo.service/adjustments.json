@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "4eab7b46eff76364e30adff3294a969e556a7239ee024b444d05046acf341be3",
+  "replace_files": [
+    {
+      "name": "control",
+      "sha256": "a37f718b130b4cad44870ece383511cfcaddff03d92ef427d3c68640fa6000b9",
+      "replacement": "control",
+      "replacement_sha256": "1bf9d2a6b94ef1749847b577f31c4f98f6a89aa1fae8f5f81846bc8e64e70cb1",
+      "reason": "Spawn worker configuration serialization requires ConfigOpts state snapshots introduced by oslo.config commit 4c77204, first released in 10.6.0. Require python3-oslo.config >= 1:10.6.0 for both builds and runtime; retain complete launcher tests and Ubuntu package epoch."
+    }
+  ]
+}

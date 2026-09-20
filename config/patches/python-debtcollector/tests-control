@@ -1,0 +1,4 @@
+Restrictions: superficial
+Depends:
+ python3-debtcollector,
+Test-Command: cd "$AUTOPKGTEST_TMP" ; python3 -c "import debtcollector; from importlib.metadata import version; package_version = version('debtcollector'); assert package_version; print(package_version)"

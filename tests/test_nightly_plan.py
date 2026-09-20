@@ -45,3 +45,21 @@ def test_resolution_failure_is_individual_and_never_branch_fallback(monkeypatch)
     assert result['upstream_sha'] is None
     assert result['upstream_resolution_error'] == 'network timed out'
     assert result['upstream_ref'] == 'stable/2026.2'
+
+
+def test_mandatory_candidate_restores_one_direction_of_cycle():
+    policy = [{'source': 'a', 'dependency': 'b', 'reason': 'new API'}]
+    frozen, plan = module.plan_catalog(catalog(), candidate_dependencies=policy)
+    assert plan['waves'] == [['b', 'd'], ['a'], ['c']]
+    assert {(e['source'], e['dependency']) for e in plan['archive_bootstrap_edges']} == {('b', 'a')}
+    assert frozen['packages'][0]['run_dependencies'] == ['b']
+    assert frozen['packages'][0]['required_candidate_dependencies'] == {'b': 'new API'}
+    with pytest.raises(ValueError, match='include it'):
+        module.plan_catalog(catalog(), ['a'], candidate_dependencies=policy)
+
+
+def test_mandatory_candidate_cycle_cannot_silently_bootstrap():
+    policy = [{'source': 'a', 'dependency': 'b', 'reason': 'new API'},
+              {'source': 'b', 'dependency': 'a', 'reason': 'new API'}]
+    with pytest.raises(ValueError, match='Unresolved dependency cycle'):
+        module.plan_catalog(catalog(), candidate_dependencies=policy)

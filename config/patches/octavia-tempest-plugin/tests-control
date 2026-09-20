@@ -1,0 +1,3 @@
+Tests: installed-server, plugin-registration
+Depends: @, python3
+Restrictions: allow-stderr

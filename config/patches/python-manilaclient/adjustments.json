@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "aaa35079a30461405871fadc6385c31c4c441726081aa1206cc03313f404b14e",
+  "replace_files": [
+    {
+      "name": "control",
+      "sha256": "55e5e05340cfdf385c659c094a274ddae6917d88d3afc8bf1372fca8947c6b42",
+      "replacement": "control",
+      "replacement_sha256": "b76ff8908c6609778a6d319f68928b9921a12336faf864f8455abec0134d4317",
+      "reason": "Hibiscus tests use OpenStackClient FakeIdentityClient, renamed from FakeIdentityv3Client by upstream afc5135680323b141ef179307c01018a0fd3b671 and first released in 10.1.0. Require that test dependency explicitly instead of disabling tests or aliasing incompatible archive fixtures."
+    }
+  ]
+}

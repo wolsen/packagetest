@@ -1,0 +1,122 @@
+Source: python-openstackclient
+Section: python
+Priority: optional
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+XSBC-Original-Maintainer: Debian OpenStack <team+openstack@tracker.debian.org>
+Uploaders:
+ Thomas Goirand <zigo@debian.org>,
+ Sakirnth Nagarasa <sakirnth@gmail.com>,
+Build-Depends:
+ debhelper-compat (= 11),
+ dh-python,
+ openstack-pkg-tools,
+ python3-all,
+ python3-pbr,
+ python3-setuptools,
+ python3-sphinx,
+Build-Depends-Indep:
+ python3-aodhclient <!nodoc>,
+ python3-barbicanclient <!nodoc>,
+ python3-cinderclient,
+ python3-cliff (>= 4.13.0),
+ python3-cloudkittyclient <!nodoc>,
+ python3-coverage,
+ python3-cryptography,
+ python3-ddt,
+ python3-designateclient <!nodoc>,
+ python3-fixtures,
+ python3-glanceclient,
+ python3-gnocchiclient <!nodoc>,
+ python3-hacking,
+ python3-heatclient <!nodoc>,
+ python3-ironic-inspector-client <!nodoc>,
+ python3-ironicclient <!nodoc>,
+ python3-iso8601,
+ python3-keystoneclient,
+ python3-manilaclient <!nodoc>,
+ python3-mistralclient <!nodoc>,
+ python3-neutronclient <!nodoc>,
+ python3-octaviaclient <!nodoc>,
+ python3-openstackdocstheme <!nodoc>,
+ python3-openstacksdk (>= 4.19.0),
+ python3-osc-lib,
+ python3-osc-placement,
+ python3-oslo.i18n,
+ python3-oslo.serialization,
+ python3-osprofiler,
+ python3-requests,
+ python3-requests-mock,
+ python3-searchlightclient <!nodoc>,
+ python3-simplejson,
+ python3-sphinxcontrib.apidoc <!nodoc>,
+ python3-stestr <!nocheck>,
+ python3-stevedore,
+ python3-subunit <!nocheck>,
+ python3-tempest <!nocheck>,
+ python3-testtools <!nocheck>,
+ python3-troveclient <!nodoc>,
+ python3-vmmsclient,
+ python3-watcherclient,
+ python3-wrapt,
+ python3-zaqarclient <!nodoc>,
+ python3-zunclient <!nocheck>,
+ python3-zunclient <!nodoc>,
+ subunit,
+Standards-Version: 4.4.1
+Vcs-Browser: https://salsa.debian.org/openstack-team/clients/python-openstackclient
+Vcs-Git: https://salsa.debian.org/openstack-team/clients/python-openstackclient.git
+Homepage: http://wiki.openstack.org/OpenStackClient
+
+Package: python-openstackclient-doc
+Build-Profiles: <!nodoc>
+Section: doc
+Architecture: all
+Depends:
+ ${misc:Depends},
+ ${sphinxdoc:Depends},
+Description: OpenStack Command-line Client - doc
+ python-openstackclient is a unified command-line client for the OpenStack APIs.
+ It is a thin wrapper to the stock python-*client modules that implement the
+ actual REST API client actions.
+ .
+ This is an implementation of the design goals shown in
+ http://wiki.openstack.org/UnifiedCLI.  The primary goal is to provide
+ a unified shell command structure and a common language to describe
+ operations in OpenStack.
+ .
+ This package contains the documentation.
+
+Package: python3-openstackclient
+Architecture: all
+Depends:
+ python3-cinderclient,
+ python3-cliff (>= 4.13.0),
+ python3-cryptography,
+ python3-glanceclient,
+ python3-iso8601,
+ python3-keystoneclient,
+ python3-neutronclient,
+ python3-openstacksdk (>= 4.19.0),
+ python3-osc-lib,
+ python3-oslo.i18n,
+ python3-oslo.serialization,
+ python3-pbr,
+ python3-requests,
+ python3-simplejson,
+ python3-stevedore,
+ ${misc:Depends},
+ ${python3:Depends},
+Recommends:
+ python-openstackclient-doc,
+ ${python3:Recommends},
+Description: OpenStack Command-line Client - Python 3.x
+ python-openstackclient is a unified command-line client for the OpenStack APIs.
+ It is a thin wrapper to the stock python-*client modules that implement the
+ actual REST API client actions.
+ .
+ This is an implementation of the design goals shown in
+ http://wiki.openstack.org/UnifiedCLI.  The primary goal is to provide
+ a unified shell command structure and a common language to describe
+ operations in OpenStack.
+ .
+ This package contains the Python 3.x module.

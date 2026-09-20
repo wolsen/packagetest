@@ -14,6 +14,8 @@ The initial graph has eight waves, each allowing 20 concurrent jobs subject to r
 
 Cycles are recorded as archive bootstrap edges. Those dependencies use archive packages for the first build. A subsequent rebuild of cyclic components is required before claiming the complete set was built against candidate dependencies.
 
+`config/hibiscus-candidate-dependencies.json` preserves reviewed dependencies that cannot use archive versions, even inside a cycle. For example, Manila Client requires the candidate OpenStack Client test fixtures, and oslo.service requires the candidate oslo.config serialization API. The reverse cycle edges can still bootstrap from the archive. An explicit pilot must include these mandatory candidates; incompatible mandatory cycles fail planning rather than silently falling back.
+
 Consumers validate artifact run ID, attempt, target, frozen catalog entry, checksums, and Debian metadata. They reconstruct an APT repository and supply verified binaries to sbuild. Required versions are checked against buildinfo. Artifacts from older attempts are rejected; retry the whole workflow for dependency chains.
 
 ## Tests and reports

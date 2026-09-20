@@ -1,0 +1,26 @@
+#!/usr/bin/python3
+"""Check installed Tempest plugin discovery and configuration registration."""
+import importlib.metadata
+import os
+from pathlib import Path
+import sys
+
+# Do not import modules from the source tree under autopkgtest's working directory.
+os.chdir('/tmp')
+sys.path = [entry for entry in sys.path if entry and not entry.startswith(os.environ.get('AUTOPKGTEST_TMP', '/nonexistent'))]
+from oslo_config import cfg
+from tempest.test_discover import plugins
+
+matches = [entry for entry in importlib.metadata.entry_points(group='tempest.test_plugins')
+           if entry.name == 'octavia-tempest-plugin']
+assert len(matches) == 1, matches
+plugin = matches[0].load()()
+assert isinstance(plugin, plugins.TempestPlugin)
+test_dir, base_dir = plugin.load_tests()
+assert Path(test_dir).is_dir() and Path(test_dir).is_relative_to('/usr/lib/python3/dist-packages')
+assert any(Path(test_dir).rglob('test_*.py')), test_dir
+conf = cfg.ConfigOpts()
+plugin.register_opts(conf)
+assert conf.load_balancer is not None
+assert {'load_balancer', 'service_available', 'loadbalancer-feature-enabled'} <= {name for name, options in plugin.get_opt_lists()}
+print('Installed Octavia plugin discovery, shipped tests and configuration registration passed')

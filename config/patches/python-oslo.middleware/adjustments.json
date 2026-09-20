@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "c0e261f9449bdd626391987a9278f60e9d4993a9207b8bb7aa80a080656d297e",
+  "replace_files": [
+    {
+      "name": "control",
+      "sha256": "7bd6e6ca4e699083be5316b4264895fa84d57042d65c008c4b374d49d2bf526f",
+      "replacement": "control",
+      "replacement_sha256": "8fad8e40002e541cd2c5d0935843f86e7ce19c155c1bde1d9f2e291f9a929775",
+      "reason": "New tracing tests require SDK and both HTTP/gRPC exporters. Declare complete test dependencies and expose optional tracing runtime packages with Suggests, retaining upstream disabled-by-default semantics."
+    }
+  ]
+}

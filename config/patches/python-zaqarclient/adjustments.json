@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "7d54ca02bea2accf8b0df4efaa6f6c3958482db0bfba850728c970b4bc4bbf26",
+  "replace_files": [
+    {
+      "name": "control",
+      "sha256": "1252afb4a5fc70a69a9c801bbcea4f3e1e998b796e464506ca3c639b042bb881",
+      "replacement": "control",
+      "replacement_sha256": "6b6b66cf37f4dd19d5bd2864f310dea80c10d5e457f1596d53ee4b1f5c2d7047",
+      "reason": "Upstream websocket transport unit tests require websocket-client; declare its Ubuntu package for builds and suggest it for the optional runtime transport."
+    }
+  ]
+}

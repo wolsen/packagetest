@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "d118aff93ecca0bc448d74e11ff87184b3496c2d0a15f71f8dbdbd263ede49a4",
+  "replace_files": [
+    {
+      "name": "tests/control",
+      "sha256": "9e6af67f17cd5165ac190b3a26c3048740598536caf5077a5faf4e9753b389e2",
+      "replacement": "tests-control",
+      "replacement_sha256": "f19fcd75cecc9960326f969d2d4fe67cd18992fb4a6c309238bb548197e9d557",
+      "reason": "Use supported importlib.metadata.version API instead of deprecated debtcollector.__version__. Retain module import, assert non-empty installed distribution version, and keep the existing superficial restriction. No stderr allowance or warning suppression."
+    }
+  ]
+}
