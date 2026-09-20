@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "922856a7142148802be038d75a93d3dc44b67885a0e3b80c2f2223620757a50b",
+  "replace_files": [
+    {
+      "name": "control",
+      "sha256": "cab559c168de3c4395f3a5f5eb1634565009dba5c810af258f860cd9e33c0162",
+      "replacement": "control",
+      "replacement_sha256": "786b4bc2e885d6335f76932139e8ab260723fda44157132cd475cf4d9c0415ac",
+      "reason": "Pinned upstream test-requirements.txt requires mypy>=1.19.0; new mypy plugin unit/integration tests import mypy.nodes and mypy.api at discovery. Add the Resolute python3-mypy build dependency (available1.19.1), preserving every test and keeping this development tool out of mandatory runtime dependencies."
+    }
+  ]
+}

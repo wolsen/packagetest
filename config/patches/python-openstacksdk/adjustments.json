@@ -14,8 +14,24 @@
       "name": "control",
       "sha256": "440c0c34aca5720a31334a2ade33003d580ecc352f0aeec3a4e56c12d911f0e8",
       "replacement": "control",
-      "replacement_sha256": "5fbc5f119ff3637e9c1daa4ef72a75ef0bcc4615261c21436fab71dfe7b6cf03",
-      "reason": "New upstream keyring tests require the keyring extra during build; keep auth caching optional at runtime through Suggests."
+      "replacement_sha256": "da55adcccfc89ac43f5c353bc609068c5256c1b4902489b9a0137df951da1ddf",
+      "reason": "New upstream keyring tests require the keyring extra during build; keep auth caching optional at runtime through Suggests. Match pinned pyproject minima keystoneauth1>=5.16.0 (BaseAuthPlugin.get_unscoped_cache_id, first released5.16.0) and os-service-types>=1.8.1 for builds and runtime."
+    },
+    {
+      "name": "patches/series",
+      "sha256": "60411a38ac200a21294865f576a990414c0360def1e5b040984a72d24b4b31ba",
+      "replacement": "series",
+      "replacement_sha256": "e621a3c4e12df5349bc6c809551ecf0017b23f88df9b75fd7fcab2a2a288e499",
+      "reason": "Enable the isolated service catalog compatibility test patch while retaining the archive patch sequence."
+    }
+  ],
+  "add_files": [
+    {
+      "name": "patches/allow-newer-service-type-catalog.patch",
+      "replacement": "allow-newer-service-type-catalog.patch",
+      "replacement_sha256": "659c1db89cbd2e3350c974b750b781c3f9ca0c296e4a82d172364c99ec164607",
+      "mode": "0644",
+      "reason": "Downstream snapshot builds intentionally consume newer os-service-types catalogs. Retain a parsed ISO timestamp minimum check to reject stale or malformed catalog data while accepting the supported baseline and newer snapshots; do not disable the test or pin it to one transient nightly timestamp."
     }
   ]
 }

@@ -18,5 +18,10 @@
     "source": "python-osc-lib",
     "dependency": "python-openstacksdk",
     "reason": "Snapshot tests require SDK ensure_service_version; the pinned osc-lib requires SDK >= 4.12.0, newer than the archive bootstrap SDK."
+  },
+  {
+    "source": "python-openstacksdk",
+    "dependency": "python-keystoneauth1",
+    "reason": "Snapshot authentication caching requires get_unscoped_cache_id, introduced by keystoneauth commit b2a8f31 in 5.16.0; Resolute archive 5.13.1 lacks this API."
   }
 ]

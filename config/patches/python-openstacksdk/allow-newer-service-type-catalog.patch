@@ -1,0 +1,38 @@
+Description: Downstream snapshot builds intentionally consume newer os-service-types catalogs. Retain a parsed ISO timestamp minimum check to reject stale or malformed catalog data while accepting the supported baseline and newer snapshots; do not disable the test or pin it to one transient nightly timestamp.
+Forwarded: not-needed
+Last-Update: 2026-09-20
+
+--- a/openstack/tests/unit/test_utils.py
++++ b/openstack/tests/unit/test_utils.py
+@@ -11,6 +11,7 @@
+ # under the License.
+ 
+ import concurrent.futures
++import datetime
+ import logging
+ import sys
+ from typing import Any, cast
+@@ -234,12 +235,17 @@
+ 
+ class TestOsServiceTypesVersion(base.TestCase):
+     def test_ost_version(self):
+-        ost_version = '2024-05-08T19:22:13.804707'
+-        self.assertEqual(
+-            ost_version,
+-            os_service_types.ServiceTypes().version,
+-            "This project must be pinned to the latest version of "
+-            "os-service-types. Please bump requirements.txt accordingly.",
++        # Distribution snapshots may ship a newer Service Type Authority
++        # catalog. Require the supported baseline without rejecting updates.
++        minimum = datetime.datetime.fromisoformat('2024-05-08T19:22:13.804707')
++        installed = datetime.datetime.fromisoformat(
++            os_service_types.ServiceTypes().version
++        )
++        self.assertGreaterEqual(
++            installed,
++            minimum,
++            "The os-service-types catalog is older than the supported "
++            "baseline. Upgrade os-service-types to the declared minimum.",
+         )
+ 
+ 

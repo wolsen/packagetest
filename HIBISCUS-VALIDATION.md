@@ -64,6 +64,22 @@ reproduced and checked locally. Full remote validation is still required:
 [run 35514574466](https://github.com/wolsen/packagetest/actions/runs/35514574466)
 tests the repaired catalog.
 
+## Follow-up validation in progress
+
+Run 35514574466 has confirmed the Rootwrap, Zaqar Client, oslo.config,
+oslo.middleware and oslo.service build repairs. Octavia's two explicit tests
+and osprofiler's unit test pass. Debtcollector now correctly reports SUPERFICIAL.
+The first 83 completed autopkgtest jobs contain no actual FAIL or INFRA_ERROR;
+missing and superficial coverage remains distinct.
+
+Two newly exposed build failures have a further repair batch: SDK authentication
+caching requires keystoneauth1 >=5.16.0, and oslo.versionedobjects requires mypy
+>=1.19.0 for its new plugin tests. SDK's catalog-date test now accepts newer
+snapshot catalogs while rejecting stale or malformed dates. The planner requires
+the candidate keystoneauth before SDK, preserving eight waves and reducing the
+remaining archive bootstrap edges to 176. The batch passes 177 repository tests
+and fresh source-package checks; its full binary validation is still pending.
+
 ## Remaining release gates
 
 Missing and superficial tests do not count as substantive passes. Package tests
