@@ -42,6 +42,43 @@ def exit_status(result: str) -> int:
     return 0 if result == 'PASS' else 2 if result in {'SKIP', 'NO_TESTS', 'SUPERFICIAL'} else 1
 
 
+def candidate_check_script(versions: dict[str, str]) -> str:
+    """Check candidates after dpkg operations, allowing mutually exclusive binaries.
+
+    autopkgtest publishes supplied debs at priority 1002, reinstalls candidates
+    already in the base image and installs each test's Depends itself. This hook
+    additionally checks tests that dynamically install/remove package variants.
+    Residual configuration from removed packages does not count as installation.
+    """
+    return '''import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+expected = json.loads(EXPECTED_JSON)
+output = subprocess.check_output([
+    'dpkg-query', '-W', '-f=${binary:Package}\\t${Version}\\t${db:Status-Status}\\n'
+], text=True)
+installed = {}
+errors = []
+for line in output.splitlines():
+    name, version, state = line.split('\\t')
+    name = name.split(':', 1)[0]
+    if name not in expected or state in {'not-installed', 'config-files'}:
+        continue
+    installed[name] = version
+    if version != expected[name]:
+        errors.append(f'{name}: installed {version}, expected {expected[name]}')
+print('PACKAGETEST_INSTALLED_CANDIDATES ' + json.dumps(installed, sort_keys=True), flush=True)
+if os.environ.get('AUTOPKGTEST_ARTIFACTS'):
+    with (Path(os.environ['AUTOPKGTEST_ARTIFACTS']) / 'candidate-versions.jsonl').open('a') as evidence:
+        evidence.write(json.dumps(installed, sort_keys=True) + '\\n')
+if errors:
+    print('Candidate version mismatch: ' + '; '.join(errors), file=sys.stderr)
+    raise SystemExit(1)
+'''.replace('EXPECTED_JSON', repr(json.dumps(versions, sort_keys=True)))
+
+
 def checked_file(directory: Path, record: dict) -> Path:
     name = record['file']
     if Path(name).name != name:
@@ -109,16 +146,16 @@ def run(manifest_path: Path, source: str, output: Path, *, backend: str, image: 
             versions[name] = version
             pin.append(f'Package: {name}\nPin: version {version}\nPin-Priority: 1001\n')
         (repo / 'preferences').write_text('\n'.join(pin))
-        install = ' '.join(shlex.quote(f'{name}={version}') for name, version in expected.items())
-        checks = '\n'.join(f'test "$(dpkg-query -W -f=\'${{Version}}\' {shlex.quote(name)})" = {shlex.quote(version)}' for name, version in expected.items())
+        (repo / 'verify-installed.py').write_text(candidate_check_script(versions))
         setup = output / 'setup.sh'
         setup.write_text('set -eu\n'
                          'test "$(. /etc/os-release; echo "$VERSION_CODENAME")" = ' + shlex.quote(manifest['target']['suite']) + '\n'
                          "printf '%s\\n' 'deb [trusted=yes] file:/opt/packagetest-candidate ./' > /etc/apt/sources.list.d/packagetest.list\n"
                          'cp /opt/packagetest-candidate/preferences /etc/apt/preferences.d/packagetest\n'
                          'apt-get update\n'
-                         f'DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades {install}\n{checks}\n'
-                         'dpkg-query -W | tee /opt/packagetest-candidate/installed-versions.txt\n')
+                         'DEBIAN_FRONTEND=noninteractive apt-get install -y apt-utils\n'
+                         'command -v python3\n'
+                         "printf '%s\\n' 'post-invoke=python3 /opt/packagetest-candidate/verify-installed.py' > /etc/dpkg/dpkg.cfg.d/packagetest-versions\n")
         command = ['autopkgtest', '--no-built-binaries', '--no-apt-fallback',
                    '--output-dir=' + str(output / 'testbed'), '--summary=' + str(output / 'summary'),
                    '--timeout-test=' + str(timeout), '--timeout-install=1800',
@@ -129,7 +166,8 @@ def run(manifest_path: Path, source: str, output: Path, *, backend: str, image: 
             command += ['--ram-size=4096', '--cpus=2', str(Path(image).resolve())]
         else:
             command += [image]
-        report.update(command=command, expected_versions=expected, candidate_versions=versions)
+        report.update(command=command, expected_versions=expected, candidate_versions=versions,
+                      installation_policy='autopkgtest resolves each test Depends; dpkg hook verifies installed candidate subsets')
         with (output / 'console.log').open('w') as log:
             with subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True) as process:
                 try:

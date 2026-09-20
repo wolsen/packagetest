@@ -1,0 +1,25 @@
+#!/usr/bin/make -f
+
+UPSTREAM_GIT = https://github.com/openstack/os-api-ref.git
+include /usr/share/openstack-pkg-tools/pkgos.make
+
+# Sphinx test applications change directory; retain candidate metadata lookup.
+export PYTHONPATH := $(CURDIR)
+
+%:
+	dh $@  --with python3
+
+override_dh_auto_clean:
+	rm -rf build .stestr *.egg-info
+	find . -iname '*.pyc' -delete
+	for i in $$(find . -type d -iname __pycache__) ; do rm -rf $$i ; done
+
+override_dh_auto_build:
+	# Upstream extension setup queries importlib.metadata during unit tests.
+	python3 setup.py egg_info
+
+override_dh_auto_install:
+	pkgos-dh_auto_install --no-py2
+
+override_dh_auto_test:
+	pkgos-dh_auto_test --no-py2 'os_api_ref\.tests\.(?!test_basic_example\.TestBasicExample\.test_parameters|.*test_basic_example\.TestBasicExample\.test_rest_response|test_warnings\.TestWarnings\.test_missing_field)'

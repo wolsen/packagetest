@@ -7,6 +7,13 @@
       "replacement": "remove-intersphinx.patch",
       "replacement_sha256": "0add9810aa7ae4f31cce532da1655ad1ac60eb1d2a35a5c02d536cb5de698884",
       "reason": "Refresh existing offline documentation build adaptation after upstream added trailing commas; retain autodoc and theme extensions."
+    },
+    {
+      "name": "rules",
+      "sha256": "ae4578d8f9a10b8810d0029f47b43103617daff110ff2b99b77e53aaaab46ab9",
+      "replacement": "rules",
+      "replacement_sha256": "cc6fd0fb638d7258eb4e24c12d141fa084c271c64d55ef9f14d61c8d565a927e",
+      "reason": "Upstream setuptools packages now excludes tests. Copy source tests into each pybuild test tree for the unchanged complete stestr suite, then remove them before installation; do not skip tests or change runtime package contents."
     }
   ]
 }

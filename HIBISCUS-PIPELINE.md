@@ -20,6 +20,10 @@ Consumers validate artifact run ID, attempt, target, frozen catalog entry, check
 
 Autopkgtests start after each build wave while subsequent builds proceed. They use separate QEMU guests with 4 GiB RAM and two CPUs on KVM-capable GitHub runners. Built source packages and exact candidate binaries are tested. PASS, SUPERFICIAL, FAIL, SKIP, NO_TESTS, INFRA_ERROR, and BLOCKED remain distinct. Generated import checks marked superficial do not satisfy the substantive-test gate; neither do missing or skipped tests.
 
+The initial 197-source coverage audit found 108 sources with explicit tests, 44 with generated superficial imports only, and 45 with no detected package tests (26 Puppet modules, 18 Tempest plugins, and Aetos). Explicit tests range from imports and installation checks to unit suites and service checks; they are not equivalent to full cloud regression coverage.
+
+Autopkgtest selects compatible binaries through each test’s dependency declarations. The runner does not install every binary simultaneously: Nova and Neutron contain conflicting alternatives. Exact candidate versions are pinned, and a dpkg hook checks the currently installed candidate subset after package operations, including variant switches performed by tests.
+
 Artifacts `build-SOURCE` and `autopkgtest-SOURCE` contain tar bundles of results and logs. Small `status-*` artifacts feed `pipeline-summary`. Retention is 14 days.
 
 The workflow runs on pushes to `codex/hibiscus-snapshot-pipeline` and manual dispatch. Empty `sources` selects the catalog; a comma-separated pilot list selects exactly those packages and records outside dependencies as archive bootstrap inputs. Recurring nightly scheduling remains pending validation and integration onto the default branch.

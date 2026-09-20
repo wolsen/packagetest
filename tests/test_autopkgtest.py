@@ -85,3 +85,30 @@ def test_nightly_rejects_unbuilt_and_wrong_run_inputs(tmp_path, ci, result):
 ])
 def test_gate_does_not_promote_coverage_gaps(result, expected):
     assert exit_status(result) == expected
+
+
+@pytest.mark.parametrize('database,result,installed', [
+    ('nova-compute-kvm\t2:34.0+git1\tinstalled\nnova-compute-ironic\t2:33.0\tconfig-files\n', 0, {'nova-compute-kvm': '2:34.0+git1'}),
+    ('nova-compute-ironic\t2:34.0+git1\tunpacked\n', 0, {'nova-compute-ironic': '2:34.0+git1'}),
+    ('nova-compute-ironic\t2:34.0+git1\thalf-configured\n', 0, {'nova-compute-ironic': '2:34.0+git1'}),
+    ('nova-compute-kvm\t2:33.0\tinstalled\n', 1, {'nova-compute-kvm': '2:33.0'}),
+    ('nova-compute-kvm\t2:33.0\tunpacked\n', 1, {'nova-compute-kvm': '2:33.0'}),
+    ('nova-compute-kvm\t2:33.0\tnot-installed\n', 0, {}),
+    ('unrelated\t1.0\tinstalled\n', 0, {}),
+    ('nova-compute-kvm:amd64\t2:34.0+git1\tinstalled\n', 0, {'nova-compute-kvm': '2:34.0+git1'}),
+])
+def test_candidate_hook_supports_variant_switches_and_rejects_archive_fallback(tmp_path, database, result, installed):
+    import os
+    import subprocess
+    import sys
+    from packagetest.autopkgtest import candidate_check_script
+    query = tmp_path / 'dpkg-query'
+    query.write_text('#!' + sys.executable + '\nprint(' + repr(database) + ', end="")\n')
+    query.chmod(0o755)
+    script = tmp_path / 'verify.py'
+    script.write_text(candidate_check_script({'nova-compute-kvm': '2:34.0+git1', 'nova-compute-ironic': '2:34.0+git1'}))
+    completed = subprocess.run([sys.executable, str(script)], env={**os.environ, 'PATH': str(tmp_path)}, capture_output=True, text=True)
+    assert completed.returncode == result, completed.stderr
+    assert json.loads(completed.stdout.removeprefix('PACKAGETEST_INSTALLED_CANDIDATES ')) == installed
+    if result:
+        assert 'Candidate version mismatch' in completed.stderr

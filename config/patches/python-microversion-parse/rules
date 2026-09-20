@@ -1,0 +1,17 @@
+#!/usr/bin/make -f
+
+UPSTREAM_GIT := https://github.com/openstack/microversion-parse.git
+include /usr/share/openstack-pkg-tools/pkgos.make
+
+export PYBUILD_NAME=microversion-parse
+
+# Upstream excludes tests from its installed packages; pybuild tests the build tree.
+export PYBUILD_BEFORE_TEST=cp -a {dir}/microversion_parse/tests {build_dir}/microversion_parse/
+export PYBUILD_AFTER_TEST=rm -rf {build_dir}/microversion_parse/tests
+
+%:
+	dh $@ --with python3,sphinxdoc --buildsystem=pybuild
+
+override_dh_sphinxdoc:
+	python3 -m sphinx -b html doc/source debian/python-microversion-parse-doc/usr/share/doc/python-microversion-parse-doc/html
+	dh_sphinxdoc

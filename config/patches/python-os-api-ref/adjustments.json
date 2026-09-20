@@ -7,6 +7,13 @@
       "replacement": "move_assets.patch",
       "replacement_sha256": "1b71bb55c634f4e012064bf941cdad882361dd5f44ff363baa71050126389daa",
       "reason": "Refresh existing system asset symlinks against typed Hibiscus code; retain distribution-provided assets and libjs-bootstrap behavior."
+    },
+    {
+      "name": "rules",
+      "sha256": "cf863ae837cd066019f6ef0ecf69c4b0e816b07dc18093ab7bb76996bdd3c658",
+      "replacement": "rules",
+      "replacement_sha256": "362ac1b017ccfaa491cbd45272cabc398bb921735cacabd8ed1b64ae25ec7cd8",
+      "reason": "Regenerate candidate distribution metadata after dh_auto_clean removes egg-info and keep its absolute source path available to Sphinx test apps; preserve the archive unit-test selection."
     }
   ]
 }
