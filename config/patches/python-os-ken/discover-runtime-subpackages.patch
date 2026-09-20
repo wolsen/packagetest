@@ -1,0 +1,23 @@
+Description: Include OS-Ken runtime subpackages in installed wheels
+Forwarded: no
+
+The root-only package declaration produces binaries without os_ken.lib and
+other runtime packages, breaking neutron-lib imports. Discover runtime
+subpackages while preserving source tests and excluding installed test data.
+
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -33,7 +33,9 @@
+ "Documentation" = "https://docs.openstack.org/os-ken/latest/"
+ "Source Code" = "https://opendev.org/openstack/os-ken"
+ 
+-[tool.setuptools]
+-packages = [
+-    "os_ken"
+-]
++[tool.setuptools.exclude-package-data]
++os_ken = ["tests/*", "tests/**/*"]
++
++[tool.setuptools.packages.find]
++include = ["os_ken*"]
++exclude = ["os_ken.tests*"]

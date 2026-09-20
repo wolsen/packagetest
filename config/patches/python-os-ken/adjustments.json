@@ -8,5 +8,37 @@
       "upstream_file_sha256": "7413a423f20a587840d7d2516acd7d13f000d1dbf1f34ec82b72b711a8856a80",
       "reason": "Upstream includes native LoopingCall and ThreadingIOFactory and routes base/peer/processor through utils.LoopingCall and utils.IOFactory. Existing eventlet/native dispatch supersedes the archived backport."
     }
+  ],
+  "replace_files": [
+    {
+      "name": "patches/series",
+      "sha256": "e8104f03bb4e271b1649c1787021aa0768fee52ee06eba3ebc520092bfae2aba",
+      "replacement": "series",
+      "replacement_sha256": "d7f57e609e37c7898f4084eb09eea1b3e2924d588656ee5afa386cf8200612aa",
+      "reason": "Enable runtime package discovery while retaining existing archive patches."
+    },
+    {
+      "name": "tests/control",
+      "sha256": "1c804a8b33900e97c3a00faf783718b557a7c2dc2097a1643b71187e6031cfcd",
+      "replacement": "tests-control",
+      "replacement_sha256": "47adbaf55ed91e36b9c2bdc98f8f5587243c067028290a4f677c131511fee3f9",
+      "reason": "Add installed-binary runtime coverage alongside unchanged source unit tests."
+    }
+  ],
+  "add_files": [
+    {
+      "name": "patches/discover-runtime-subpackages.patch",
+      "replacement": "discover-runtime-subpackages.patch",
+      "replacement_sha256": "0c7493a0ff7248042340093858f69123288c72738f95bd93737e868fdc005c95",
+      "mode": "0644",
+      "reason": "Confirmed candidate binary omits os_ken.lib and other runtime subpackages despite successful source tests; setuptools discovery includes their code in wheels."
+    },
+    {
+      "name": "tests/installed-runtime",
+      "replacement": "installed-runtime",
+      "replacement_sha256": "abe350f2cd62ab02c738e2d75fee13b30d4ce1685da6ed65d74936a0be7e1394",
+      "mode": "0755",
+      "reason": "Exercise installed address conversion, Ethernet encode/decode and OpenFlow match APIs from /tmp with isolated Python, catching missing runtime subpackages."
+    }
   ]
 }

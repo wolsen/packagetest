@@ -5,8 +5,8 @@
       "name": "control",
       "sha256": "29ca3279dbf666a873b1a48e3fa8d79e0e4839a1baa4539aabfd5b858229be21",
       "replacement": "control",
-      "replacement_sha256": "2215ea38654c3d010de14bd032156cabcff19da2ee78406ea0fc486621989818",
-      "reason": "Match pinned Hibiscus OpenStackClient requirements.txt: openstacksdk>=4.19.0, for both build/test and runtime dependencies. Its volume-message command imports SDK message resource introduced by e997af6fd72086419ebd89b4fcd4259390fccb4f (first released in4.16.0); archive4.7.2 lacks it. Preserve all tests and use the full declared upstream minimum instead of only fixing one missing import."
+      "replacement_sha256": "eae9401852e9ff178f3cdfcf00186d4b123f749e606100d548c3cd6fdb02d3fb",
+      "reason": "Match pinned Hibiscus OpenStackClient requirements.txt: openstacksdk>=4.19.0, for both build/test and runtime dependencies. Its volume-message command imports SDK message resource introduced by e997af6fd72086419ebd89b4fcd4259390fccb4f (first released in4.16.0); archive4.7.2 lacks it. Preserve all tests and use the full declared upstream minimum instead of only fixing one missing import. Require osc-lib>=4.6.0 in build/test and runtime dependencies, matching pinned requirements.txt. ClientManager endpoint checks now pass region_name and interface positional arguments to is_service_available; archive osc-lib 4.4.0 only accepts service_type and raises TypeError. The expanded API is provided by upstream osc-lib commit 47dd091083b1c88e09dcb8c2952e8317773bab03 (first released in 4.6.0). Preserve all tests."
     }
   ]
 }

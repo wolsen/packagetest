@@ -23,5 +23,10 @@
     "source": "python-openstacksdk",
     "dependency": "python-keystoneauth1",
     "reason": "Snapshot authentication caching requires get_unscoped_cache_id, introduced by keystoneauth commit b2a8f31 in 5.16.0; Resolute archive 5.13.1 lacks this API."
+  },
+  {
+    "source": "python-openstackclient",
+    "dependency": "python-osc-lib",
+    "reason": "Pinned OpenStack Client requires osc-lib >=4.6.0 and calls ClientManager.is_service_available with region_name and interface. osc-lib commit 47dd091083b1c88e09dcb8c2952e8317773bab03 adds those parameters; archive 4.4.0 lacks them."
   }
 ]

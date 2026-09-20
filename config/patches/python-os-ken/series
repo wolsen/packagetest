@@ -1,0 +1,3 @@
+make-ncclient-optional.patch
+add-native-loopingcall-to-bgp.patch
+discover-runtime-subpackages.patch

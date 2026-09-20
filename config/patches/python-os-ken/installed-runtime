@@ -1,0 +1,28 @@
+#!/bin/sh
+set -eu
+cd /tmp
+unset PYTHONPATH
+python3 -I - <<'PY'
+import subprocess
+from os_ken.lib import addrconv
+from os_ken.lib.packet import ethernet, ether_types
+from os_ken.ofproto import ofproto_v1_3, ofproto_v1_3_parser
+
+# Source-unit tests may reinstall code: require ownership by the candidate deb.
+for module in (addrconv, ethernet, ofproto_v1_3, ofproto_v1_3_parser):
+    owner = subprocess.check_output(
+        ['dpkg-query', '-S', module.__file__], text=True).strip()
+    assert owner.startswith('python3-os-ken: '), (module.__file__, owner)
+
+mac = '02:00:00:00:00:01'
+assert addrconv.mac.bin_to_text(addrconv.mac.text_to_bin(mac)) == mac
+frame = ethernet.ethernet(dst='ff:ff:ff:ff:ff:ff', src=mac,
+                          ethertype=ether_types.ETH_TYPE_IP)
+encoded = frame.serialize(bytearray(b'payload'), None)
+decoded, _, _ = ethernet.ethernet.parser(encoded)
+assert (decoded.src, decoded.dst, decoded.ethertype) == (
+    frame.src, frame.dst, frame.ethertype)
+match = ofproto_v1_3_parser.OFPMatch(in_port=7)
+assert match['in_port'] == 7
+assert ofproto_v1_3.OFP_VERSION == 4
+PY
