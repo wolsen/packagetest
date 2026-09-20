@@ -22,7 +22,9 @@ class Resolver:
         result = self.runner.run(list(args), cwd or self.work, env_diff=env)
         if result.exit_code:
             raise RuntimeError(f'{args[0]} failed: {result.stderr[-2000:]}')
-        return result.stdout.strip()
+        # CommandResult contains only a diagnostic tail. Discovery must use
+        # the full history even for repositories with thousands of commits.
+        return (self.runner.log_path.parent / f'{self.runner.sequence:04d}.stdout.log').read_text().strip()
 
 
 def select_commit(resolver, checkout: Path, ref: str, cutoff: str | None) -> dict:

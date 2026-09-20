@@ -44,7 +44,7 @@ jobs:
         run: bash scripts/run-library.sh "$BUILD_CASE"
       - name: Verify failed dependency blocks its consumer
         if: matrix.build_case == 'dependency'
-        run: sg sbuild -c '.venv/bin/python scripts/test-dependency-failure.py'
+        run: sg sbuild -c '.venv/bin/python scripts/test-dependency-failure.py config/locks/pbr-oslo-i18n-stonking.json'
       - name: Summarize failures
         if: always()
         continue-on-error: true
