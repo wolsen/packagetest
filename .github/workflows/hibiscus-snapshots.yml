@@ -156,6 +156,11 @@ jobs:
           path: outputs/result.json
           retention-days: 14
           if-no-files-found: error
+      - name: Test installed snapshot package
+        if: always()
+        uses: ./.github/actions/test-built-snapshot
+        with:
+          source: ${{ matrix.source }}
   build_dependency_level_2:
     name: Build ${{ matrix.source }}
     needs: [plan, build_dependency_level_1]
@@ -243,6 +248,11 @@ jobs:
           path: outputs/result.json
           retention-days: 14
           if-no-files-found: error
+      - name: Test installed snapshot package
+        if: always()
+        uses: ./.github/actions/test-built-snapshot
+        with:
+          source: ${{ matrix.source }}
   build_dependency_level_3:
     name: Build ${{ matrix.source }}
     needs: [plan, build_dependency_level_1, build_dependency_level_2]
@@ -330,6 +340,11 @@ jobs:
           path: outputs/result.json
           retention-days: 14
           if-no-files-found: error
+      - name: Test installed snapshot package
+        if: always()
+        uses: ./.github/actions/test-built-snapshot
+        with:
+          source: ${{ matrix.source }}
   build_dependency_level_4:
     name: Build ${{ matrix.source }}
     needs: [plan, build_dependency_level_1, build_dependency_level_2, build_dependency_level_3]
@@ -417,6 +432,11 @@ jobs:
           path: outputs/result.json
           retention-days: 14
           if-no-files-found: error
+      - name: Test installed snapshot package
+        if: always()
+        uses: ./.github/actions/test-built-snapshot
+        with:
+          source: ${{ matrix.source }}
   build_dependency_level_5:
     name: Build ${{ matrix.source }}
     needs: [plan, build_dependency_level_1, build_dependency_level_2, build_dependency_level_3, build_dependency_level_4]
@@ -504,6 +524,11 @@ jobs:
           path: outputs/result.json
           retention-days: 14
           if-no-files-found: error
+      - name: Test installed snapshot package
+        if: always()
+        uses: ./.github/actions/test-built-snapshot
+        with:
+          source: ${{ matrix.source }}
   build_dependency_level_6:
     name: Build ${{ matrix.source }}
     needs: [plan, build_dependency_level_1, build_dependency_level_2, build_dependency_level_3, build_dependency_level_4, build_dependency_level_5]
@@ -591,6 +616,11 @@ jobs:
           path: outputs/result.json
           retention-days: 14
           if-no-files-found: error
+      - name: Test installed snapshot package
+        if: always()
+        uses: ./.github/actions/test-built-snapshot
+        with:
+          source: ${{ matrix.source }}
   build_dependency_level_7:
     name: Build ${{ matrix.source }}
     needs: [plan, build_dependency_level_1, build_dependency_level_2, build_dependency_level_3, build_dependency_level_4, build_dependency_level_5, build_dependency_level_6]
@@ -678,6 +708,11 @@ jobs:
           path: outputs/result.json
           retention-days: 14
           if-no-files-found: error
+      - name: Test installed snapshot package
+        if: always()
+        uses: ./.github/actions/test-built-snapshot
+        with:
+          source: ${{ matrix.source }}
   build_dependency_level_8:
     name: Build ${{ matrix.source }}
     needs: [plan, build_dependency_level_1, build_dependency_level_2, build_dependency_level_3, build_dependency_level_4, build_dependency_level_5, build_dependency_level_6, build_dependency_level_7]
@@ -765,6 +800,11 @@ jobs:
           path: outputs/result.json
           retention-days: 14
           if-no-files-found: error
+      - name: Test installed snapshot package
+        if: always()
+        uses: ./.github/actions/test-built-snapshot
+        with:
+          source: ${{ matrix.source }}
   build_dependency_level_9:
     name: Build ${{ matrix.source }}
     needs: [plan, build_dependency_level_1, build_dependency_level_2, build_dependency_level_3, build_dependency_level_4, build_dependency_level_5, build_dependency_level_6, build_dependency_level_7, build_dependency_level_8]
@@ -852,6 +892,11 @@ jobs:
           path: outputs/result.json
           retention-days: 14
           if-no-files-found: error
+      - name: Test installed snapshot package
+        if: always()
+        uses: ./.github/actions/test-built-snapshot
+        with:
+          source: ${{ matrix.source }}
   build_dependency_level_10:
     name: Build ${{ matrix.source }}
     needs: [plan, build_dependency_level_1, build_dependency_level_2, build_dependency_level_3, build_dependency_level_4, build_dependency_level_5, build_dependency_level_6, build_dependency_level_7, build_dependency_level_8, build_dependency_level_9]
@@ -939,6 +984,11 @@ jobs:
           path: outputs/result.json
           retention-days: 14
           if-no-files-found: error
+      - name: Test installed snapshot package
+        if: always()
+        uses: ./.github/actions/test-built-snapshot
+        with:
+          source: ${{ matrix.source }}
   build_dependency_level_11:
     name: Build ${{ matrix.source }}
     needs: [plan, build_dependency_level_1, build_dependency_level_2, build_dependency_level_3, build_dependency_level_4, build_dependency_level_5, build_dependency_level_6, build_dependency_level_7, build_dependency_level_8, build_dependency_level_9, build_dependency_level_10]
@@ -1026,6 +1076,11 @@ jobs:
           path: outputs/result.json
           retention-days: 14
           if-no-files-found: error
+      - name: Test installed snapshot package
+        if: always()
+        uses: ./.github/actions/test-built-snapshot
+        with:
+          source: ${{ matrix.source }}
   build_dependency_level_12:
     name: Build ${{ matrix.source }}
     needs: [plan, build_dependency_level_1, build_dependency_level_2, build_dependency_level_3, build_dependency_level_4, build_dependency_level_5, build_dependency_level_6, build_dependency_level_7, build_dependency_level_8, build_dependency_level_9, build_dependency_level_10, build_dependency_level_11]
@@ -1113,105 +1168,15 @@ jobs:
           path: outputs/result.json
           retention-days: 14
           if-no-files-found: error
-  autopkgtest_dependency_level_1:
-    name: Autopkgtest dependency level 1
-    needs: [plan, build_dependency_level_1]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dependency_level_1_enabled == 'true' }}
-    uses: ./.github/workflows/hibiscus-autopkgtest.yml
-    with:
-      sources: ${{ needs.plan.outputs.build_dependency_level_1 }}
-
-  autopkgtest_dependency_level_2:
-    name: Autopkgtest dependency level 2
-    needs: [plan, build_dependency_level_2]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dependency_level_2_enabled == 'true' }}
-    uses: ./.github/workflows/hibiscus-autopkgtest.yml
-    with:
-      sources: ${{ needs.plan.outputs.build_dependency_level_2 }}
-
-  autopkgtest_dependency_level_3:
-    name: Autopkgtest dependency level 3
-    needs: [plan, build_dependency_level_3]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dependency_level_3_enabled == 'true' }}
-    uses: ./.github/workflows/hibiscus-autopkgtest.yml
-    with:
-      sources: ${{ needs.plan.outputs.build_dependency_level_3 }}
-
-  autopkgtest_dependency_level_4:
-    name: Autopkgtest dependency level 4
-    needs: [plan, build_dependency_level_4]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dependency_level_4_enabled == 'true' }}
-    uses: ./.github/workflows/hibiscus-autopkgtest.yml
-    with:
-      sources: ${{ needs.plan.outputs.build_dependency_level_4 }}
-
-  autopkgtest_dependency_level_5:
-    name: Autopkgtest dependency level 5
-    needs: [plan, build_dependency_level_5]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dependency_level_5_enabled == 'true' }}
-    uses: ./.github/workflows/hibiscus-autopkgtest.yml
-    with:
-      sources: ${{ needs.plan.outputs.build_dependency_level_5 }}
-
-  autopkgtest_dependency_level_6:
-    name: Autopkgtest dependency level 6
-    needs: [plan, build_dependency_level_6]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dependency_level_6_enabled == 'true' }}
-    uses: ./.github/workflows/hibiscus-autopkgtest.yml
-    with:
-      sources: ${{ needs.plan.outputs.build_dependency_level_6 }}
-
-  autopkgtest_dependency_level_7:
-    name: Autopkgtest dependency level 7
-    needs: [plan, build_dependency_level_7]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dependency_level_7_enabled == 'true' }}
-    uses: ./.github/workflows/hibiscus-autopkgtest.yml
-    with:
-      sources: ${{ needs.plan.outputs.build_dependency_level_7 }}
-
-  autopkgtest_dependency_level_8:
-    name: Autopkgtest dependency level 8
-    needs: [plan, build_dependency_level_8]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dependency_level_8_enabled == 'true' }}
-    uses: ./.github/workflows/hibiscus-autopkgtest.yml
-    with:
-      sources: ${{ needs.plan.outputs.build_dependency_level_8 }}
-
-  autopkgtest_dependency_level_9:
-    name: Autopkgtest dependency level 9
-    needs: [plan, build_dependency_level_9]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dependency_level_9_enabled == 'true' }}
-    uses: ./.github/workflows/hibiscus-autopkgtest.yml
-    with:
-      sources: ${{ needs.plan.outputs.build_dependency_level_9 }}
-
-  autopkgtest_dependency_level_10:
-    name: Autopkgtest dependency level 10
-    needs: [plan, build_dependency_level_10]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dependency_level_10_enabled == 'true' }}
-    uses: ./.github/workflows/hibiscus-autopkgtest.yml
-    with:
-      sources: ${{ needs.plan.outputs.build_dependency_level_10 }}
-
-  autopkgtest_dependency_level_11:
-    name: Autopkgtest dependency level 11
-    needs: [plan, build_dependency_level_11]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dependency_level_11_enabled == 'true' }}
-    uses: ./.github/workflows/hibiscus-autopkgtest.yml
-    with:
-      sources: ${{ needs.plan.outputs.build_dependency_level_11 }}
-
-  autopkgtest_dependency_level_12:
-    name: Autopkgtest dependency level 12
-    needs: [plan, build_dependency_level_12]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dependency_level_12_enabled == 'true' }}
-    uses: ./.github/workflows/hibiscus-autopkgtest.yml
-    with:
-      sources: ${{ needs.plan.outputs.build_dependency_level_12 }}
+      - name: Test installed snapshot package
+        if: always()
+        uses: ./.github/actions/test-built-snapshot
+        with:
+          source: ${{ matrix.source }}
 
   summary:
     name: Summarize all package and test results
-    needs: [plan, build_dependency_level_1, build_dependency_level_2, build_dependency_level_3, build_dependency_level_4, build_dependency_level_5, build_dependency_level_6, build_dependency_level_7, build_dependency_level_8, build_dependency_level_9, build_dependency_level_10, build_dependency_level_11, build_dependency_level_12, autopkgtest_dependency_level_1, autopkgtest_dependency_level_2, autopkgtest_dependency_level_3, autopkgtest_dependency_level_4, autopkgtest_dependency_level_5, autopkgtest_dependency_level_6, autopkgtest_dependency_level_7, autopkgtest_dependency_level_8, autopkgtest_dependency_level_9, autopkgtest_dependency_level_10, autopkgtest_dependency_level_11, autopkgtest_dependency_level_12]
+    needs: [plan, build_dependency_level_1, build_dependency_level_2, build_dependency_level_3, build_dependency_level_4, build_dependency_level_5, build_dependency_level_6, build_dependency_level_7, build_dependency_level_8, build_dependency_level_9, build_dependency_level_10, build_dependency_level_11, build_dependency_level_12]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:

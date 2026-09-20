@@ -10,7 +10,7 @@ The plan resolves references once. Declared `stable/2026.2` branches take preced
 
 ## Parallel builds and artifacts
 
-The current graph has eight dependency levels, each allowing 20 concurrent jobs subject to runner availability. A dependency level is a topological layer: every package in it can build in parallel because any same-run candidate packages it needs are produced by earlier levels. GitHub groups the matrices as `build_dependency_level_N` and `autopkgtest_dependency_level_N`; the individual jobs remain the direct `Build SOURCE` and `Autopkgtest · SOURCE` labels. Failures do not cancel independent jobs. Missing or failed required producers block consumers.
+The current graph has eight dependency levels, each allowing 20 concurrent jobs subject to runner availability. A dependency level is a topological layer: every package in it can build in parallel because any same-run candidate packages it needs are produced by earlier levels. GitHub groups each matrix as `build_dependency_level_N`; each child remains `Build SOURCE` and runs both the package build and its autopkgtest. Failures do not cancel independent jobs. Missing or failed required producers block consumers.
 
 Cycles are recorded as archive bootstrap edges. Dependencies already available from an earlier dependency level use that run's candidates; only the remaining cycle edges use archive packages for the first build. A subsequent rebuild of cyclic components is required before claiming the complete set was built against candidate dependencies.
 
@@ -22,7 +22,7 @@ Planning incorporates checksum-verified packaging control replacements, so added
 
 ## Tests and reports
 
-Autopkgtests start after each dependency level while subsequent builds proceed. They use separate QEMU guests with 4 GiB RAM and two CPUs on KVM-capable GitHub runners. Built source packages and exact candidate binaries are tested. PASS, SUPERFICIAL, FAIL, SKIP, NO_TESTS, INFRA_ERROR, and BLOCKED remain distinct. Generated import checks marked superficial do not count as substantive coverage; neither do missing or skipped tests. SUPERFICIAL, SKIP, and NO_TESTS are recorded in JSON artifacts and the GitHub step summary but finish the job successfully. FAIL, INFRA_ERROR, and BLOCKED still fail the job.
+Each `Build SOURCE` job runs autopkgtest immediately after producing and preserving its candidate artifacts. The next dependency level waits for both operations, so a package is complete only after its build and installed-package test have run. Tests use separate QEMU guests with 4 GiB RAM and two CPUs on KVM-capable GitHub runners. Built source packages and exact candidate binaries are tested. PASS, SUPERFICIAL, FAIL, SKIP, NO_TESTS, INFRA_ERROR, and BLOCKED remain distinct. Generated import checks marked superficial do not count as substantive coverage; neither do missing or skipped tests. SUPERFICIAL, SKIP, and NO_TESTS are recorded in JSON artifacts and the GitHub step summary but finish the package job successfully. FAIL, INFRA_ERROR, and BLOCKED fail it.
 
 The initial 197-source coverage audit found 108 sources with explicit tests, 44 with generated superficial imports only, and 45 with no detected package tests (26 Puppet modules, 18 Tempest plugins, and Aetos). Explicit tests range from imports and installation checks to unit suites and service checks; they are not equivalent to full cloud regression coverage.
 

@@ -1,0 +1,28 @@
+name: Test built snapshot package
+description: Run and publish autopkgtest results in the package's build job
+inputs:
+  source:
+    description: Source package to test
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Run installed-package tests
+      shell: bash
+      run: bash scripts/test-built-snapshot.sh "${{ inputs.source }}"
+    - name: Upload classified test status
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: status-autopkgtest-${{ inputs.source }}
+        path: test-results/result/result.json
+        retention-days: 14
+        if-no-files-found: error
+    - name: Upload autopkgtest evidence
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: autopkgtest-${{ inputs.source }}
+        path: test-bundles/*.tar.gz
+        retention-days: 14
+        if-no-files-found: error
