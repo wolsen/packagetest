@@ -82,3 +82,6 @@ de75efaa73e20b6db3f918b9e4641d944a4b8a6b9246edb207fbfa3236ec55b9
 ```
 
 The earlier digest and generation above record the original local validation. The revised recipe was applied independently to the local and hosted archives and produced identical bytes. Locks without `archive_format` retain the legacy recipe; their reviewed checksums are not silently reinterpreted. Full Debian binary reproducibility still requires further work on archive dependencies and generated packaging metadata.
+
+
+The portable-format latest and cutoff snapshots both built and installed successfully locally. The latest snapshot also passed hosted CI with the same orig tarball checksum. Final evidence is recorded in [MILESTONES.md](MILESTONES.md).

@@ -12,7 +12,7 @@ Progress is based on real build evidence, not generated command strings. See `VA
 - [x] Retain source/binary artifacts, full logs, provenance, and failure diagnostics locally.
 - [x] Repeat the upgrade from the same lock with a fresh checkout, build root, and installation session.
 - [x] Generate and build the latest pinned oslo.i18n Git snapshot on Stonking, with exact installed Python version verification.
-- [ ] Verify the checked-in workflow on GitHub Actions.
+- [x] Verify all six cases on GitHub Actions, including downloadable artifact integrity.
 
 ## Validated dependency edge
 
@@ -27,7 +27,7 @@ Progress is based on real build evidence, not generated command strings. See `VA
 - [x] Generate checksum-pinned sdists with portable permissions and regression coverage.
 - [x] Build the pinned Noble/UCA Epoxy library backport with explicit branch and revision policy.
 - [x] Build Glance's five binary packages and run its packaging unit tests.
-- [ ] Complete hosted matrix and installed Glance API validation; see `MILESTONES.md` for final evidence.
+- [x] Complete the hosted matrix and installed Glance API round trip; see `MILESTONES.md` for evidence.
 
 ## Broader Ubuntu and Cloud Archive support
 

@@ -1,5 +1,7 @@
 # Completed packaging validation
 
+For the latest snapshot-resolution, UCA, service and hosted-CI results, see [MILESTONES.md](MILESTONES.md). The checkpoints below retain their original scope and test counts.
+
 Validated on 2026-09-20 by running the tool directly in an Ubuntu 24.04 VM. All binary builds used a fresh tarball-backed `noble-amd64-sbuild` schroot. Installation checks used separate fresh schroot sessions.
 
 | Case | Debian version | Build and artifact validation | Fresh install and translation test |
@@ -32,9 +34,9 @@ The VM `packagetest-baseline-f590e9` has been stopped to release memory, with it
 
 ## Remaining boundaries
 
-Gump was attempted and then set aside as requested. Three small fixes and their regression tests remain in the sibling checkout and in `integration/gump-packaging.patch`; workflow context propagation still blocked execution of uncommitted edits. Gump and GitHub Actions end-to-end success are **not** claimed.
+Gump was attempted and then set aside as requested. Three small fixes and their regression tests remain in the sibling checkout and in `integration/gump-packaging.patch`; workflow context propagation still blocked execution of uncommitted edits. This initial checkpoint did not establish Gump or GitHub Actions end-to-end success; see `MILESTONES.md` for subsequent hosted validation.
 
-A real producer/consumer dependency case, UCA target/version policy, service packages, automatic discovery-to-lock conversion, archive snapshots, and uploads remain future work. No pushes, package uploads, or signing were performed. The later implementation checkpoint is recorded below.
+At this initial checkpoint, dependency handoff, UCA and service support were still future work, and no pushes had been performed. Later checkpoints below and in `MILESTONES.md` supersede that status. Package uploads and signing remain outside the implementation.
 
 ## Latest-upstream snapshot, 2026-09-20
 
