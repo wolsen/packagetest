@@ -15,6 +15,14 @@ with tempfile.TemporaryDirectory(prefix='glance-smoke-') as directory:
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
+    # Use the shipped request-context middleware with a fixed test identity.
+    # The legacy unauthenticated context has no project scope and cannot pass
+    # current policy checks. This probes policy/API/storage without Keystone.
+    paste = root / 'paste.ini'
+    shipped_paste = Path('/etc/glance/glance-api-paste.ini').read_text()
+    if 'osprofiler unauthenticated-context' not in shipped_paste:
+        raise RuntimeError('Unexpected installed Glance paste configuration')
+    paste.write_text(shipped_paste.replace('osprofiler unauthenticated-context', 'osprofiler context'))
     config = root / 'glance.conf'
     config.write_text(f'''[DEFAULT]
 bind_host = 127.0.0.1
@@ -25,7 +33,7 @@ show_image_direct_url = true
 connection = sqlite:///{root}/glance.sqlite
 [paste_deploy]
 flavor =
-config_file = /etc/glance/glance-api-paste.ini
+config_file = {paste}
 [glance_store]
 stores = file
 default_store = file
@@ -61,8 +69,10 @@ filesystem_store_datadir = {root}/images
                     time.sleep(0.5)
             else:
                 raise RuntimeError('Glance API did not become ready')
-            headers = {'Content-Type': 'application/json', 'X-User-Id': 'packagetest',
-                       'X-Tenant-Id': 'packagetest', 'X-Roles': 'admin', 'X-Auth-Token': 'packagetest'}
+            headers = {'Content-Type': 'application/json', 'X-Identity-Status': 'Confirmed',
+                       'X-User-Id': '11111111111111111111111111111111',
+                       'X-Project-Id': '22222222222222222222222222222222',
+                       'X-Roles': 'admin,member,reader', 'X-Auth-Token': 'packagetest'}
             request = Request(url + '/v2/images', json.dumps({'name': 'packaging-smoke',
                               'disk_format': 'raw', 'container_format': 'bare'}).encode(), headers)
             with urlopen(request, timeout=15) as response:
@@ -77,7 +87,9 @@ filesystem_store_datadir = {root}/images
             with urlopen(Request(url + f'/v2/images/{image_id}', headers=headers, method='DELETE'), timeout=15) as response:
                 assert response.status == 204
             report.update(image_id=image_id, image_round_trip='PASSED', result='SUCCEEDED')
-        except Exception:
+        except Exception as exc:
+            if isinstance(exc, HTTPError):
+                print(exc.read().decode(errors='replace'), file=sys.stderr)
             log.seek(0)
             print(log.read(), file=sys.stderr)
             raise

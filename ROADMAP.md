@@ -21,13 +21,19 @@ Progress is based on real build evidence, not generated command strings. See `VA
 - [x] Require the producer's exact binary version during resolution and in the consumer's `.buildinfo`.
 - [x] Prove a failed producer blocks its consumer.
 
-Next: automate creation of reviewable snapshot locks from a branch or cutoff timestamp.
+## Snapshot and UCA milestones
+
+- [x] Create reviewable snapshot locks from a branch or timezone-aware cutoff.
+- [x] Generate checksum-pinned sdists with portable permissions and regression coverage.
+- [x] Build the pinned Noble/UCA Epoxy library backport with explicit branch and revision policy.
+- [x] Build Glance's five binary packages and run its packaging unit tests.
+- [ ] Complete hosted matrix and installed Glance API validation; see `MILESTONES.md` for final evidence.
 
 ## Broader Ubuntu and Cloud Archive support
 
 - Turn release discovery output into reviewable locks with explicit branch, epoch, prerelease, and UCA version policies.
 - Pin archive snapshots for reproducible build dependency selection.
-- Add target profiles and integration cases for UCA suites and service packages.
+- Extend the initial Noble/UCA Epoxy profile and Glance case to additional supported series and services.
 - Add dependency graph expansion and scheduling beyond the small static configuration.
 - Revisit repository publication only when artifact handoff is insufficient.
 - Add review-only automated failure analysis and proposed packaging patches.
