@@ -14,6 +14,44 @@ import subprocess
 import sys
 
 
+def apply_packaging_dependencies(catalog, config_root=None):
+    """Plan from reviewed control replacements, including newly added edges."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+    from packagetest.artifacts import fields, sha256
+    from packagetest.catalog import dependency_names
+    config_root = config_root or Path(__file__).resolve().parents[1] / 'config/patches'
+    catalog = json.loads(json.dumps(catalog))
+    binaries = {binary: entry['source'] for entry in catalog['packages'] for binary in entry['binaries']}
+    for entry in catalog['packages']:
+        path = config_root / entry['source'] / 'adjustments.json'
+        if not path.exists():
+            continue
+        spec = json.loads(path.read_text())
+        controls = [item for item in spec.get('replace_files', []) if item['name'] == 'control']
+        if not controls:
+            continue
+        if len(controls) != 1 or spec['archive_dsc_sha256'] != entry['archive_source']['sha256']:
+            raise ValueError(f'Unreviewed packaging control for {entry["source"]}')
+        item = controls[0]
+        name = Path(item['replacement'])
+        if name.is_absolute() or '..' in name.parts:
+            raise ValueError('Unsafe packaging control path')
+        control = path.parent / name
+        if sha256(control) != item['replacement_sha256']:
+            raise ValueError(f'Packaging control checksum mismatch for {entry["source"]}')
+        source_fields = fields(control)
+        if source_fields['Source'] != entry['source']:
+            raise ValueError('Packaging control source mismatch')
+        entry['archive_build_depends'] = entry['build_depends']
+        entry['build_depends'] = ', '.join(source_fields.get(key, '') for key in
+                                          ('Build-Depends', 'Build-Depends-Indep', 'Build-Depends-Arch'))
+        entry['packaging_control_sha256'] = item['replacement_sha256']
+    for entry in catalog['packages']:
+        entry['build_dependencies'] = sorted({binaries[name] for name in dependency_names(entry['build_depends'])
+                                              if name in binaries} - {entry['source']})
+    return catalog
+
+
 def components(graph):
     """Tarjan strongly connected components, deterministic for audit output."""
     index, stack, active, indices, low, result = 0, [], set(), {}, {}, []
@@ -91,6 +129,17 @@ def plan_catalog(catalog, sources=None, max_waves=12, candidate_dependencies=())
         completed.update(wave)
     if len(waves) > max_waves:
         raise ValueError(f'{len(waves)} dependency waves exceed workflow capacity {max_waves}')
+    # Reuse candidates that are already available without adding serialization.
+    # Removing every SCC edge is only a starting point: an earlier-wave member
+    # can safely replace an archive bootstrap dependency without creating cycles.
+    order = {source: index for index, wave in enumerate(waves) for source in wave}
+    remaining_bootstrap = []
+    for edge in bootstrap:
+        if edge['reason'] == 'dependency cycle bootstrap' and order[edge['dependency']] < order[edge['source']]:
+            graph[edge['source']].add(edge['dependency'])
+        else:
+            remaining_bootstrap.append(edge)
+    bootstrap = remaining_bootstrap
     for index, wave in enumerate(waves):
         for source in wave:
             entries[source]['run_dependencies'] = sorted(graph[source])
@@ -185,7 +234,8 @@ def main():
         print(pattern)
         return
     constraints = json.loads(args.candidate_dependencies.read_text())
-    catalog, plan = plan_catalog(json.loads(args.catalog.read_text()), [s.strip() for s in args.sources.split(',') if s.strip()] or None, args.max_waves, constraints)
+    catalog = apply_packaging_dependencies(json.loads(args.catalog.read_text()))
+    catalog, plan = plan_catalog(catalog, [s.strip() for s in args.sources.split(',') if s.strip()] or None, args.max_waves, constraints)
     if not args.no_resolve:
         with ThreadPoolExecutor(max_workers=16) as workers:
             catalog['packages'] = list(workers.map(freeze, catalog['packages']))

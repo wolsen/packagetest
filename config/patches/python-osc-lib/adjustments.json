@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "57f61178674e0e99e38973a99f65b5a4de9c068a2cafbb3db222a4545f3400b4",
+  "replace_files": [
+    {
+      "name": "control",
+      "sha256": "84ebdcaf9236a42ee17c641f5ef3d83fadaf99d8366d3d0578f63b019758a459",
+      "replacement": "control",
+      "replacement_sha256": "17facb1835588758a3176e5ef210d70ae9bf3629859ea1080dc927bf74539654",
+      "reason": "Match pinned Hibiscus osc-lib requirements.txt openstacksdk>=4.12.0 in build/test and runtime dependencies. ensure_service_version was introduced in SDK8334b199c5de464961fe9d9ba17fc0eabfc4d869, first released4.11.0; archiveSDK lacks it. Preserve all tests and use the full upstream declared minimum."
+    }
+  ]
+}

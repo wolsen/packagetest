@@ -1,12 +1,12 @@
 {
   "archive_dsc_sha256": "92e249199dbbd39d99dc0092b44beb7837b8e300efac3ed39393e6e53bcafd91",
-  "drop_patches": [
+  "replace_files": [
     {
-      "name": "extend-killfilter-test.patch",
+      "name": "patches/extend-killfilter-test.patch",
       "sha256": "278b5a86739c11d9149af09129177c4985e024c09d8c4089f72bf3450585cdab",
-      "upstream_file": "oslo_rootwrap/tests/test_rootwrap.py",
-      "upstream_file_sha256": "a5fdf4e392ecac63728be2e541c8b7e9e513014385b17a3828612ce9d898e121",
-      "reason": "Upstream commits 36d21c9 and 9337ef8 replace hard-coded cat variants with shutil.which and realpath, covering GNU/Rust executable layouts without enumerating paths. All positive/negative KillFilter assertions remain upstream."
+      "replacement": "extend-killfilter-test.patch",
+      "replacement_sha256": "74b39a4d7babb908f34df44c1ad9140491d94badf09ff0fc41990893c5b45e79",
+      "reason": "Set the actual executable directory on PATH only for the relative-path KillFilter fixture. Resolute cat resolves to /usr/lib/cargo/bin/coreutils/cat outside ambient PATH. Preserve all positive/negative signal and PATH assertions and leave production security policy unchanged."
     }
   ]
 }

@@ -1,0 +1,68 @@
+Source: python-freezerclient
+Section: python
+Priority: optional
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+XSBC-Original-Maintainer: Debian OpenStack <team+openstack@tracker.debian.org>
+Uploaders:
+ Michal Arbet <michal.arbet@ultimum.io>,
+ Thomas Goirand <zigo@debian.org>,
+Build-Depends:
+ debhelper-compat (= 11),
+ dh-python,
+ openstack-pkg-tools,
+ python3-all,
+ python3-pbr,
+ python3-setuptools,
+ python3-sphinx,
+Build-Depends-Indep:
+ python3-cliff,
+ python3-keystoneauth1,
+ python3-osc-lib (>= 1.14.0),
+ python3-openstackdocstheme,
+ python3-oslo.serialization,
+ python3-oslo.utils,
+ python3-stestr,
+ python3-testtools,
+Standards-Version: 4.4.1
+Vcs-Git: https://salsa.debian.org/openstack-team/clients/python-freezerclient.git
+Vcs-Browser: https://salsa.debian.org/openstack-team/clients/python-freezerclient
+Homepage: https://github.com/openstack/python-freezerclient
+
+Package: python3-freezerclient
+Section: python
+Architecture: all
+Depends:
+ python3-cliff,
+ python3-keystoneauth1,
+ python3-osc-lib (>= 1.14.0),
+ python3-oslo.serialization,
+ python3-oslo.utils,
+ ${misc:Depends},
+ ${python3:Depends},
+Description: OpenStack backup restore and disaster recovery service - client files
+ Freezer is a distributed backup restore and disaster recovery as a service
+ platform. It is designed to be multi OS (Linux, Windows, OSX, *BSD), focused
+ on providing efficiency and flexibility for block based backups, file based
+ incremental backups, point-in-time actions, jobs synchronization (i.e.
+ backup synchronization over multiple nodes) and many other features.
+ It is aimed at being useful for all environments, including large
+ ephemeral Clouds.
+ .
+ This package contains the Python 3.x module.
+
+Package: python-freezerclient-doc
+Section: doc
+Architecture: all
+Depends:
+ ${misc:Depends},
+ ${sphinxdoc:Depends},
+Description: OpenStack backup restore and disaster recovery service - doc files
+ Freezer is a distributed backup restore and disaster recovery as a service
+ platform. It is designed to be multi OS (Linux, Windows, OSX, *BSD), focused
+ on providing efficiency and flexibility for block based backups, file based
+ incremental backups, point-in-time actions, jobs synchronization (i.e.
+ backup synchronization over multiple nodes) and many other features.
+ It is aimed at being useful for all environments, including large
+ ephemeral Clouds.
+ .
+ This package contains the documentation.

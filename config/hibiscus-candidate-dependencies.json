@@ -13,5 +13,10 @@
     "source": "python-openstackclient",
     "dependency": "python-openstacksdk",
     "reason": "Snapshot commands require openstack.block_storage.v3.message (SDK commit e997af6fd72086419ebd89b4fcd4259390fccb4f); the pinned client requires SDK >= 4.19.0. Use the candidate SDK before building the client."
+  },
+  {
+    "source": "python-osc-lib",
+    "dependency": "python-openstacksdk",
+    "reason": "Snapshot tests require SDK ensure_service_version; the pinned osc-lib requires SDK >= 4.12.0, newer than the archive bootstrap SDK."
   }
 ]

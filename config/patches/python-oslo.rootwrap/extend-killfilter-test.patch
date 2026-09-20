@@ -1,0 +1,49 @@
+Description: Exercise relative KillFilter policy with symlinked Rust cat
+Forwarded: no
+
+Set the actual executable directory on PATH only for the relative-path KillFilter fixture. Resolute cat resolves to /usr/lib/cargo/bin/coreutils/cat outside ambient PATH. Preserve all positive/negative signal and PATH assertions and leave production security policy unchanged.
+
+--- a/oslo_rootwrap/tests/test_rootwrap.py
++++ b/oslo_rootwrap/tests/test_rootwrap.py
+@@ -264,20 +264,28 @@
+             # Providing no signal should work
+             self.assertTrue(f.match(usercmd))
+ 
+-            # verify that relative paths are matched against $PATH
+-            f = filters.KillFilter("root", cat_cmd)
+-            # Our own PID does not match so it should fail
+-            usercmd = ['kill', str(os.getpid())]
+-            self.assertFalse(f.match(usercmd))
+-            # Filter should find cat in /bin or /usr/bin
+-            usercmd = ['kill', str(p.pid)]
+-            self.assertTrue(f.match(usercmd))
+-            # Filter shouldn't be able to find binary in $PATH, so fail
+-            with fixtures.EnvironmentVariable("PATH", "/foo:/bar"):
++            # A symlinked cat may resolve outside the ambient PATH (for
++            # example Ubuntu's /usr/lib/cargo/bin/coreutils/cat). Relative
++            # KillFilter policy deliberately requires the actual executable
++            # directory on PATH; establish that condition in this fixture.
++            test_path = os.pathsep.join(
++                (os.path.dirname(cat_path), os.environ.get('PATH', ''))
++            )
++            with fixtures.EnvironmentVariable('PATH', test_path):
++                # verify that relative paths are matched against $PATH
++                f = filters.KillFilter("root", cat_cmd)
++                # Our own PID does not match so it should fail
++                usercmd = ['kill', str(os.getpid())]
+                 self.assertFalse(f.match(usercmd))
+-            # ensure that unset $PATH is not causing an exception
+-            with fixtures.EnvironmentVariable("PATH"):
+-                self.assertFalse(f.match(usercmd))
++                # Filter should find cat in /bin or /usr/bin
++                usercmd = ['kill', str(p.pid)]
++                self.assertTrue(f.match(usercmd))
++                # Filter shouldn't be able to find binary in $PATH, so fail
++                with fixtures.EnvironmentVariable("PATH", "/foo:/bar"):
++                    self.assertFalse(f.match(usercmd))
++                # ensure that unset $PATH is not causing an exception
++                with fixtures.EnvironmentVariable("PATH"):
++                    self.assertFalse(f.match(usercmd))
+         finally:
+             # Terminate the "cat" process and wait for it to finish
+             p.terminate()

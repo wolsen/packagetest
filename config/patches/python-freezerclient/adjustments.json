@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "c12afc4bb9aebb91f889e5f3ff0d4ac4fd78e98ae25ed25fe8b24e9a4c79f5b0",
+  "replace_files": [
+    {
+      "name": "control",
+      "sha256": "54b673ae9a0aa9a351a172161bca572bb15d6b25335ed92e5efdc99e4333f94a",
+      "replacement": "control",
+      "replacement_sha256": "1647678b16b48f740604a87880bc507374326d7b6f7ce20c1f001bc4d1173bf0",
+      "reason": "Pinned Freezer client declares osc-lib>=1.14.0 and imports osc_lib.utils in its runtime OSC plugin and unit tests. Add the missing dependency to both Build-Depends-Indep and python3-freezerclient Depends rather than skipping tests."
+    }
+  ]
+}

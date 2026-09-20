@@ -1,0 +1,9 @@
+Restrictions: superficial
+Depends:
+ python3-osprofiler,
+Test-Command: cd "$AUTOPKGTEST_TMP" ; python3 -c "import osprofiler; from importlib.metadata import version; value = version('osprofiler'); assert value; print(value)"
+
+Tests: unittests
+Depends:
+ @builddeps@,
+Restrictions: allow-stderr needs-root

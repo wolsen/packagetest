@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "d231162e99b00aa296289ab73721e067871be791441993c600140d7602800ca6",
+  "replace_files": [
+    {
+      "name": "tests/control",
+      "sha256": "578485065ec7c629c30e09ecc67fb37d181b2837dbc7ab4d0552bfed7f309869",
+      "replacement": "tests-control",
+      "replacement_sha256": "f6d76f1c2adec37e83f08d94151e41d5a6d5554fcf607afb940be3d445d5a6f2",
+      "reason": "Use supported importlib.metadata.version API instead of deprecated osprofiler.__version__. Retain module import, assert non-empty installed distribution version, preserve existing restrictions and substantive unit tests; do not suppress warnings or allow smoke-test stderr."
+    }
+  ]
+}

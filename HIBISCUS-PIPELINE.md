@@ -12,11 +12,13 @@ The plan resolves references once. Declared `stable/2026.2` branches take preced
 
 The initial graph has eight waves, each allowing 20 concurrent jobs subject to runner availability. Failures do not cancel independent jobs. Missing or failed required producers block consumers.
 
-Cycles are recorded as archive bootstrap edges. Those dependencies use archive packages for the first build. A subsequent rebuild of cyclic components is required before claiming the complete set was built against candidate dependencies.
+Cycles are recorded as archive bootstrap edges. Dependencies already available from an earlier wave use that run's candidates; only the remaining cycle edges use archive packages for the first build. A subsequent rebuild of cyclic components is required before claiming the complete set was built against candidate dependencies.
 
 `config/hibiscus-candidate-dependencies.json` preserves reviewed dependencies that cannot use archive versions, even inside a cycle. For example, Manila Client requires the candidate OpenStack Client test fixtures, and oslo.service requires the candidate oslo.config serialization API. The reverse cycle edges can still bootstrap from the archive. An explicit pilot must include these mandatory candidates; incompatible mandatory cycles fail planning rather than silently falling back.
 
 Consumers validate artifact run ID, attempt, target, frozen catalog entry, checksums, and Debian metadata. They reconstruct an APT repository and supply verified binaries to sbuild. Required versions are checked against buildinfo. Artifacts from older attempts are rejected; retry the whole workflow for dependency chains.
+
+Planning incorporates checksum-verified packaging control replacements, so added build dependencies enter the graph. Exact version checks use all build-dependency fields from the generated source package, including architecture-independent dependencies.
 
 ## Tests and reports
 
