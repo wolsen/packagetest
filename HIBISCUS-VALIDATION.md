@@ -64,21 +64,37 @@ reproduced and checked locally. Full remote validation is still required:
 [run 35514574466](https://github.com/wolsen/packagetest/actions/runs/35514574466)
 tests the repaired catalog.
 
-## Follow-up validation in progress
+## Completed follow-up run
 
-Run 35514574466 has confirmed the Rootwrap, Zaqar Client, oslo.config,
-oslo.middleware and oslo.service build repairs. Octavia's two explicit tests
-and osprofiler's unit test pass. Debtcollector now correctly reports SUPERFICIAL.
-The first 83 completed autopkgtest jobs contain no actual FAIL or INFRA_ERROR;
-missing and superficial coverage remains distinct.
+[Run 35514574466](https://github.com/wolsen/packagetest/actions/runs/35514574466)
+completed at `eaa5ab8`. Its verified summary accounts for all 197 sources:
 
-Two newly exposed build failures have a further repair batch: SDK authentication
-caching requires keystoneauth1 >=5.16.0, and oslo.versionedobjects requires mypy
->=1.19.0 for its new plugin tests. SDK's catalog-date test now accepts newer
-snapshot catalogs while rejecting stale or malformed dates. The planner requires
-the candidate keystoneauth before SDK, preserving eight waves and reducing the
-remaining archive bootstrap edges to 176. The batch passes 177 repository tests
-and fresh source-package checks; its full binary validation is still pending.
+| Phase | Results |
+|---|---|
+| Builds | 120 succeeded, 4 failed, 73 blocked |
+| Autopkgtests | 57 PASS, 21 SUPERFICIAL, 42 NO_TESTS, 77 BLOCKED |
+
+There were no actual autopkgtest failures or infrastructure errors. This confirms
+Octavia's two explicit tests and osprofiler's unit tests; debtcollector correctly
+remains superficial. The ZIP SHA-256 is
+`3e6c3b20c83b5d9965fdbb4b3b8490ff2f8fc18b15dc2c8cb3b4bc53ee3273f1`.
+Retained results are under `artifacts/github/35514574466/summary/`.
+
+The repair batch through `cc71d8e` addresses all four remaining direct failures:
+
+- SDK requires candidate keystoneauth1 >=5.16.0. Its catalog test accepts newer
+  snapshot catalogs while rejecting stale or malformed dates.
+- oslo.versionedobjects requires mypy >=1.19.0; type assertions normalize the
+  supported version's builtin-name display. All 57 plugin tests pass locally.
+- Ironic Agent's setuptools configuration omitted runtime subpackages. The rebuilt
+  wheel contains all 21 entry-point modules; installed metrics imports pass.
+- CloudKitty requires observabilityclient >=1.1.0 for builds and runtime.
+
+The batch passes 177 repository tests, workflow validation, and fresh source
+checks. Its full remote binary validation remains pending. The graph retains
+197 sources across eight parallel waves. A separate audit verified runtime files
+and imports in actual cliff, oslo.messaging, and oslo.service candidate binaries;
+source configuration alone did not justify broader package discovery changes.
 
 ## Remaining release gates
 
