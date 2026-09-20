@@ -75,6 +75,45 @@ def ubuntu_maintainer(control: Path) -> None:
     source = source[:match.start()] + replacement + source[match.end():]
     control.write_text(source + separator + binaries)
 
+
+def packaging_adjustments(entry: dict, tree: Path, config_root: Path | None = None) -> list[dict]:
+    """Apply only reviewed, checksum-guarded packaging adaptations."""
+    config_root = config_root or Path(__file__).resolve().parents[2] / 'config' / 'patches'
+    path = config_root / entry['source'] / 'adjustments.json'
+    if not path.exists():
+        return []
+    spec = json.loads(path.read_text())
+    if spec['archive_dsc_sha256'] != entry['archive_source']['sha256']:
+        raise ValueError('Packaging adaptation requires review for changed archive source')
+    applied = []
+    for item in spec.get('replace_files', []):
+        name = Path(item['name'])
+        replacement = Path(item['replacement'])
+        if name.is_absolute() or '..' in name.parts or replacement.is_absolute() or '..' in replacement.parts:
+            raise ValueError('Unsafe packaging adaptation path')
+        original = tree / 'debian' / name
+        revised = path.parent / replacement
+        if sha256(original) != item['sha256'] or sha256(revised) != item['replacement_sha256']:
+            raise ValueError('Packaging adaptation checksum guard failed: ' + str(name))
+        shutil.copyfile(revised, original)
+        applied.append({'action': 'replace-packaging-file', **item})
+    if not spec.get('drop_patches'):
+        return applied
+    series_path = tree / 'debian' / 'patches' / 'series'
+    series = series_path.read_text().splitlines()
+    for patch in spec.get('drop_patches', []):
+        original = tree / 'debian' / 'patches' / patch['name']
+        upstream = tree / patch['upstream_file']
+        if sha256(original) != patch['sha256'] or sha256(upstream) != patch['upstream_file_sha256']:
+            raise ValueError('Packaging adaptation checksum guard failed: ' + patch['name'])
+        matching = [index for index, line in enumerate(series) if line.split() and line.split()[0] == patch['name']]
+        if len(matching) != 1:
+            raise ValueError('Packaging adaptation requires one matching series entry')
+        series[matching[0]] = '# Superseded upstream: ' + patch['name']
+        applied.append({'action': 'omit-obsolete-patch', **patch})
+    series_path.write_text('\n'.join(series) + '\n')
+    return applied
+
 def extract_snapshot(archive: Path, destination: Path) -> None:
     destination.mkdir()
     with tarfile.open(archive) as source:
@@ -165,6 +204,7 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None)
             raise ValueError('Upstream snapshot unexpectedly contains Debian packaging')
         shutil.copytree(packaging_tree / 'debian', tree / 'debian', symlinks=True)
         ubuntu_maintainer(tree / 'debian' / 'control')
+        report['packaging_adjustments'] = packaging_adjustments(entry, tree)
         build.command('dch', '--newversion', version, '--distribution', 'resolute', '--force-distribution',
                       'Nightly OpenStack 2026.2 snapshot from pinned upstream commit ' + selected['sha'] + '.',
                       cwd=tree, env={'DEBFULLNAME': 'Packaging Build Agent', 'DEBEMAIL': 'packaging-agent@example.invalid'})

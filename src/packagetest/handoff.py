@@ -82,7 +82,11 @@ def collect_producers(download_root: Path, expected_locks: dict[str, dict], *,
                 raise ValueError(f'Producer version mismatch: {source}')
             directory = manifest_path.parent / 'artifacts' / source / 'binary'
             # A downloaded archive must not redirect verification outside its bundle.
-            if any(path.is_symlink() for path in manifest_path.parent.rglob('*')):
+            # sbuild creates convenience .build log symlinks, often absolute.
+            # They are never inputs to verification or installation. All other
+            # symlinks remain forbidden, including artifact directories.
+            if any(path.is_symlink() and not path.name.endswith('.build')
+                   for path in manifest_path.parent.rglob('*')):
                 raise ValueError(f'Symlink in producer bundle: {source}')
             verified = verify_binaries(directory, source=source, version=package['version'],
                                        expected=package['expected_binaries'], arch=target['architecture'])

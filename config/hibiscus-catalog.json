@@ -13,8 +13,24 @@
       "sha256": "dce0fc8e2a473b26f729b1204fd4c12ae068428f743f96761392a059ab7bbfcd"
     },
     {
+      "filename": "packagetest-resolute-security-main-Sources.xz",
+      "sha256": "cb3948d37f1ab7de468762e289b59541cfc29e1f1c15e50edca51af975fc4126"
+    },
+    {
+      "filename": "packagetest-resolute-security-universe-Sources.xz",
+      "sha256": "50052b7d38f71090490fa26236a9fb093e8cea1bcf2ee2e6e12fdb4fab8a218e"
+    },
+    {
       "filename": "packagetest-resolute-universe-Sources.xz",
       "sha256": "9c732321580ae2824f7d8cb936e12cca435a60a252d0654b8cc2a0011dc82903"
+    },
+    {
+      "filename": "packagetest-resolute-updates-main-Sources.xz",
+      "sha256": "df6140b8c701437372ad54282776fc10e499dc4bf5ec7b4dc6a6f0fc46398757"
+    },
+    {
+      "filename": "packagetest-resolute-updates-universe-Sources.xz",
+      "sha256": "f34e4696036b62929b1fcc3d284db300bcdae97b04f78f374b7c1ce1fb9a7e07"
     }
   ],
   "scope": "All cycle deliverables mapped to Ubuntu main/universe source packages, plus transitive independently released OpenStack build dependencies",
@@ -32,6 +48,10 @@
         "openstack/adjutant"
       ],
       "archive_version": "11.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/services/adjutant.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/services/adjutant"
+      },
       "binaries": [
         "adjutant-api",
         "adjutant-common",
@@ -78,6 +98,10 @@
         "openstack/adjutant-ui"
       ],
       "archive_version": "11.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/horizon-plugins/adjutant-ui.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/horizon-plugins/adjutant-ui"
+      },
       "binaries": [
         "python3-adjutant-ui"
       ],
@@ -116,6 +140,10 @@
         "openstack/aetos"
       ],
       "archive_version": "1.0.0-3",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/services/aetos.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/services/aetos"
+      },
       "binaries": [
         "aetos",
         "aetos-doc"
@@ -162,6 +190,10 @@
         "openstack/aodh"
       ],
       "archive_version": "1:22.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/aodh",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/aodh"
+      },
       "binaries": [
         "aodh-api",
         "aodh-common",
@@ -229,6 +261,10 @@
         "openstack/barbican"
       ],
       "archive_version": "2:22.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/barbican",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/barbican"
+      },
       "binaries": [
         "barbican-api",
         "barbican-common",
@@ -293,6 +329,10 @@
         "openstack/barbican-tempest-plugin"
       ],
       "archive_version": "4.5.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/barbican-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/barbican-tempest-plugin"
+      },
       "binaries": [
         "barbican-tempest-plugin"
       ],
@@ -315,40 +355,6 @@
       ]
     },
     {
-      "deliverable": "bifrost",
-      "source": "bifrost",
-      "membership": "cycle",
-      "release_type": "other",
-      "team": "ironic",
-      "upstream_repository": "https://opendev.org/openstack/bifrost",
-      "upstream_ref": "master",
-      "branch_policy": "release-metadata-no-stable-branch",
-      "all_upstream_repositories": [
-        "openstack/bifrost"
-      ],
-      "archive_version": "1.3.5-2",
-      "binaries": [
-        "bifrost",
-        "libbifrost-dev",
-        "libbifrost0"
-      ],
-      "build_depends": "debhelper-compat (= 13), d-shlibs, cmake, zlib1g-dev",
-      "testsuite": "autopkgtest",
-      "archive_packaging_repository": "https://salsa.debian.org/med-team/bifrost.git",
-      "packaging_repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/bifrost",
-      "packaging_branch_candidates": [
-        "stable/2026.2",
-        "master"
-      ],
-      "archive_source": {
-        "url": "https://archive.ubuntu.com/ubuntu/pool/universe/b/bifrost/bifrost_1.3.5-2.dsc",
-        "sha256": "b39e40088f0c1caffa92bf2662d8ea9832be927c1e4449c82db9737fb301d992"
-      },
-      "snapshot_backend": "python-sdist",
-      "discovery_error": null,
-      "build_dependencies": []
-    },
-    {
       "deliverable": "blazar",
       "source": "blazar",
       "membership": "cycle",
@@ -361,6 +367,10 @@
         "openstack/blazar"
       ],
       "archive_version": "17.0.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/services/blazar.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/services/blazar"
+      },
       "binaries": [
         "blazar-api",
         "blazar-common",
@@ -422,6 +432,10 @@
         "openstack/blazar-dashboard"
       ],
       "archive_version": "15.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/horizon-plugins/blazar-dashboard.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/horizon-plugins/blazar-dashboard"
+      },
       "binaries": [
         "python3-blazar-dashboard"
       ],
@@ -461,6 +475,10 @@
         "openstack/blazar-nova"
       ],
       "archive_version": "9.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/services/blazar-nova.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/services/blazar-nova"
+      },
       "binaries": [
         "python3-blazarnova"
       ],
@@ -501,6 +519,10 @@
         "openstack/blazar-tempest-plugin"
       ],
       "archive_version": "0.18.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/blazar-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/blazar-tempest-plugin"
+      },
       "binaries": [
         "blazar-tempest-plugin"
       ],
@@ -535,6 +557,10 @@
         "openstack/ceilometer"
       ],
       "archive_version": "2:26.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/ceilometer",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/ceilometer"
+      },
       "binaries": [
         "ceilometer-agent-central",
         "ceilometer-agent-compute",
@@ -607,6 +633,10 @@
         "openstack/cinder"
       ],
       "archive_version": "2:28.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/cinder",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/cinder"
+      },
       "binaries": [
         "cinder-api",
         "cinder-backup",
@@ -665,6 +695,7 @@
         "python-pbr",
         "python-sphinx-feature-classification",
         "python-swiftclient",
+        "python-taskflow",
         "python-tooz",
         "stevedore",
         "tempest"
@@ -683,6 +714,10 @@
         "openstack/cinder-tempest-plugin"
       ],
       "archive_version": "1.21.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/cinder-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/cinder-tempest-plugin"
+      },
       "binaries": [
         "cinder-tempest-plugin"
       ],
@@ -720,6 +755,10 @@
         "openstack/cloudkitty"
       ],
       "archive_version": "24.0.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/services/cloudkitty.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/services/cloudkitty"
+      },
       "binaries": [
         "cloudkitty-api",
         "cloudkitty-common",
@@ -780,6 +819,10 @@
         "openstack/cloudkitty-dashboard"
       ],
       "archive_version": "22.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/horizon-plugins/cloudkitty-dashboard.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/horizon-plugins/cloudkitty-dashboard"
+      },
       "binaries": [
         "python3-cloudkitty-dashboard"
       ],
@@ -819,6 +862,10 @@
         "openstack/cloudkitty-tempest-plugin"
       ],
       "archive_version": "3.4.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/cloudkitty-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/cloudkitty-tempest-plugin"
+      },
       "binaries": [
         "cloudkitty-tempest-plugin"
       ],
@@ -852,7 +899,12 @@
       "all_upstream_repositories": [
         "openstack/cyborg"
       ],
-      "archive_version": "16.0.0-2",
+      "archive_version": "16.0.0-2ubuntu0.1",
+      "archive_identity_evidence": {
+        "Homepage": "https://github.com/openstack/cyborg",
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/services/cyborg.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/services/cyborg"
+      },
       "binaries": [
         "cyborg-agent",
         "cyborg-api",
@@ -870,8 +922,8 @@
         "master"
       ],
       "archive_source": {
-        "url": "https://archive.ubuntu.com/ubuntu/pool/universe/c/cyborg/cyborg_16.0.0-2.dsc",
-        "sha256": "5e04e03c5331e64e2c3493e7a5eefcd78ffd779119c6d8f481b0b21a308bfb0f"
+        "url": "https://archive.ubuntu.com/ubuntu/pool/universe/c/cyborg/cyborg_16.0.0-2ubuntu0.1.dsc",
+        "sha256": "24570658793c5095bfb403a3e119d48b4cd755b85f551040bfc9b863d853b318"
       },
       "snapshot_backend": "python-sdist",
       "discovery_error": null,
@@ -915,6 +967,10 @@
         "openstack/designate"
       ],
       "archive_version": "1:22.0.0-0ubuntu2",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/designate",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/designate"
+      },
       "binaries": [
         "designate",
         "designate-agent",
@@ -992,6 +1048,10 @@
         "openstack/designate-dashboard"
       ],
       "archive_version": "22.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/designate-dashboard",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/designate-dashboard"
+      },
       "binaries": [
         "python3-designate-dashboard"
       ],
@@ -1032,6 +1092,10 @@
         "openstack/designate-tempest-plugin"
       ],
       "archive_version": "0.28.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/designate-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/designate-tempest-plugin"
+      },
       "binaries": [
         "designate-tempest-plugin"
       ],
@@ -1069,6 +1133,9 @@
         "openstack/glance"
       ],
       "archive_version": "2:32.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/glance"
+      },
       "binaries": [
         "glance",
         "glance-api",
@@ -1122,6 +1189,7 @@
         "python-osprofiler",
         "python-pbr",
         "python-swiftclient",
+        "python-taskflow",
         "stevedore"
       ]
     },
@@ -1138,6 +1206,10 @@
         "openstack/glance-tempest-plugin"
       ],
       "archive_version": "0.15.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/glance-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/glance-tempest-plugin"
+      },
       "binaries": [
         "glance-tempest-plugin"
       ],
@@ -1174,7 +1246,11 @@
       "all_upstream_repositories": [
         "openstack/heat"
       ],
-      "archive_version": "1:26.0.0-0ubuntu1",
+      "archive_version": "1:26.0.0-0ubuntu1.2",
+      "archive_identity_evidence": {
+        "Homepage": "https://github.com/openstack/heat",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/heat"
+      },
       "binaries": [
         "heat-api",
         "heat-api-cfn",
@@ -1191,8 +1267,8 @@
         "master"
       ],
       "archive_source": {
-        "url": "https://archive.ubuntu.com/ubuntu/pool/main/h/heat/heat_26.0.0-0ubuntu1.dsc",
-        "sha256": "b1056da3e5236b9ad2f0c7c36cb3fa1fc650418c4a6aa81a9a96ec0486b522a3"
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/h/heat/heat_26.0.0-0ubuntu1.2.dsc",
+        "sha256": "d3d98ee1c513ac50b6237c35e2ca972883bfbdac97487b62a2a63b79e698010f"
       },
       "snapshot_backend": "python-sdist",
       "discovery_error": null,
@@ -1262,7 +1338,11 @@
       "all_upstream_repositories": [
         "openstack/heat-dashboard"
       ],
-      "archive_version": "15.0.0-0ubuntu1",
+      "archive_version": "15.0.0-0ubuntu1.1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/heat-dashboard",
+        "Vcs-Browser": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/heat-dashboard"
+      },
       "binaries": [
         "heat-dashboard-common",
         "python3-heat-dashboard"
@@ -1276,8 +1356,8 @@
         "master"
       ],
       "archive_source": {
-        "url": "https://archive.ubuntu.com/ubuntu/pool/main/h/heat-dashboard/heat-dashboard_15.0.0-0ubuntu1.dsc",
-        "sha256": "217f78584cd87a7d5d2d12e0a5df7e10a06adca262bcce26e941f5b1c5f9aee5"
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/h/heat-dashboard/heat-dashboard_15.0.0-0ubuntu1.1.dsc",
+        "sha256": "f1a4e693f3821c5a342a85b2a1576e0b8cf4ae1472f18bef99af472ef6999400"
       },
       "snapshot_backend": "python-sdist",
       "discovery_error": null,
@@ -1302,6 +1382,10 @@
         "openstack/heat-tempest-plugin"
       ],
       "archive_version": "2.7.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/heat-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/heat-tempest-plugin"
+      },
       "binaries": [
         "heat-tempest-plugin"
       ],
@@ -1349,6 +1433,9 @@
         "openstack/horizon"
       ],
       "archive_version": "4:25.7.1-0ubuntu1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/horizon"
+      },
       "binaries": [
         "openstack-dashboard",
         "openstack-dashboard-common",
@@ -1405,7 +1492,11 @@
       "all_upstream_repositories": [
         "openstack/ironic"
       ],
-      "archive_version": "1:35.0.0-0ubuntu2",
+      "archive_version": "1:35.0.0-0ubuntu2.1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/ironic",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/ironic"
+      },
       "binaries": [
         "ironic-api",
         "ironic-common",
@@ -1421,12 +1512,13 @@
         "master"
       ],
       "archive_source": {
-        "url": "https://archive.ubuntu.com/ubuntu/pool/universe/i/ironic/ironic_35.0.0-0ubuntu2.dsc",
-        "sha256": "9ce1b59c5d6bd7578b22e469b40fc54e5b9a63f11691e5acdc80c415fda324d8"
+        "url": "https://archive.ubuntu.com/ubuntu/pool/universe/i/ironic/ironic_35.0.0-0ubuntu2.1.dsc",
+        "sha256": "c76cc6c262e1310d65f8c65ed65cc0a67bef0b7826b8d4c38b20f86c98c2cd12"
       },
       "snapshot_backend": "python-sdist",
       "discovery_error": null,
       "build_dependencies": [
+        "python-automaton",
         "python-cinderclient",
         "python-futurist",
         "python-glanceclient",
@@ -1478,6 +1570,10 @@
         "openstack/ironic-python-agent"
       ],
       "archive_version": "11.2.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/services/ironic-python-agent.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/services/ironic-python-agent"
+      },
       "binaries": [
         "ironic-python-agent"
       ],
@@ -1519,6 +1615,10 @@
         "openstack/ironic-tempest-plugin"
       ],
       "archive_version": "2.15.0-3",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/ironic-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/ironic-tempest-plugin"
+      },
       "binaries": [
         "ironic-tempest-plugin"
       ],
@@ -1553,6 +1653,10 @@
         "openstack/ironic-ui"
       ],
       "archive_version": "6.8.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/ironic-ui",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/ironic-ui"
+      },
       "binaries": [
         "python3-ironic-ui"
       ],
@@ -1592,7 +1696,11 @@
       "all_upstream_repositories": [
         "openstack/keystone"
       ],
-      "archive_version": "2:29.0.0-0ubuntu1",
+      "archive_version": "2:29.0.0-0ubuntu1.2",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/keystone",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/keystone"
+      },
       "binaries": [
         "keystone",
         "keystone-common",
@@ -1608,8 +1716,8 @@
         "master"
       ],
       "archive_source": {
-        "url": "https://archive.ubuntu.com/ubuntu/pool/main/k/keystone/keystone_29.0.0-0ubuntu1.dsc",
-        "sha256": "9b060c1d9468e2ef3e436b48a33dcb115c1885db9f8b2d7a3aa3862d4e3512f4"
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/k/keystone/keystone_29.0.0-0ubuntu1.2.dsc",
+        "sha256": "15f21fc13670bdf90876defff3c3ed122d5556f57ddae0e7fd3afbe5e0dceb0a"
       },
       "snapshot_backend": "python-sdist",
       "discovery_error": null,
@@ -1655,6 +1763,10 @@
         "openstack/keystone-tempest-plugin"
       ],
       "archive_version": "0.20.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/keystone-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/keystone-tempest-plugin"
+      },
       "binaries": [
         "keystone-tempest-plugin"
       ],
@@ -1692,6 +1804,10 @@
         "openstack/magnum"
       ],
       "archive_version": "22.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/magnum",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/magnum"
+      },
       "binaries": [
         "magnum-api",
         "magnum-common",
@@ -1748,6 +1864,7 @@
         "python-osprofiler",
         "python-pbr",
         "python-pycadf",
+        "python-taskflow",
         "stevedore"
       ]
     },
@@ -1764,6 +1881,10 @@
         "openstack/magnum-tempest-plugin"
       ],
       "archive_version": "2.10.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/magnum-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/magnum-tempest-plugin"
+      },
       "binaries": [
         "magnum-tempest-plugin"
       ],
@@ -1798,6 +1919,10 @@
         "openstack/magnum-ui"
       ],
       "archive_version": "18.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/magnum-ui",
+        "Vcs-Browser": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/magnum-ui"
+      },
       "binaries": [
         "python3-magnum-ui"
       ],
@@ -1837,6 +1962,10 @@
         "openstack/manila"
       ],
       "archive_version": "1:22.0.0-0ubuntu2",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/manila",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/manila"
+      },
       "binaries": [
         "manila-api",
         "manila-common",
@@ -1909,6 +2038,10 @@
         "openstack/manila-tempest-plugin"
       ],
       "archive_version": "3.0.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/manila-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/manila-tempest-plugin"
+      },
       "binaries": [
         "manila-tempest-plugin"
       ],
@@ -1944,6 +2077,10 @@
         "openstack/manila-ui"
       ],
       "archive_version": "1:15.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/manila-ui",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/manila-ui"
+      },
       "binaries": [
         "python3-manila-ui"
       ],
@@ -1986,6 +2123,10 @@
         "openstack/masakari"
       ],
       "archive_version": "21.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/masakari",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/masakari"
+      },
       "binaries": [
         "masakari-api",
         "masakari-common",
@@ -2030,6 +2171,7 @@
         "python-oslo.versionedobjects",
         "python-oslotest",
         "python-pbr",
+        "python-taskflow",
         "python-tooz",
         "stevedore"
       ]
@@ -2047,6 +2189,11 @@
         "openstack/masakari-dashboard"
       ],
       "archive_version": "14.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/masakari-dashboard",
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/horizon-plugins/masakari-dashboard.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/horizon-plugins/masakari-dashboard"
+      },
       "binaries": [
         "python3-masakari-dashboard"
       ],
@@ -2083,7 +2230,12 @@
       "all_upstream_repositories": [
         "openstack/masakari-monitors"
       ],
-      "archive_version": "21.0.0-0ubuntu1",
+      "archive_version": "21.0.0-0ubuntu1.1",
+      "archive_identity_evidence": {
+        "Homepage": "https://github.com/openstack/masakari-monitors",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/masakari-monitors",
+        "Vcs-Browser": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/masakari-monitors"
+      },
       "binaries": [
         "masakari-host-monitor",
         "masakari-instance-monitor",
@@ -2102,12 +2254,13 @@
         "master"
       ],
       "archive_source": {
-        "url": "https://archive.ubuntu.com/ubuntu/pool/main/m/masakari-monitors/masakari-monitors_21.0.0-0ubuntu1.dsc",
-        "sha256": "e07ea66e1b4fefc1180cf8ebb5e4a5afe2d124e491b7305e33b18d983afad838"
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/m/masakari-monitors/masakari-monitors_21.0.0-0ubuntu1.1.dsc",
+        "sha256": "190198017cf39dcf1efc8ffaa85a504ff1060032a9c963ecad0dbeaaeb4a9f72"
       },
       "snapshot_backend": "python-sdist",
       "discovery_error": null,
       "build_dependencies": [
+        "python-automaton",
         "python-hacking",
         "python-keystoneauth1",
         "python-openstackdocstheme",
@@ -2138,7 +2291,11 @@
       "all_upstream_repositories": [
         "openstack/mistral"
       ],
-      "archive_version": "22.0.0-0ubuntu1",
+      "archive_version": "22.0.0-0ubuntu1.1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/mistral",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/mistral"
+      },
       "binaries": [
         "mistral-api",
         "mistral-common",
@@ -2156,8 +2313,8 @@
         "master"
       ],
       "archive_source": {
-        "url": "https://archive.ubuntu.com/ubuntu/pool/universe/m/mistral/mistral_22.0.0-0ubuntu1.dsc",
-        "sha256": "42c908e8808cff26abf623dc576d7105eccf9031956dcfb18825fc5f0b36b7b8"
+        "url": "https://archive.ubuntu.com/ubuntu/pool/universe/m/mistral/mistral_22.0.0-0ubuntu1.1.dsc",
+        "sha256": "2fa11552a8e7bb2ef0df7f66578a1132730731545bdab393d24922ee39643186"
       },
       "snapshot_backend": "python-sdist",
       "discovery_error": null,
@@ -2220,6 +2377,11 @@
         "openstack/mistral-dashboard"
       ],
       "archive_version": "20.0.0-0ubuntu2",
+      "archive_identity_evidence": {
+        "Homepage": "https://github.com/openstack/mistral-dashboard",
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/horizon-plugins/mistral-dashboard.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/horizon-plugins/mistral-dashboard"
+      },
       "binaries": [
         "python3-mistral-dashboard"
       ],
@@ -2257,6 +2419,10 @@
         "openstack/mistral-extra"
       ],
       "archive_version": "16.0.1-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/services/mistral-extra.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/services/mistral-extra"
+      },
       "binaries": [
         "mistral-extra"
       ],
@@ -2317,6 +2483,10 @@
         "openstack/mistral-tempest-plugin"
       ],
       "archive_version": "2.8.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/mistral-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/mistral-tempest-plugin"
+      },
       "binaries": [
         "mistral-tempest-plugin"
       ],
@@ -2351,6 +2521,10 @@
         "openstack/networking-bagpipe"
       ],
       "archive_version": "24.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/networking-bagpipe",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/networking-bagpipe"
+      },
       "binaries": [
         "networking-bagpipe-common",
         "python-networking-bagpipe-doc",
@@ -2408,6 +2582,10 @@
         "openstack/networking-baremetal"
       ],
       "archive_version": "7.2.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/networking-baremetal",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/networking-baremetal"
+      },
       "binaries": [
         "ironic-neutron-agent",
         "python3-ironic-neutron-agent"
@@ -2458,6 +2636,10 @@
         "openstack/networking-bgpvpn"
       ],
       "archive_version": "24.0.0-0ubuntu2",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/networking-bgpvpn",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/networking-bgpvpn"
+      },
       "binaries": [
         "networking-bgpvpn-common",
         "python-networking-bgpvpn-doc",
@@ -2510,6 +2692,10 @@
         "openstack/networking-generic-switch"
       ],
       "archive_version": "9.1.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/neutron-plugins/networking-generic-switch.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/neutron-plugins/networking-generic-switch"
+      },
       "binaries": [
         "python3-networking-generic-switch"
       ],
@@ -2555,6 +2741,10 @@
         "openstack/networking-sfc"
       ],
       "archive_version": "22.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/networking-sfc",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/networking-sfc"
+      },
       "binaries": [
         "networking-sfc-common",
         "python3-networking-sfc"
@@ -2604,7 +2794,11 @@
       "all_upstream_repositories": [
         "openstack/neutron"
       ],
-      "archive_version": "2:28.0.0-0ubuntu1",
+      "archive_version": "2:28.0.0-0ubuntu1.1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/neutron",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/neutron"
+      },
       "binaries": [
         "neutron-api",
         "neutron-common",
@@ -2633,8 +2827,8 @@
         "master"
       ],
       "archive_source": {
-        "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/neutron/neutron_28.0.0-0ubuntu1.dsc",
-        "sha256": "0a53e2aa68383185af500f9c19caaf1e5867d955c24111dc027c05990a972566"
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/neutron/neutron_28.0.0-0ubuntu1.1.dsc",
+        "sha256": "c0228b36ba821edd1561ede036b56e7452f79a3eb532dc670d994790de4fe646"
       },
       "snapshot_backend": "python-sdist",
       "discovery_error": null,
@@ -2696,6 +2890,10 @@
         "openstack/neutron-dynamic-routing"
       ],
       "archive_version": "2:28.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/neutron-dynamic-routing",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/neutron-dynamic-routing"
+      },
       "binaries": [
         "neutron-bgp-dragent",
         "neutron-dynamic-routing-common",
@@ -2748,6 +2946,10 @@
         "openstack/neutron-fwaas"
       ],
       "archive_version": "1:24.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/neutron-fwaas",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/neutron-fwaas"
+      },
       "binaries": [
         "neutron-fwaas-common",
         "python3-neutron-fwaas"
@@ -2800,6 +3002,10 @@
         "openstack/neutron-fwaas-dashboard"
       ],
       "archive_version": "1:10.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/neutron-fwaas-dashboard",
+        "Vcs-Browser": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/neutron-fwaas-dashboard"
+      },
       "binaries": [
         "python3-neutron-fwaas-dashboard"
       ],
@@ -2837,6 +3043,10 @@
         "openstack/neutron-tempest-plugin"
       ],
       "archive_version": "3.0.0-3",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/neutron-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/neutron-tempest-plugin"
+      },
       "binaries": [
         "neutron-tempest-plugin"
       ],
@@ -2881,6 +3091,10 @@
         "openstack/neutron-vpnaas"
       ],
       "archive_version": "2:28.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/neutron-vpnaas",
+        "Vcs-Browser": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/neutron-vpnaas"
+      },
       "binaries": [
         "neutron-vpnaas-common",
         "python3-neutron-vpnaas"
@@ -2932,6 +3146,11 @@
         "openstack/neutron-vpnaas-dashboard"
       ],
       "archive_version": "11.0.0+git2025020311.159f688-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://github.com/openstack/neutron-vpnaas-dashboard",
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/horizon-plugins/neutron-vpnaas-dashboard.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/horizon-plugins/neutron-vpnaas-dashboard"
+      },
       "binaries": [
         "python3-neutron-vpnaas-dashboard"
       ],
@@ -2969,7 +3188,10 @@
       "all_upstream_repositories": [
         "openstack/nova"
       ],
-      "archive_version": "3:33.0.0-0ubuntu3",
+      "archive_version": "3:33.0.0-0ubuntu3.1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/nova"
+      },
       "binaries": [
         "nova-ajax-console-proxy",
         "nova-api",
@@ -3004,8 +3226,8 @@
         "master"
       ],
       "archive_source": {
-        "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/nova/nova_33.0.0-0ubuntu3.dsc",
-        "sha256": "1c2e199a9d7fde76a33601029c427e6c4f073ec135acc22bfbbfac85112c64e4"
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/nova/nova_33.0.0-0ubuntu3.1.dsc",
+        "sha256": "f41732238a9e064a93dad61f4c93b7d7b33888f030dfd22dddd15373ec3cd47c"
       },
       "snapshot_backend": "python-sdist",
       "discovery_error": null,
@@ -3074,6 +3296,10 @@
         "openstack/octavia"
       ],
       "archive_version": "1:18.0.0-0ubuntu2",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/octavia",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/octavia"
+      },
       "binaries": [
         "amphora-agent",
         "octavia-api",
@@ -3131,6 +3357,7 @@
         "python-oslotest",
         "python-pbr",
         "python-sphinx-feature-classification",
+        "python-taskflow",
         "stevedore",
         "tempest"
       ]
@@ -3148,6 +3375,10 @@
         "openstack/octavia-dashboard"
       ],
       "archive_version": "17.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/octavia-dashboard",
+        "Vcs-Browser": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/octavia-dashboard"
+      },
       "binaries": [
         "python3-octavia-dashboard"
       ],
@@ -3189,6 +3420,10 @@
         "openstack/octavia-tempest-plugin"
       ],
       "archive_version": "3.3.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/octavia-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/octavia-tempest-plugin"
+      },
       "binaries": [
         "octavia-tempest-plugin"
       ],
@@ -3223,6 +3458,11 @@
         "openstack/ovn-bgp-agent"
       ],
       "archive_version": "6.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://github.com/openstack/ovn-bgp-agent",
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/neutron-plugins/ovn-bgp-agent.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/neutron-plugins/ovn-bgp-agent"
+      },
       "binaries": [
         "ovn-bgp-agent",
         "python3-ovn-bgp-agent"
@@ -3268,6 +3508,10 @@
         "openstack/ovn-octavia-provider"
       ],
       "archive_version": "10.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/ovn-octavia-provider",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/ovn-octavia-provider"
+      },
       "binaries": [
         "python3-ovn-octavia-provider"
       ],
@@ -3317,6 +3561,10 @@
         "openstack/placement"
       ],
       "archive_version": "1:15.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/placement",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/placement"
+      },
       "binaries": [
         "placement-api",
         "placement-common",
@@ -3377,6 +3625,10 @@
         "openstack/puppet-aodh"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-aodh.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-aodh"
+      },
       "binaries": [
         "puppet-module-aodh"
       ],
@@ -3411,6 +3663,10 @@
         "openstack/puppet-barbican"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-barbican.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-barbican"
+      },
       "binaries": [
         "puppet-module-barbican"
       ],
@@ -3445,6 +3701,10 @@
         "openstack/puppet-ceilometer"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-ceilometer.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-ceilometer"
+      },
       "binaries": [
         "puppet-module-ceilometer"
       ],
@@ -3479,6 +3739,10 @@
         "openstack/puppet-cinder"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-cinder.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-cinder"
+      },
       "binaries": [
         "puppet-module-cinder"
       ],
@@ -3513,6 +3777,10 @@
         "openstack/puppet-cloudkitty"
       ],
       "archive_version": "16.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-cloudkitty.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-cloudkitty"
+      },
       "binaries": [
         "puppet-module-cloudkitty"
       ],
@@ -3547,6 +3815,10 @@
         "openstack/puppet-designate"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-designate.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-designate"
+      },
       "binaries": [
         "puppet-module-designate"
       ],
@@ -3581,6 +3853,10 @@
         "openstack/puppet-glance"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-glance.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-glance"
+      },
       "binaries": [
         "puppet-module-glance"
       ],
@@ -3615,6 +3891,10 @@
         "openstack/puppet-gnocchi"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-gnocchi.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-gnocchi"
+      },
       "binaries": [
         "puppet-module-gnocchi"
       ],
@@ -3649,6 +3929,10 @@
         "openstack/puppet-heat"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-heat.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-heat"
+      },
       "binaries": [
         "puppet-module-heat"
       ],
@@ -3683,6 +3967,10 @@
         "openstack/puppet-horizon"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-horizon.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-horizon"
+      },
       "binaries": [
         "puppet-module-horizon"
       ],
@@ -3717,6 +4005,10 @@
         "openstack/puppet-ironic"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-ironic.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-ironic"
+      },
       "binaries": [
         "puppet-module-ironic"
       ],
@@ -3751,6 +4043,10 @@
         "openstack/puppet-keystone"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-keystone.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-keystone"
+      },
       "binaries": [
         "puppet-module-keystone"
       ],
@@ -3785,6 +4081,10 @@
         "openstack/puppet-magnum"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-magnum.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-magnum"
+      },
       "binaries": [
         "puppet-module-magnum"
       ],
@@ -3819,6 +4119,10 @@
         "openstack/puppet-manila"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-manila.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-manila"
+      },
       "binaries": [
         "puppet-module-manila"
       ],
@@ -3853,6 +4157,10 @@
         "openstack/puppet-mistral"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-mistral.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-mistral"
+      },
       "binaries": [
         "puppet-module-mistral"
       ],
@@ -3887,6 +4195,10 @@
         "openstack/puppet-neutron"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-neutron.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-neutron"
+      },
       "binaries": [
         "puppet-module-neutron"
       ],
@@ -3921,6 +4233,10 @@
         "openstack/puppet-nova"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-nova.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-nova"
+      },
       "binaries": [
         "puppet-module-nova"
       ],
@@ -3955,6 +4271,10 @@
         "openstack/puppet-octavia"
       ],
       "archive_version": "27.0.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-octavia.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-octavia"
+      },
       "binaries": [
         "puppet-module-octavia"
       ],
@@ -3989,6 +4309,10 @@
         "openstack/puppet-openstack_extras"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-openstack-extras.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-openstack-extras"
+      },
       "binaries": [
         "puppet-module-openstack-extras"
       ],
@@ -4023,6 +4347,10 @@
         "openstack/puppet-openstacklib"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-openstacklib.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-openstacklib"
+      },
       "binaries": [
         "puppet-module-openstacklib"
       ],
@@ -4057,6 +4385,10 @@
         "openstack/puppet-oslo"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-oslo.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-oslo"
+      },
       "binaries": [
         "puppet-module-oslo"
       ],
@@ -4091,6 +4423,10 @@
         "openstack/puppet-ovn"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-ovn.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-ovn"
+      },
       "binaries": [
         "puppet-module-ovn"
       ],
@@ -4125,6 +4461,10 @@
         "openstack/puppet-placement"
       ],
       "archive_version": "14.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-placement.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-placement"
+      },
       "binaries": [
         "puppet-module-placement"
       ],
@@ -4159,6 +4499,10 @@
         "openstack/puppet-swift"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-swift.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-swift"
+      },
       "binaries": [
         "puppet-module-swift"
       ],
@@ -4193,6 +4537,10 @@
         "openstack/puppet-tempest"
       ],
       "archive_version": "27.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-tempest.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-tempest"
+      },
       "binaries": [
         "puppet-module-tempest"
       ],
@@ -4227,6 +4575,10 @@
         "openstack/puppet-vswitch"
       ],
       "archive_version": "23.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/puppet/puppet-module-vswitch.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/puppet/puppet-module-vswitch"
+      },
       "binaries": [
         "puppet-module-vswitch"
       ],
@@ -4261,6 +4613,10 @@
         "openstack/python-adjutantclient"
       ],
       "archive_version": "1.5.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-adjutantclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-adjutantclient"
+      },
       "binaries": [
         "python3-adjutantclient"
       ],
@@ -4306,6 +4662,10 @@
         "openstack/python-aodhclient"
       ],
       "archive_version": "3.10.1-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-aodhclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-aodhclient"
+      },
       "binaries": [
         "python-aodhclient-doc",
         "python3-aodhclient"
@@ -4343,6 +4703,48 @@
       ]
     },
     {
+      "deliverable": "automaton",
+      "source": "python-automaton",
+      "membership": "independent-build-dependency",
+      "release_type": "library",
+      "team": "oslo",
+      "upstream_repository": "https://opendev.org/openstack/automaton",
+      "upstream_ref": "master",
+      "branch_policy": "release-metadata-no-stable-branch",
+      "all_upstream_repositories": [
+        "openstack/automaton"
+      ],
+      "archive_version": "3.2.0-4",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-automaton.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-automaton"
+      },
+      "binaries": [
+        "python-automaton-doc",
+        "python3-automaton"
+      ],
+      "build_depends": "debhelper-compat (= 10), dh-python, openstack-pkg-tools, python3-all, python3-pbr, python3-setuptools, python3-sphinx, python3-coverage, python3-hacking, python3-openstackdocstheme, python3-oslotest, python3-prettytable, python3-stestr, python3-testtools, subunit",
+      "testsuite": "autopkgtest",
+      "archive_packaging_repository": "https://salsa.debian.org/openstack-team/libs/python-automaton.git",
+      "packaging_repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-automaton",
+      "packaging_branch_candidates": [
+        "stable/2026.2",
+        "master"
+      ],
+      "archive_source": {
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/python-automaton/python-automaton_3.2.0-4.dsc",
+        "sha256": "b58172e17d455b132de1fa9dd827a4a7fd374a7024e6e07517f6373807b9e803"
+      },
+      "snapshot_backend": "python-sdist",
+      "discovery_error": null,
+      "build_dependencies": [
+        "python-hacking",
+        "python-openstackdocstheme",
+        "python-oslotest",
+        "python-pbr"
+      ]
+    },
+    {
       "deliverable": "python-barbicanclient",
       "source": "python-barbicanclient",
       "membership": "cycle",
@@ -4355,6 +4757,10 @@
         "openstack/python-barbicanclient"
       ],
       "archive_version": "7.3.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-barbicanclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-barbicanclient"
+      },
       "binaries": [
         "python3-barbicanclient"
       ],
@@ -4399,6 +4805,10 @@
         "openstack/bashate"
       ],
       "archive_version": "2.1.0-5",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-bashate.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-bashate"
+      },
       "binaries": [
         "python-bashate-doc",
         "python3-bashate"
@@ -4437,6 +4847,10 @@
         "openstack/python-blazarclient"
       ],
       "archive_version": "4.5.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-blazarclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-blazarclient"
+      },
       "binaries": [
         "python3-blazarclient"
       ],
@@ -4481,6 +4895,10 @@
         "openstack/castellan"
       ],
       "archive_version": "5.6.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-castellan.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-castellan"
+      },
       "binaries": [
         "python-castellan-doc",
         "python3-castellan"
@@ -4527,6 +4945,10 @@
         "openstack/ceilometermiddleware"
       ],
       "archive_version": "3.10.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-ceilometermiddleware.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-ceilometermiddleware"
+      },
       "binaries": [
         "python-ceilometermiddleware-doc",
         "python3-ceilometermiddleware"
@@ -4573,6 +4995,10 @@
         "openstack/python-cinderclient"
       ],
       "archive_version": "1:9.9.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-cinderclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-cinderclient"
+      },
       "binaries": [
         "python3-cinderclient"
       ],
@@ -4615,6 +5041,10 @@
         "openstack/cliff"
       ],
       "archive_version": "4.13.1-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/cliff",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-cliff"
+      },
       "binaries": [
         "python-cliff-doc",
         "python3-cliff"
@@ -4652,6 +5082,10 @@
         "openstack/python-cloudkittyclient"
       ],
       "archive_version": "6.1.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-cloudkittyclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-cloudkittyclient"
+      },
       "binaries": [
         "python-cloudkittyclient-doc",
         "python3-cloudkittyclient"
@@ -4695,6 +5129,10 @@
         "openstack/cursive"
       ],
       "archive_version": "0.2.3-5",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-cursive.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-cursive"
+      },
       "binaries": [
         "python-cursive-doc",
         "python3-cursive"
@@ -4738,6 +5176,10 @@
         "openstack/python-cyborgclient"
       ],
       "archive_version": "2.7.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/python/python-cyborgclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/python/python-cyborgclient"
+      },
       "binaries": [
         "python-cyborgclient-doc",
         "python3-cyborgclient"
@@ -4785,6 +5227,10 @@
         "openstack/debtcollector"
       ],
       "archive_version": "3.0.0-6",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-debtcollector.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-debtcollector"
+      },
       "binaries": [
         "python-debtcollector-doc",
         "python3-debtcollector"
@@ -4822,6 +5268,10 @@
         "openstack/python-designateclient"
       ],
       "archive_version": "6.4.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-designateclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-designateclient"
+      },
       "binaries": [
         "python-designateclient-doc",
         "python3-designateclient"
@@ -4868,6 +5318,10 @@
         "openstack/etcd3gw"
       ],
       "archive_version": "2.5.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/python/python-etcd3gw.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/python/python-etcd3gw"
+      },
       "binaries": [
         "python-etcd3gw-doc",
         "python3-etcd3gw"
@@ -4906,6 +5360,10 @@
         "openstack/python-freezerclient"
       ],
       "archive_version": "6.2.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-freezerclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-freezerclient"
+      },
       "binaries": [
         "python-freezerclient-doc",
         "python3-freezerclient"
@@ -4946,6 +5404,10 @@
         "openstack/futurist"
       ],
       "archive_version": "3.2.0-3",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-futurist.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-futurist"
+      },
       "binaries": [
         "python-futurist-doc",
         "python3-futurist"
@@ -4985,6 +5447,10 @@
         "openstack/glance_store"
       ],
       "archive_version": "5.2.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/glance_store",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-glanceclient"
+      },
       "binaries": [
         "python-glance-store-doc",
         "python3-glance-store"
@@ -5041,6 +5507,10 @@
         "openstack/python-glanceclient"
       ],
       "archive_version": "1:4.11.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-glanceclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-glanceclient"
+      },
       "binaries": [
         "python-glanceclient-doc",
         "python3-glanceclient"
@@ -5083,6 +5553,10 @@
         "openstack/python-gnocchiclient"
       ],
       "archive_version": "7.2.0-2ubuntu1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-gnocchiclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-gnocchiclient"
+      },
       "binaries": [
         "python-gnocchiclient-doc",
         "python3-gnocchiclient"
@@ -5125,6 +5599,10 @@
         "openstack/hacking"
       ],
       "archive_version": "4.1.0-5",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-hacking.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-hacking"
+      },
       "binaries": [
         "python-hacking-doc",
         "python3-hacking"
@@ -5162,6 +5640,10 @@
         "openstack/python-heatclient"
       ],
       "archive_version": "5.0.0-0ubuntu2",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/python-heatclient",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-heatclient"
+      },
       "binaries": [
         "python3-heatclient"
       ],
@@ -5208,6 +5690,10 @@
         "openstack/python-ironicclient"
       ],
       "archive_version": "6.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-ironicclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-ironicclient"
+      },
       "binaries": [
         "python-ironicclient-doc",
         "python3-ironicclient"
@@ -5253,6 +5739,11 @@
         "openstack/keystoneauth"
       ],
       "archive_version": "5.13.1-1ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "http://www.openstack.org/",
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-keystoneauth1.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-keystoneauth1"
+      },
       "binaries": [
         "python-keystoneauth1-doc",
         "python3-keystoneauth1"
@@ -5295,6 +5786,10 @@
         "openstack/python-keystoneclient"
       ],
       "archive_version": "1:5.8.0-4",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-keystoneclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-keystoneclient"
+      },
       "binaries": [
         "python-keystoneclient-doc",
         "python3-keystoneclient"
@@ -5342,6 +5837,10 @@
         "openstack/keystonemiddleware"
       ],
       "archive_version": "12.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-keystonemiddleware.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-keystonemiddleware"
+      },
       "binaries": [
         "python-keystonemiddleware-doc",
         "python3-keystonemiddleware"
@@ -5392,6 +5891,10 @@
         "openstack/ldappool"
       ],
       "archive_version": "3.0.0-6",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/python/python-ldappool.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/python/python-ldappool"
+      },
       "binaries": [
         "python3-ldappool"
       ],
@@ -5426,6 +5929,10 @@
         "openstack/python-magnumclient"
       ],
       "archive_version": "4.10.0-3",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-magnumclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-magnumclient"
+      },
       "binaries": [
         "python-magnumclient-doc",
         "python3-magnumclient"
@@ -5473,6 +5980,10 @@
         "openstack/python-manilaclient"
       ],
       "archive_version": "6.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-manilaclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-manilaclient"
+      },
       "binaries": [
         "python-manilaclient-doc",
         "python3-manilaclient"
@@ -5520,6 +6031,10 @@
         "openstack/python-masakariclient"
       ],
       "archive_version": "8.8.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-masakariclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-masakariclient"
+      },
       "binaries": [
         "python3-masakariclient"
       ],
@@ -5561,6 +6076,10 @@
         "openstack/microversion-parse"
       ],
       "archive_version": "1.0.1-3build1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/python/python-microversion-parse.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/python/python-microversion-parse"
+      },
       "binaries": [
         "python-microversion-parse-doc",
         "python3-microversion-parse"
@@ -5598,6 +6117,10 @@
         "openstack/mistral-lib"
       ],
       "archive_version": "3.5.1-3",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-mistral-lib.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-mistral-lib"
+      },
       "binaries": [
         "python-mistral-lib-doc",
         "python3-mistral-lib"
@@ -5638,6 +6161,10 @@
         "openstack/python-mistralclient"
       ],
       "archive_version": "1:6.2.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-mistralclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-mistralclient"
+      },
       "binaries": [
         "python3-mistralclient"
       ],
@@ -5686,6 +6213,10 @@
         "openstack/neutron-lib"
       ],
       "archive_version": "3.24.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-neutron-lib.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-neutron-lib"
+      },
       "binaries": [
         "python-neutron-lib-doc",
         "python3-neutron-lib"
@@ -5743,6 +6274,10 @@
         "openstack/python-neutronclient"
       ],
       "archive_version": "1:11.8.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-neutronclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-neutronclient"
+      },
       "binaries": [
         "python3-neutronclient"
       ],
@@ -5793,6 +6328,10 @@
         "openstack/python-novaclient"
       ],
       "archive_version": "2:18.12.0-3",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-novaclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-novaclient"
+      },
       "binaries": [
         "python-novaclient-doc",
         "python3-novaclient"
@@ -5838,6 +6377,10 @@
         "openstack/python-observabilityclient"
       ],
       "archive_version": "1.3.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-observabilityclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-observabilityclient"
+      },
       "binaries": [
         "python3-observabilityclient"
       ],
@@ -5878,6 +6421,10 @@
         "openstack/octavia-lib"
       ],
       "archive_version": "3.11.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-octavia-lib.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-octavia-lib"
+      },
       "binaries": [
         "python-octavia-lib-doc",
         "python3-octavia-lib"
@@ -5920,6 +6467,10 @@
         "openstack/python-octaviaclient"
       ],
       "archive_version": "3.13.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-octaviaclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-octaviaclient"
+      },
       "binaries": [
         "python-octaviaclient-doc",
         "python3-octaviaclient"
@@ -5964,6 +6515,10 @@
         "openstack/python-openstackclient"
       ],
       "archive_version": "9.0.0-3",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-openstackclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-openstackclient"
+      },
       "binaries": [
         "python-openstackclient-doc",
         "python3-openstackclient"
@@ -6028,6 +6583,10 @@
         "openstack/openstackdocstheme"
       ],
       "archive_version": "3.2.0-0ubuntu4",
+      "archive_identity_evidence": {
+        "Homepage": "http://docs.openstack.org/",
+        "Vcs-Git": "https://anonscm.debian.org/git/openstack/libs/python-openstackdocstheme.git"
+      },
       "binaries": [
         "python3-openstackdocstheme"
       ],
@@ -6062,6 +6621,10 @@
         "openstack/openstacksdk"
       ],
       "archive_version": "4.8.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/openstacksdk",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-openstacksdk"
+      },
       "binaries": [
         "python-openstacksdk-doc",
         "python3-openstacksdk"
@@ -6104,6 +6667,10 @@
         "openstack/os-api-ref"
       ],
       "archive_version": "3.1.0+ds1-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-os-api-ref.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-os-api-ref"
+      },
       "binaries": [
         "python-os-api-ref-common",
         "python3-os-api-ref"
@@ -6140,6 +6707,10 @@
         "openstack/os-brick"
       ],
       "archive_version": "7.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-os-brick.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-os-brick"
+      },
       "binaries": [
         "os-brick-common",
         "python-os-brick-doc",
@@ -6191,6 +6762,10 @@
         "openstack/os-client-config"
       ],
       "archive_version": "2.3.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-os-client-config",
+        "Vcs-Browser": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-os-client-config"
+      },
       "binaries": [
         "python-os-client-config-doc",
         "python3-os-client-config"
@@ -6235,6 +6810,10 @@
         "openstack/os-collect-config"
       ],
       "archive_version": "14.0.1-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-os-collect-config.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-os-collect-config"
+      },
       "binaries": [
         "python3-os-collect-config"
       ],
@@ -6275,6 +6854,11 @@
         "openstack/os-ken"
       ],
       "archive_version": "4.1.1-1ubuntu2",
+      "archive_identity_evidence": {
+        "Homepage": "http://www.openstack.org/",
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-os-ken.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-os-ken"
+      },
       "binaries": [
         "python-os-ken-doc",
         "python3-os-ken"
@@ -6315,6 +6899,11 @@
         "openstack/os-resource-classes"
       ],
       "archive_version": "1.1.0-0ubuntu2",
+      "archive_identity_evidence": {
+        "Homepage": "https://github.com/openstack/os-resource-classes",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-os-resource-classes",
+        "Vcs-Browser": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-os-resource-classes"
+      },
       "binaries": [
         "python3-os-resource-classes"
       ],
@@ -6352,6 +6941,10 @@
         "openstack/os-service-types"
       ],
       "archive_version": "1.8.2-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-os-service-types.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-os-service-types"
+      },
       "binaries": [
         "python-os-service-types-doc",
         "python3-os-service-types"
@@ -6390,6 +6983,10 @@
         "openstack/os-testr"
       ],
       "archive_version": "3.0.0-6",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-os-testr.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-os-testr"
+      },
       "binaries": [
         "python-os-testr-doc",
         "python3-os-testr"
@@ -6428,6 +7025,10 @@
         "openstack/os-traits"
       ],
       "archive_version": "3.6.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-os-traits.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-os-traits"
+      },
       "binaries": [
         "python-os-traits-doc",
         "python3-os-traits"
@@ -6466,6 +7067,10 @@
         "openstack/os-vif"
       ],
       "archive_version": "4.3.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/os-vif",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-os-vif"
+      },
       "binaries": [
         "python-os-vif-doc",
         "python3-os-vif"
@@ -6516,6 +7121,10 @@
         "openstack/osc-lib"
       ],
       "archive_version": "4.4.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-osc-lib.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-osc-lib"
+      },
       "binaries": [
         "python-osc-lib-doc",
         "python3-osc-lib"
@@ -6561,6 +7170,10 @@
         "openstack/osc-placement"
       ],
       "archive_version": "4.8.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-osc-placement.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-osc-placement"
+      },
       "binaries": [
         "python-osc-placement-doc",
         "python3-osc-placement"
@@ -6606,6 +7219,10 @@
         "openstack/oslo.cache"
       ],
       "archive_version": "4.1.1-2ubuntu1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslo.cache.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslo.cache"
+      },
       "binaries": [
         "python-oslo.cache-doc",
         "python3-oslo.cache"
@@ -6649,6 +7266,10 @@
         "openstack/oslo.concurrency"
       ],
       "archive_version": "7.4.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslo.concurrency.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslo.concurrency"
+      },
       "binaries": [
         "python-oslo.concurrency-doc",
         "python3-oslo.concurrency"
@@ -6691,6 +7312,10 @@
         "openstack/oslo.config"
       ],
       "archive_version": "1:10.2.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/oslo.config",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.config"
+      },
       "binaries": [
         "python-oslo.config-doc",
         "python3-oslo.config"
@@ -6733,6 +7358,11 @@
         "openstack/oslo.context"
       ],
       "archive_version": "1:6.3.0-2ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://github.com/openstack/oslo.context",
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslo.context.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslo.context"
+      },
       "binaries": [
         "python-oslo.context-doc",
         "python3-oslo.context"
@@ -6771,6 +7401,10 @@
         "openstack/oslo.db"
       ],
       "archive_version": "18.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/oslo.db",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.db"
+      },
       "binaries": [
         "python-oslo.db-doc",
         "python3-oslo.db"
@@ -6815,6 +7449,10 @@
         "openstack/oslo.i18n"
       ],
       "archive_version": "6.7.2-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslo.i18n.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslo.i18n"
+      },
       "binaries": [
         "python-oslo.i18n-doc",
         "python3-oslo.i18n"
@@ -6854,6 +7492,10 @@
         "openstack/oslo.limit"
       ],
       "archive_version": "2.10.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslo.limit.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslo.limit"
+      },
       "binaries": [
         "python-oslo.limit-doc",
         "python3-oslo.limit"
@@ -6895,6 +7537,10 @@
         "openstack/oslo.log"
       ],
       "archive_version": "8.1.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslo.log.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslo.log"
+      },
       "binaries": [
         "python-oslo.log-doc",
         "python3-oslo.log"
@@ -6938,6 +7584,11 @@
         "openstack/oslo.messaging"
       ],
       "archive_version": "17.3.0-2ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://github.com/openstack/oslo.messaging",
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslo.messaging.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslo.messaging"
+      },
       "binaries": [
         "python3-oslo.messaging"
       ],
@@ -6985,6 +7636,10 @@
         "openstack/oslo.metrics"
       ],
       "archive_version": "0.15.1-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/python/python-oslo.metrics.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/python/python-oslo.metrics"
+      },
       "binaries": [
         "python-oslo.metrics-doc",
         "python3-oslo.metrics"
@@ -7025,6 +7680,10 @@
         "openstack/oslo.middleware"
       ],
       "archive_version": "8.0.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslo.middleware.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslo.middleware"
+      },
       "binaries": [
         "python-oslo.middleware-doc",
         "python3-oslo.middleware"
@@ -7070,6 +7729,10 @@
         "openstack/oslo.policy"
       ],
       "archive_version": "5.0.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslo.policy.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslo.policy"
+      },
       "binaries": [
         "python-oslo.policy-doc",
         "python3-oslo.policy"
@@ -7114,6 +7777,10 @@
         "openstack/oslo.privsep"
       ],
       "archive_version": "3.10.1-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslo.privsep.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslo.privsep"
+      },
       "binaries": [
         "python-oslo.privsep-doc",
         "python3-oslo.privsep"
@@ -7156,6 +7823,10 @@
         "openstack/oslo.reports"
       ],
       "archive_version": "3.7.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/oslo.reports",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.reports"
+      },
       "binaries": [
         "python-oslo.reports-doc",
         "python3-oslo.reports"
@@ -7198,6 +7869,11 @@
         "openstack/oslo.rootwrap"
       ],
       "archive_version": "7.8.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://github.com/openstack/oslo.rootwrap",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.rootwrap",
+        "Vcs-Browser": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.rootwrap"
+      },
       "binaries": [
         "python3-oslo.rootwrap"
       ],
@@ -7235,6 +7911,10 @@
         "openstack/oslo.serialization"
       ],
       "archive_version": "5.9.1-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslo.serialization.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslo.serialization"
+      },
       "binaries": [
         "python-oslo.serialization-doc",
         "python3-oslo.serialization"
@@ -7276,6 +7956,11 @@
         "openstack/oslo.service"
       ],
       "archive_version": "4.5.1-1ubuntu2",
+      "archive_identity_evidence": {
+        "Homepage": "https://github.com/openstack/oslo.service",
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslo.service.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslo.service"
+      },
       "binaries": [
         "python-oslo.service-doc",
         "python3-oslo.service"
@@ -7321,6 +8006,10 @@
         "openstack/oslo.upgradecheck"
       ],
       "archive_version": "2.7.1-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslo.upgradecheck.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslo.upgradecheck"
+      },
       "binaries": [
         "python-oslo.upgradecheck-doc",
         "python3-oslo.upgradecheck"
@@ -7363,6 +8052,10 @@
         "openstack/oslo.utils"
       ],
       "archive_version": "10.0.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslo.utils.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslo.utils"
+      },
       "binaries": [
         "python-oslo.utils-doc",
         "python3-oslo.utils"
@@ -7404,6 +8097,10 @@
         "openstack/oslo.versionedobjects"
       ],
       "archive_version": "3.9.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/oslo.versionedobjects",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.versionedobjects"
+      },
       "binaries": [
         "python-oslo.versionedobjects-doc",
         "python3-oslo.versionedobjects"
@@ -7449,6 +8146,10 @@
         "openstack/oslo.vmware"
       ],
       "archive_version": "4.9.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslo.vmware.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslo.vmware"
+      },
       "binaries": [
         "python-oslo.vmware-doc",
         "python3-oslo.vmware"
@@ -7490,6 +8191,10 @@
         "openstack/oslotest"
       ],
       "archive_version": "1:6.0.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/oslo/python-oslotest.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/oslo/python-oslotest"
+      },
       "binaries": [
         "python-oslotest-doc",
         "python3-oslotest"
@@ -7529,6 +8234,11 @@
         "openstack/osprofiler"
       ],
       "archive_version": "4.3.0-4ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/osprofiler",
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-osprofiler.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-osprofiler"
+      },
       "binaries": [
         "python-osprofiler-doc",
         "python3-osprofiler"
@@ -7570,6 +8280,10 @@
         "openstack/ovsdbapp"
       ],
       "archive_version": "2.16.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-ovsdbapp.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-ovsdbapp"
+      },
       "binaries": [
         "python-ovsdbapp-doc",
         "python3-ovsdbapp"
@@ -7609,6 +8323,10 @@
         "openstack/pbr"
       ],
       "archive_version": "7.0.3-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-pbr.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-pbr"
+      },
       "binaries": [
         "python-pbr-doc",
         "python3-pbr"
@@ -7645,6 +8363,10 @@
         "openstack/pycadf"
       ],
       "archive_version": "4.0.1-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-pycadf.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-pycadf"
+      },
       "binaries": [
         "pycadf-common",
         "python3-pycadf"
@@ -7684,6 +8406,10 @@
         "openstack/reno"
       ],
       "archive_version": "4.1.0-3",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-reno.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-reno"
+      },
       "binaries": [
         "python-reno-doc",
         "python3-reno"
@@ -7721,6 +8447,11 @@
         "openstack/requestsexceptions"
       ],
       "archive_version": "1.4.0-5build1",
+      "archive_identity_evidence": {
+        "Homepage": "http://www.openstack.org/",
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-requestsexceptions.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-requestsexceptions"
+      },
       "binaries": [
         "python3-requestsexceptions"
       ],
@@ -7755,6 +8486,10 @@
         "openstack/sphinx-feature-classification"
       ],
       "archive_version": "2.0.0-3",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-sphinx-feature-classification.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-sphinx-feature-classification"
+      },
       "binaries": [
         "python-sphinx-feature-classification-doc",
         "python3-sphinx-feature-classification"
@@ -7794,6 +8529,10 @@
         "openstack/sushy"
       ],
       "archive_version": "5.9.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://docs.openstack.org/sushy",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-sushy"
+      },
       "binaries": [
         "python-sushy-doc",
         "python3-sushy"
@@ -7832,6 +8571,10 @@
         "openstack/python-swiftclient"
       ],
       "archive_version": "1:4.10.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-swiftclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-swiftclient"
+      },
       "binaries": [
         "python-swiftclient-doc",
         "python3-swiftclient"
@@ -7872,6 +8615,10 @@
         "openstack/python-tackerclient"
       ],
       "archive_version": "2.5.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-tackerclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-tackerclient"
+      },
       "binaries": [
         "python-tackerclient-doc",
         "python3-tackerclient"
@@ -7904,6 +8651,55 @@
       ]
     },
     {
+      "deliverable": "taskflow",
+      "source": "python-taskflow",
+      "membership": "cycle",
+      "release_type": "library",
+      "team": "oslo",
+      "upstream_repository": "https://opendev.org/openstack/taskflow",
+      "upstream_ref": "stable/2026.2",
+      "branch_policy": "release-metadata-stable",
+      "all_upstream_repositories": [
+        "openstack/taskflow"
+      ],
+      "archive_version": "6.1.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://github.com/openstack/taskflow",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-taskflow",
+        "Vcs-Browser": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-taskflow"
+      },
+      "binaries": [
+        "python-taskflow-doc",
+        "python3-taskflow"
+      ],
+      "build_depends": "debhelper-compat (= 13), dh-python, openstack-pkg-tools, python3-all, python3-pbr (>= 2.0.0), python3-setuptools, python3-sphinx (>= 2.0.0), python3-sphinxcontrib.jquery, alembic, python3-alembic (>= 0.8.10), python3-automaton (>= 1.9.0), python3-cachetools (>= 2.0.0), python3-debtcollector (>= 1.2.0), python3-etcd3gw (>= 2.0.0), python3-eventlet (>= 0.35.2), python3-fasteners (>= 0.17.3), python3-futurist (>= 1.2.0), python3-jsonschema (>= 3.2.0), python3-kazoo (>= 2.6.0), python3-kombu (>= 4.3.0), python3-netifaces, python3-networkx (>= 2.1.0), python3-openstackdocstheme (>= 2.2.1), python3-oslo.serialization (>= 2.18.0), python3-oslo.utils (>= 3.33.0), python3-oslotest (>= 1:3.2.0), python3-psycopg2 (>= 2.8.0), python3-pyasyncore, python3-pydot (>= 1.2.4), python3-pydotplus (>= 2.0.2), python3-pymysql (>= 0.7.6), python3-redis (>= 4.0.0), python3-sqlalchemy (>= 1.0.10), python3-sqlalchemy-utils (>= 0.30.11), python3-stestr (>= 2.0.0), python3-stevedore (>= 1:1.20.0), python3-subunit, python3-tenacity (>= 6.0.0), python3-testscenarios (>= 0.4), python3-testtools (>= 2.2.0), python3-zake (>= 0.1.6), subunit",
+      "testsuite": "autopkgtest, autopkgtest-pkg-python",
+      "archive_packaging_repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-taskflow",
+      "packaging_repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-taskflow",
+      "packaging_branch_candidates": [
+        "stable/2026.2",
+        "master"
+      ],
+      "archive_source": {
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/python-taskflow/python-taskflow_6.1.0-0ubuntu1.dsc",
+        "sha256": "617a3bd6b40b19a0b09aee033f72008dd9b6de7b15c37642ae530306fdc18745"
+      },
+      "snapshot_backend": "python-sdist",
+      "discovery_error": null,
+      "build_dependencies": [
+        "python-automaton",
+        "python-debtcollector",
+        "python-etcd3gw",
+        "python-futurist",
+        "python-openstackdocstheme",
+        "python-oslo.serialization",
+        "python-oslo.utils",
+        "python-oslotest",
+        "python-pbr",
+        "stevedore"
+      ]
+    },
+    {
       "deliverable": "tooz",
       "source": "python-tooz",
       "membership": "independent-build-dependency",
@@ -7916,6 +8712,11 @@
         "openstack/tooz"
       ],
       "archive_version": "8.1.0-2ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://github.com/openstack/tooz",
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-tooz.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-tooz"
+      },
       "binaries": [
         "python-tooz-doc",
         "python3-tooz"
@@ -7958,6 +8759,10 @@
         "openstack/tosca-parser"
       ],
       "archive_version": "2.14.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/python-tosca-parser.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/python-tosca-parser"
+      },
       "binaries": [
         "python-tosca-parser-doc",
         "python3-tosca-parser"
@@ -7998,6 +8803,10 @@
         "openstack/python-troveclient"
       ],
       "archive_version": "1:8.10.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-troveclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-troveclient"
+      },
       "binaries": [
         "python3-troveclient"
       ],
@@ -8043,6 +8852,10 @@
         "openstack/python-watcherclient"
       ],
       "archive_version": "4.10.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-watcherclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-watcherclient"
+      },
       "binaries": [
         "python-watcherclient-doc",
         "python3-watcherclient"
@@ -8088,6 +8901,10 @@
         "openstack/yaql"
       ],
       "archive_version": "3.1.0-3",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/python/python-yaql.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/python/python-yaql"
+      },
       "binaries": [
         "python3-yaql"
       ],
@@ -8123,6 +8940,10 @@
         "openstack/python-zaqarclient"
       ],
       "archive_version": "4.4.0-1",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/clients/python-zaqarclient.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/clients/python-zaqarclient"
+      },
       "binaries": [
         "python3-zaqarclient"
       ],
@@ -8167,6 +8988,10 @@
         "openstack/python-zunclient"
       ],
       "archive_version": "5.3.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/python-zunclient",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-zunclient"
+      },
       "binaries": [
         "python-zunclient-doc",
         "python3-zunclient"
@@ -8213,6 +9038,11 @@
         "openstack/stevedore"
       ],
       "archive_version": "1:5.7.0-2ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://github.com/openstack/stevedore",
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/libs/stevedore.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/libs/stevedore"
+      },
       "binaries": [
         "python-stevedore-doc",
         "python3-stevedore"
@@ -8249,6 +9079,10 @@
         "openstack/swift"
       ],
       "archive_version": "2.37.1-0ubuntu2",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/swift",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/swift"
+      },
       "binaries": [
         "python3-swift",
         "swift",
@@ -8285,40 +9119,6 @@
       ]
     },
     {
-      "deliverable": "taskflow",
-      "source": "taskflow",
-      "membership": "cycle",
-      "release_type": "library",
-      "team": "oslo",
-      "upstream_repository": "https://opendev.org/openstack/taskflow",
-      "upstream_ref": "stable/2026.2",
-      "branch_policy": "release-metadata-stable",
-      "all_upstream_repositories": [
-        "openstack/taskflow"
-      ],
-      "archive_version": "3.9.0+ds-1ubuntu3",
-      "binaries": [
-        "libtaskflow-cpp-dev",
-        "taskflow-doc",
-        "taskflow-profiler"
-      ],
-      "build_depends": "cmake, debhelper-compat (= 13), doxygen <!nodoc>, graphviz <!nodoc>, python3-jinja2 <!nodoc>, python3-pygments <!nodoc>, doctest-dev <!nocheck>, libcli11-dev, libcpp-httplib-dev, libjs-bootstrap4, libjs-d3-tip, libjs-jquery, libspdlog-dev, nlohmann-json3-dev, node-d3",
-      "testsuite": "autopkgtest",
-      "archive_packaging_repository": "https://salsa.debian.org/debian/taskflow.git",
-      "packaging_repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/taskflow",
-      "packaging_branch_candidates": [
-        "stable/2026.2",
-        "master"
-      ],
-      "archive_source": {
-        "url": "https://archive.ubuntu.com/ubuntu/pool/universe/t/taskflow/taskflow_3.9.0+ds-1ubuntu3.dsc",
-        "sha256": "6c7930f9cee2beefd554ededc4ee04d2efb1c128c71921a24cf1d8695b0cc471"
-      },
-      "snapshot_backend": "python-sdist",
-      "discovery_error": null,
-      "build_dependencies": []
-    },
-    {
       "deliverable": "telemetry-tempest-plugin",
       "source": "telemetry-tempest-plugin",
       "membership": "cycle",
@@ -8331,6 +9131,10 @@
         "openstack/telemetry-tempest-plugin"
       ],
       "archive_version": "2.7.0-3",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/telemetry-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/telemetry-tempest-plugin"
+      },
       "binaries": [
         "telemetry-tempest-plugin"
       ],
@@ -8365,6 +9169,10 @@
         "openstack/tempest"
       ],
       "archive_version": "1:46.2.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/tempest.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/tempest"
+      },
       "binaries": [
         "python3-tempest",
         "tempest"
@@ -8402,39 +9210,6 @@
       ]
     },
     {
-      "deliverable": "trove",
-      "source": "trove",
-      "membership": "cycle",
-      "release_type": "service",
-      "team": "trove",
-      "upstream_repository": "https://opendev.org/openstack/trove",
-      "upstream_ref": "stable/2026.2",
-      "branch_policy": "release-metadata-stable",
-      "all_upstream_repositories": [
-        "openstack/trove"
-      ],
-      "archive_version": "2.1.0-4",
-      "binaries": [
-        "libtrove-java",
-        "libtrove-java-doc"
-      ],
-      "build_depends": "ant, debhelper-compat (= 13), default-jdk, maven-repo-helper",
-      "testsuite": "",
-      "archive_packaging_repository": "https://salsa.debian.org/java-team/trove.git",
-      "packaging_repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/trove",
-      "packaging_branch_candidates": [
-        "stable/2026.2",
-        "master"
-      ],
-      "archive_source": {
-        "url": "https://archive.ubuntu.com/ubuntu/pool/universe/t/trove/trove_2.1.0-4.dsc",
-        "sha256": "7e03f992a616d7403dafc91cfe37d4ab5adb9cad9a6e97a03dd15f46c85a660d"
-      },
-      "snapshot_backend": "python-sdist",
-      "discovery_error": null,
-      "build_dependencies": []
-    },
-    {
       "deliverable": "trove-dashboard",
       "source": "trove-dashboard",
       "membership": "cycle",
@@ -8447,6 +9222,10 @@
         "openstack/trove-dashboard"
       ],
       "archive_version": "23.0.0~rc1-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/trove-dashboard",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/trove-dashboard"
+      },
       "binaries": [
         "python3-trove-dashboard"
       ],
@@ -8488,6 +9267,10 @@
         "openstack/trove-tempest-plugin"
       ],
       "archive_version": "2.7.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/trove-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/trove-tempest-plugin"
+      },
       "binaries": [
         "trove-tempest-plugin"
       ],
@@ -8529,6 +9312,10 @@
         "openstack/watcher"
       ],
       "archive_version": "2:16.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/watcher",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/watcher"
+      },
       "binaries": [
         "python3-watcher",
         "watcher-api",
@@ -8588,6 +9375,7 @@
         "python-oslo.versionedobjects",
         "python-oslotest",
         "python-pbr",
+        "python-taskflow",
         "stevedore"
       ]
     },
@@ -8604,6 +9392,10 @@
         "openstack/watcher-dashboard"
       ],
       "archive_version": "15.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/watcher-dashboard",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/watcher-dashboard"
+      },
       "binaries": [
         "python3-watcher-dashboard"
       ],
@@ -8642,6 +9434,10 @@
         "openstack/watcher-tempest-plugin"
       ],
       "archive_version": "3.7.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/watcher-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/watcher-tempest-plugin"
+      },
       "binaries": [
         "watcher-tempest-plugin"
       ],
@@ -8683,6 +9479,10 @@
         "openstack/zaqar"
       ],
       "archive_version": "22.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/zaqar/",
+        "Vcs-Git": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/zaqar"
+      },
       "binaries": [
         "python3-zaqar",
         "zaqar-common",
@@ -8743,6 +9543,10 @@
         "openstack/zaqar-tempest-plugin"
       ],
       "archive_version": "4.1.0-2",
+      "archive_identity_evidence": {
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/tempest/zaqar-tempest-plugin.git",
+        "Vcs-Browser": "https://salsa.debian.org/openstack-team/tempest/zaqar-tempest-plugin"
+      },
       "binaries": [
         "zaqar-tempest-plugin"
       ],
@@ -8777,6 +9581,10 @@
         "openstack/zaqar-ui"
       ],
       "archive_version": "20.0.0-0ubuntu1",
+      "archive_identity_evidence": {
+        "Homepage": "https://opendev.org/openstack/zaqar-ui",
+        "Vcs-Git": "https://salsa.debian.org/openstack-team/services/zaqar-ui.git"
+      },
       "binaries": [
         "python3-zaqar-ui"
       ],
@@ -8811,7 +9619,15 @@
       "repositories": [
         "openstack/ansible-collection-kolla"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
+    },
+    {
+      "deliverable": "bifrost",
+      "release_type": "other",
+      "repositories": [
+        "openstack/bifrost"
+      ],
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "cyborg-tempest-plugin",
@@ -8819,7 +9635,7 @@
       "repositories": [
         "openstack/cyborg-tempest-plugin"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "devstack-plugin-ceph",
@@ -8827,7 +9643,7 @@
       "repositories": [
         "openstack/devstack-plugin-ceph"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "devstack-plugin-container",
@@ -8835,7 +9651,7 @@
       "repositories": [
         "openstack/devstack-plugin-container"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "devstack",
@@ -8843,7 +9659,7 @@
       "repositories": [
         "openstack/devstack"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "freezer-api",
@@ -8851,7 +9667,7 @@
       "repositories": [
         "openstack/freezer-api"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "freezer-tempest-plugin",
@@ -8859,7 +9675,7 @@
       "repositories": [
         "openstack/freezer-tempest-plugin"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "freezer-web-ui",
@@ -8867,7 +9683,7 @@
       "repositories": [
         "openstack/freezer-web-ui"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "freezer",
@@ -8875,7 +9691,7 @@
       "repositories": [
         "openstack/freezer"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "grenade",
@@ -8883,7 +9699,7 @@
       "repositories": [
         "openstack/grenade"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "grian-ui",
@@ -8891,7 +9707,7 @@
       "repositories": [
         "openstack/grian-ui"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "heat-agents",
@@ -8899,7 +9715,7 @@
       "repositories": [
         "openstack/heat-agents"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "heat-translator",
@@ -8907,7 +9723,7 @@
       "repositories": [
         "openstack/heat-translator"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "ironic-prometheus-exporter",
@@ -8915,7 +9731,7 @@
       "repositories": [
         "openstack/ironic-prometheus-exporter"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "ironic-python-agent-builder",
@@ -8923,7 +9739,7 @@
       "repositories": [
         "openstack/ironic-python-agent-builder"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "kayobe",
@@ -8933,7 +9749,7 @@
         "openstack/kayobe-config",
         "openstack/kayobe-config-dev"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "kolla-ansible",
@@ -8941,7 +9757,7 @@
       "repositories": [
         "openstack/kolla-ansible"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "kolla",
@@ -8949,7 +9765,7 @@
       "repositories": [
         "openstack/kolla"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "kuryr-libnetwork",
@@ -8957,7 +9773,7 @@
       "repositories": [
         "openstack/kuryr-libnetwork"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "kuryr",
@@ -8965,7 +9781,7 @@
       "repositories": [
         "openstack/kuryr"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "openstack-ansible-roles",
@@ -9024,7 +9840,7 @@
         "openstack/openstack-ansible-rabbitmq_server",
         "openstack/openstack-ansible-repo_server"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "openstack-ansible",
@@ -9032,7 +9848,7 @@
       "repositories": [
         "openstack/openstack-ansible"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "puppet-openstack-integration",
@@ -9040,7 +9856,7 @@
       "repositories": [
         "openstack/puppet-openstack-integration"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "puppet-openstack_spec_helper",
@@ -9048,7 +9864,7 @@
       "repositories": [
         "openstack/puppet-openstack_spec_helper"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "puppet-trove",
@@ -9056,7 +9872,7 @@
       "repositories": [
         "openstack/puppet-trove"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "puppet-watcher",
@@ -9064,7 +9880,7 @@
       "repositories": [
         "openstack/puppet-watcher"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "puppet-zaqar",
@@ -9072,7 +9888,7 @@
       "repositories": [
         "openstack/puppet-zaqar"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "python-brick-cinderclient-ext",
@@ -9080,7 +9896,7 @@
       "repositories": [
         "openstack/python-brick-cinderclient-ext"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "release-test",
@@ -9088,7 +9904,7 @@
       "repositories": [
         "openstack/release-test"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "requirements",
@@ -9096,7 +9912,7 @@
       "repositories": [
         "openstack/requirements"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "skyline-apiserver",
@@ -9104,7 +9920,7 @@
       "repositories": [
         "openstack/skyline-apiserver"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "skyline-console",
@@ -9112,7 +9928,7 @@
       "repositories": [
         "openstack/skyline-console"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "storlets",
@@ -9120,7 +9936,7 @@
       "repositories": [
         "openstack/storlets"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "tacker-horizon",
@@ -9128,7 +9944,7 @@
       "repositories": [
         "openstack/tacker-horizon"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "tacker",
@@ -9136,7 +9952,7 @@
       "repositories": [
         "openstack/tacker"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "tap-as-a-service",
@@ -9144,7 +9960,15 @@
       "repositories": [
         "openstack/tap-as-a-service"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
+    },
+    {
+      "deliverable": "trove",
+      "release_type": "service",
+      "repositories": [
+        "openstack/trove"
+      ],
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "zun-tempest-plugin",
@@ -9152,7 +9976,7 @@
       "repositories": [
         "openstack/zun-tempest-plugin"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "zun-ui",
@@ -9160,7 +9984,7 @@
       "repositories": [
         "openstack/zun-ui"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     },
     {
       "deliverable": "zun",
@@ -9168,7 +9992,7 @@
       "repositories": [
         "openstack/zun"
       ],
-      "reason": "No mapped source package in Ubuntu resolute main/universe source indexes"
+      "reason": "No source package with verified OpenStack Homepage/VCS identity in Ubuntu resolute source indexes"
     }
   ]
 }

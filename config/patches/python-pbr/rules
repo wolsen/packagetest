@@ -1,0 +1,42 @@
+#!/usr/bin/make -f
+
+UPSTREAM_GIT := https://github.com/openstack-dev/pbr.git
+include /usr/share/openstack-pkg-tools/pkgos.make
+
+# Functional tests chdir into temporary projects; keep candidate PBR importable.
+export PYTHONPATH := $(CURDIR)
+
+export http_proxy=127.0.0.1:9
+export https_proxy=127.0.0.1:9
+
+%:
+	dh $@ --buildsystem=pybuild --with python3,sphinxdoc
+
+override_dh_auto_clean:
+	rm -rf .stestr build __pycache__ pbr.egg-info
+	find . -type d -name __pycache__ -exec rm -r {} \+
+	rm -rf doc/source/reference/api .pybuild
+
+override_dh_auto_build:
+	# Match setuptools entry points to the candidate instead of archive PBR.
+	python3 setup.py egg_info
+
+override_dh_auto_install:
+	pkgos-dh_auto_install --no-py2
+
+override_dh_auto_test:
+ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
+	pkgos-dh_auto_test --no-py2 'pbr\.tests\.(?!test_packaging\.TestRequirementParsing\.test_requirement_parsing.*|test_packaging\.TestPEP517Support\.test_pep_517_support.*|functional\.test_wsgi_scripts\.TestWsgiScripts\.test_with_argument|functional\.test_wsgi_scripts\.TestWsgiScripts\.test_wsgi_script_install|functional\.test_wsgi_scripts.TestWsgiScripts\.test_wsgi_script_run|functional\.test_pep517\.TestPEP517Support\.test_pep_517_support|functional\.test_requirements\.TestRequirementParsing\.test_requirement_parsing)'
+endif
+
+override_dh_sphinxdoc:
+ifeq (,$(findstring nodoc, $(DEB_BUILD_OPTIONS)))
+	if ! PYTHONPATH=. PYTHON=python3 python3 -m sphinx -b html doc/source $(CURDIR)/debian/python-pbr-doc/usr/share/doc/python-pbr-doc/html ; then \
+		cat /tmp/sphinx-err-*.log ; \
+		exit 1 ; \
+	fi
+	dh_sphinxdoc
+endif
+
+override_dh_python3:
+	dh_python3 --shebang=/usr/bin/python3

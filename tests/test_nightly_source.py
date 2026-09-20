@@ -60,3 +60,29 @@ def test_debian_maintainer_is_preserved_when_deriving_ubuntu_package(tmp_path):
     assert 'Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>' in result
     ubuntu_maintainer(path)
     assert path.read_text() == result
+
+
+def test_patch_adaptation_requires_exact_source_and_patch_checksums(tmp_path):
+    import hashlib
+    from packagetest.nightly_source import packaging_adjustments
+    tree = tmp_path / 'tree'
+    (tree / 'debian' / 'patches').mkdir(parents=True)
+    (tree / 'debian' / 'patches' / 'series').write_text('fix.patch\n')
+    (tree / 'debian' / 'patches' / 'fix.patch').write_text('old patch')
+    (tree / 'test.py').write_text('upstream fix')
+    config = tmp_path / 'config' / 'sample'
+    config.mkdir(parents=True)
+    spec = {'archive_dsc_sha256': 'a' * 64, 'drop_patches': [{'name': 'fix.patch', 'sha256': hashlib.sha256(b'old patch').hexdigest(), 'upstream_file': 'test.py', 'upstream_file_sha256': hashlib.sha256(b'upstream fix').hexdigest(), 'reason': 'upstream has fix'}]}
+    (config / 'adjustments.json').write_text(json.dumps(spec))
+    entry = {'source': 'sample', 'archive_source': {'sha256': 'b' * 64}}
+    with pytest.raises(ValueError, match='changed archive'):
+        packaging_adjustments(entry, tree, config.parent)
+    entry['archive_source']['sha256'] = 'a' * 64
+    (tree / 'test.py').write_text('changed upstream')
+    with pytest.raises(ValueError, match='checksum guard'):
+        packaging_adjustments(entry, tree, config.parent)
+    assert (tree / 'debian' / 'patches' / 'series').read_text() == 'fix.patch\n'
+    (tree / 'test.py').write_text('upstream fix')
+    actions = packaging_adjustments(entry, tree, config.parent)
+    assert actions[0]['action'] == 'omit-obsolete-patch'
+    assert (tree / 'debian' / 'patches' / 'series').read_text() == '# Superseded upstream: fix.patch\n'

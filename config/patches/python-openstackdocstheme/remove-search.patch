@@ -1,0 +1,143 @@
+Description: Refresh Debian offline search removal for Bootstrap 5 templates
+Author: Packaging Build Agent
+Forwarded: not-needed
+Last-Update: 2026-09-20
+
+--- a/openstackdocstheme/theme/openstackdocs/css.html
++++ b/openstackdocstheme/theme/openstackdocs/css.html
+@@ -6,6 +6,7 @@
+ 
+ <!-- Custom CSS -->
+ <link href="{{pathto('_static/css/combined.css', 1)}}" rel="stylesheet">
++<link href="{{pathto('_static/css/styles.css', 1)}}" rel="stylesheet">
+ 
+ <!-- Search CSS -->
+ <link href="{{pathto('_static/css/search.css', 1)}}" rel="stylesheet">
+--- a/openstackdocstheme/theme/openstackdocs/header.html
++++ b/openstackdocstheme/theme/openstackdocs/header.html
+@@ -3,8 +3,6 @@
+ {% else %}{# a template was rendered directly #}
+ <!-- TEMPLATE_NAME: {{pagename}} -->
+ {% endif %}
+-{% include 'os_search_install.html' %}
+-{% set osf_base_url = 'https://www.openstack.org' %}
+ <nav class="navbar navbar-default navbar-expand-md" role="navigation">
+   <div class="container">
+     <!-- Brand and toggle get grouped for better mobile display -->
+@@ -19,92 +17,6 @@
+       </button>
+       <div class="search-icon show"><i class="fa fa-search"></i> Global Search</div>
+       <div class="collapse navbar-collapse" id="navbar-main-1">
+-{% include 'os_search.html' %}
+-      <ul class="nav navbar-nav navbar-main ms-auto mb-2 mb-lg-0 justify-content-end show" role="navigation">
+-{% include 'os_search_mobile.html' %}
+-        <li class="nav-item dropdown"> <!--Software -->
+-          <a href="{{osf_base_url}}/software/" class="nav-link dropdown-toggle" aria-expanded="false">Software</a>
+-          <ul class="dropdown-menu">
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/software/">Overview</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/software/project-navigator/openstack-components">OpenStack Components</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/software/project-navigator/sdks">SDKs</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/software/project-navigator/deployment-tools">Deployment Tools</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/assets/software/projectmap/openstack-map.pdf" target="_blank">OpenStack Map</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/software/sample-configs/">Sample Configs</a></li>
+-          </ul>
+-        </li>
+-        <li class="nav-item drop-down"> <!-- Use Cases -->
+-          <a href="{{osf_base_url}}/use-cases/" class="nav-link dropdown-toggle" role="button">Use Cases</a>
+-          <ul class="dropdown-menu">
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/use-cases/">Users in Production</a></li>
+-            <li><hr class="dropdown-divider"></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/use-cases/bare-metal/">Ironic Bare Metal</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/use-cases/edge-computing/">Edge Computing</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/use-cases/telecoms-and-nfv/">Telecom &amp; NFV</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/use-cases/science/">Science and HPC</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/use-cases/containers/">Containers</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/use-cases/enterprise/">Enterprise</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/surveys/landing">User Survey</a></li>
+-          </ul>
+-        </li>
+-        <li class="nav-item dropdown"> <!-- Events -->
+-          <a href="https://openinfra.dev/summit" class="nav-link dropdown-toggle" role="button" id="dropdownMenuEvents">Events</a>
+-          <ul class="dropdown-menu">
+-            <li><a class="dropdown-item" href="https://openinfra.dev/summit">OpenInfra Summit</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/ptg/">Project Teams Gathering</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/events/opendev-2020/">OpenDev</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/events/community-events/">Community Events</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/events/openstackdays">OpenStack &amp; OpenInfra Days</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/videos/">Summit Videos</a></li>
+-          </ul>
+-        </li>
+-        <li class="nav-item dropdown"><!-- Community -->
+-          <a href="{{osf_base_url}}/community/" class="nav-link dropdown-toggle" role="button">Community</a>
+-          <ul class="dropdown-menu">
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/community/">Welcome! Start Here</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/community/tech-committee">OpenStack Technical Committee</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/community/speakers/">Speakers Bureau</a></li>
+-            <li><a class="dropdown-item" href="https://wiki.openstack.org">OpenStack Wiki</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/coa/">Get Certified (COA)</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/community/jobs/">Jobs</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/marketing/">Marketing Resources</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/news/">Community News</a></li>
+-            <li><a class="dropdown-item" href="https://superuser.openstack.org">Superuser Magazine</a></li>
+-            <li><hr class="dropdown-divider"></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/community/supporting-organizations/">OpenInfra Foundation Supporting Organizations</a></li>
+-            <li><a class="dropdown-item" href="https://openinfra.dev">OpenInfra Foundation</a></li>
+-          </ul>
+-        </li>
+-        <li class="nav-item dropdown"><!-- Marketplace -->
+-          <a href="{{osf_base_url}}/marketplace/" class="nav-link dropdown-toggle" role="button">Marketplace</a>
+-          <ul class="dropdown-menu dropdown-hover">
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/marketplace/training/">Training</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/marketplace/distros/">Distros &amp; Appliances</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/marketplace/public-clouds/">Public Clouds</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/marketplace/hosted-private-clouds/">Hosted Private Clouds</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/marketplace/remotely-managed-private-clouds/">Remotely Managed Private Clouds</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/marketplace/consulting/">Consulting &amp; Integrators</a></li>
+-            <li><a class="dropdown-item" href="{{osf_base_url}}/marketplace/drivers/">Drivers</a></li>
+-          </ul>
+-        </li>
+-        <li class="nav-item"><!-- Blog -->
+-          <a class="nav-link" href="{{osf_base_url}}/blog/">Blog</a>
+-        </li>
+-        <li class="nav-item"><!-- Docs -->
+-          <a class="nav-link" href="https://docs.openstack.org/">Docs</a>
+-        </li>
+-        <li class="nav-item dropdown join-nav-section"> <!-- Join -->
+-          <a href="https://openinfra.dev/join/" class="nav-link dropdown-toggle" role="button">Join</a>
+-          <ul class="dropdown-menu" style="display: none;">
+-            <li><a class="dropdown-item" href="https://openinfra.dev/join/">Sign up for Foundation Membership</a></li>
+-            <li><a class="dropdown-item" href="https://openinfra.dev/join/">Sponsor the Foundation</a></li>
+-            <li><a class="dropdown-item" href="https://openinfra.dev">More about the Foundation</a></li>
+-          </ul>
+-        </li>
+-        <li class="nav-item"> <!-- Login -->
+-          <a href="{{osf_base_url}}/Security/login/?BackURL=/home/" class="sign-in-btn">Log In</a>
+-        </li>
+-      </ul>
+     </div>
+   </div>
+   <!-- /.container -->
+--- a/openstackdocstheme/theme/openstackdocs/search.html
++++ b/openstackdocstheme/theme/openstackdocs/search.html
+@@ -24,15 +24,11 @@
+     {% trans %}To search the documentation for {{ project }}, type your query into the
+     box below and press Enter.{% endtrans %}
+   </p>
+-  <form action="" method="get">
+-    <input type="text" name="q" value="" />
+-    <input type="submit" value="search" />
+     <span id="search-progress" style="padding-left: 10px"></span>
+ 
+     <div id="search-results">
+ 
+     </div>
+-  </form>
+ {% endblock %}
+ 
+ {% block script_footer %}
+--- a/openstackdocstheme/theme/openstackdocs/script_search.html
++++ b/openstackdocstheme/theme/openstackdocs/script_search.html
+@@ -1,3 +1,2 @@
+-<script src="https://www.google.com/jsapi"></script>
+ <script>
+ </script>

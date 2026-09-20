@@ -4,7 +4,7 @@ Target: Ubuntu 26.04 (Resolute), amd64. The workflow builds candidate packages; 
 
 ## Scope and inputs
 
-`config/hibiscus-catalog.json` includes 172 cycle deliverables and 26 independently released build dependencies. Another 39 deliverables have no mapped Resolute source and remain explicit exclusions. Release metadata revisions and archive index checksums are recorded.
+`config/hibiscus-catalog.json` includes 170 cycle deliverables and 27 independently released build dependencies. Another 41 deliverables have no mapped Resolute source and remain explicit exclusions. Release metadata revisions and archive index checksums are recorded.
 
 The plan resolves references once. Declared `stable/2026.2` branches take precedence. Each build checks out its frozen commit and applies checksum-pinned Ubuntu archive packaging. Snapshot versions contain commit date, distance from the base tag, and abbreviated SHA; commits at a tag use distance zero. Python sdists retain generated metadata. Puppet sources use deterministic Git archives.
 

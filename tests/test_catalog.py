@@ -7,6 +7,7 @@ from packagetest.catalog import dependency_names, make_catalog, package_record, 
 
 def archive(name, binaries=None, depends=''):
     return {'Package': name, 'Version': '1:2.0-0ubuntu1', 'Binary': binaries or name,
+            'Vcs-Git': 'https://salsa.debian.org/openstack-team/libs/' + name + '.git',
             'Build-Depends': depends, 'Directory': 'pool/main/p/' + name,
             'Checksums-Sha256': 'a' * 64 + ' 123 ' + name + '_2.0-0ubuntu1.dsc'}
 
@@ -16,8 +17,8 @@ def test_dependency_names_retains_alternatives_and_strips_qualifiers():
 
 
 def test_alias_and_unmapped_package():
-    assert source_name('keystoneauth', {'python-keystoneauth1': {}}) == 'python-keystoneauth1'
-    assert source_name('puppet-openstack_extras', {'puppet-module-openstack-extras': {}}) == 'puppet-module-openstack-extras'
+    assert source_name('keystoneauth', {'python-keystoneauth1': archive('python-keystoneauth1')}) == 'python-keystoneauth1'
+    assert source_name('puppet-openstack_extras', {'puppet-module-openstack-extras': archive('puppet-module-openstack-extras')}) == 'puppet-module-openstack-extras'
     assert source_name('not-packaged', {}) is None
 
 
@@ -70,3 +71,33 @@ def test_checked_in_catalog_is_comprehensive_and_unique():
     assert all(p['upstream_repository'] and p['archive_source']['sha256'] for p in packages)
     assert {p['source'] for p in packages if p['membership'] == 'cycle'}
     assert data['exclusions']
+
+
+def test_unrelated_name_collisions_are_rejected():
+    sources = {
+        'bifrost': {'Vcs-Git': 'https://salsa.debian.org/med-team/bifrost.git'},
+        'trove': {'Vcs-Git': 'https://salsa.debian.org/java-team/trove.git'},
+        'taskflow': {'Homepage': 'https://taskflow.github.io/', 'Vcs-Git': 'https://salsa.debian.org/debian/taskflow.git'},
+        'python-taskflow': archive('python-taskflow'),
+    }
+    assert source_name('bifrost', sources) is None
+    assert source_name('trove', sources) is None
+    assert source_name('taskflow', sources) == 'python-taskflow'
+    assert source_name('unknown', {'unknown': {}}) is None
+
+
+def test_latest_archive_version_wins_independent_of_index_order(tmp_path):
+    root = tmp_path / 'releases'
+    (root / 'deliverables' / 'hibiscus').mkdir(parents=True)
+    (root / 'deliverables' / 'hibiscus' / 'example.yaml').write_text(json.dumps({'repository-settings': {'openstack/example': {}}}))
+    subprocess.run(['git', 'init', '-q', str(root)], check=True)
+    subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c', 'user.email=t@example.invalid', 'commit', '--allow-empty', '-qm', 'fixture'], check=True)
+    indexes = []
+    for index, version in enumerate(['1:2.0-0ubuntu2', '1:2.0-0ubuntu1', '1:2.0-0ubuntu1.1']):
+        row = archive('example')
+        row['Version'] = version
+        path = tmp_path / f'Sources{index}'
+        path.write_text('\n'.join(f'{key}: {value}' for key, value in row.items()))
+        indexes.append(path)
+    result = make_catalog(root, indexes)
+    assert result['packages'][0]['archive_version'] == '1:2.0-0ubuntu2'

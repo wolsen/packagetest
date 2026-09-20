@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "52038054045ce32ddb611b16abbb3b78a52e126e231557c11fae4ee30b7111b9",
+  "replace_files": [
+    {
+      "name": "rules",
+      "sha256": "99282a7588dfb60ceb83227ed3b841d34083dde81c75ef8ea781a3a709336acf",
+      "replacement": "rules",
+      "replacement_sha256": "a25b0f6d776358698e7e46c8a7f7a2b558ad5eb4d9c0a417171ccbb8cf04711a",
+      "reason": "Functional subprocesses change directory: expose candidate modules via absolute PYTHONPATH and generate matching entry-point metadata before tests instead of importing archive PBR."
+    }
+  ]
+}

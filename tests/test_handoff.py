@@ -91,3 +91,13 @@ def test_parallel_waves_and_bad_graphs():
         dependency_waves([{'source': 'a', 'depends_on': ['missing']}])
     with pytest.raises(ValueError, match='cycle'):
         dependency_waves([{'source': 'a', 'depends_on': ['b']}, {'source': 'b', 'depends_on': ['a']}])
+
+
+def test_sbuild_log_link_is_not_a_dependency_input(tmp_path):
+    root, lock, deb = bundle(tmp_path)
+    (deb.parent / 'sample_amd64.build').symlink_to('/old/runner/sample_1.0-1_amd64.build')
+    assert collect(root, lock)['sample'][0]['sha256'] == sha256(deb)
+    malicious = deb.parent / 'redirect.deb'
+    malicious.symlink_to('/outside/deb')
+    with pytest.raises(ValueError, match='Symlink'):
+        collect(root, lock)

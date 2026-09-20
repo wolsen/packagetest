@@ -12,6 +12,7 @@ import lzma
 from pathlib import Path
 import re
 import subprocess
+from urllib.parse import urlparse
 
 ALIASES = {'keystoneauth': 'python-keystoneauth1',
            'puppet-openstack_extras': 'puppet-module-openstack-extras'}
@@ -44,10 +45,34 @@ def dependency_names(expression: str) -> set[str]:
             if (match := re.match(r'\s*([a-z0-9][a-z0-9+.-]*)', group))}
 
 
+def identity_evidence(archive: dict) -> dict[str, str]:
+    """Require OpenStack provenance; package-name equality alone is unsafe.
+
+    Ubuntu also ships unrelated genomics Bifrost, Java Trove, and C++ Taskflow.
+    VCS ownership and upstream project namespaces distinguish those packages.
+    """
+    evidence = {}
+    for field in ('Homepage', 'Vcs-Git', 'Vcs-Browser'):
+        value = archive.get(field, '')
+        parsed = urlparse(value.split(' ', 1)[0])
+        host, path = parsed.hostname, parsed.path
+        approved = (
+            host == 'salsa.debian.org' and path.startswith('/openstack-team/') or
+            host == 'anonscm.debian.org' and path.startswith('/git/openstack/') or
+            host == 'git.launchpad.net' and path.startswith('/~ubuntu-openstack-dev/') or
+            host in {'opendev.org', 'github.com', 'git.openstack.org'} and path.startswith('/openstack/') or
+            host in {'docs.openstack.org', 'www.openstack.org', 'openstack.org'}
+        )
+        if approved:
+            evidence[field] = value
+    return evidence
+
+
 def source_name(deliverable: str, sources: dict) -> str | None:
     for candidate in (ALIASES.get(deliverable), deliverable, 'python-' + deliverable,
+                      'openstack-' + deliverable,
                       deliverable.replace('puppet-', 'puppet-module-', 1)):
-        if candidate in sources:
+        if candidate in sources and identity_evidence(sources[candidate]):
             return candidate
     return None
 
@@ -79,6 +104,7 @@ def package_record(name: str, metadata: dict, archive: dict, *, series: str, mem
         'branch_policy': 'release-metadata-stable' if branch != 'master' else 'release-metadata-no-stable-branch',
         'all_upstream_repositories': repos,
         'archive_version': archive['Version'],
+        'archive_identity_evidence': identity_evidence(archive),
         'binaries': sorted(x.strip() for x in archive.get('Binary', '').split(',') if x.strip()),
         'build_depends': ', '.join(archive.get(k, '') for k in ('Build-Depends', 'Build-Depends-Indep', 'Build-Depends-Arch') if archive.get(k)),
         'testsuite': archive.get('Testsuite', ''),
@@ -102,7 +128,9 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
         text = lzma.decompress(data).decode() if path.suffix == '.xz' else data.decode()
         for source in paragraphs(text):
             if 'Package' in source:
-                sources[source['Package']] = source
+                previous = sources.get(source['Package'])
+                if previous is None or subprocess.run(['dpkg', '--compare-versions', source['Version'], 'gt', previous['Version']]).returncode == 0:
+                    sources[source['Package']] = source
     cycle = {path.stem: yaml.safe_load(path.read_text()) for path in sorted((releases / 'deliverables' / codename).glob('*.yaml'))}
     if not cycle:
         raise ValueError(f'No deliverables for {codename}')
@@ -116,7 +144,7 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
         else:
             exclusions.append({'deliverable': name, 'release_type': metadata.get('type'),
                                'repositories': repository_names(metadata),
-                               'reason': f'No mapped source package in Ubuntu {suite} main/universe source indexes'})
+                               'reason': f'No source package with verified OpenStack Homepage/VCS identity in Ubuntu {suite} source indexes'})
     candidates = {}
     for name, metadata in independent.items():
         source = source_name(name, sources)

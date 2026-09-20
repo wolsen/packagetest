@@ -1,0 +1,12 @@
+{
+  "archive_dsc_sha256": "cdbe30edf5aae5812f10fe1e74b33fed4aa61da1d9fa8a8c81d381d3ec2f92e8",
+  "replace_files": [
+    {
+      "name": "patches/remove-search.patch",
+      "sha256": "47f835c547de18ad2b03d6ce2c1a8649330cfa0728975d4969eabd95cac78f1d",
+      "replacement": "remove-search.patch",
+      "replacement_sha256": "c7d9569afc54078c32cdf9cee99c8acf975fe6ec22e8ead630a8e0136ffa7322",
+      "reason": "Preserve Debian offline search removal with upstream Bootstrap5 header and indentation changes; no tests disabled."
+    }
+  ]
+}

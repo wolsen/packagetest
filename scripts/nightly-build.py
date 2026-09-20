@@ -35,6 +35,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--run-attempt', required=True)
+    parser.add_argument('--check-dependencies-only', action='store_true')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     state = {'source': args.source, 'result': 'PREPARING', 'stage': 'dependency-handoff'}
@@ -61,6 +62,9 @@ def main():
             raise ValueError(f'Missing dependency builds: {sorted(required - locks.keys())}')
         producers = collect_producers(args.inputs, locks, run_id=args.run_id,
                                       run_attempt=args.run_attempt, target=TARGET)
+        if args.check_dependencies_only:
+            state['result'] = 'READY'
+            return 0
         if producers:
             build_repository(producers, args.output / 'dependency-repository')
         state['stage'] = 'snapshot-source'
@@ -89,7 +93,8 @@ def main():
         traceback.print_exc()
         return 1
     finally:
-        (args.output / 'result.json').write_text(json.dumps(state, indent=2) + '\n')
+        if state['result'] != 'READY':
+            (args.output / 'result.json').write_text(json.dumps(state, indent=2) + '\n')
 
 
 if __name__ == '__main__':
