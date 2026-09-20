@@ -10,7 +10,7 @@ The plan resolves references once. Declared `stable/2026.2` branches take preced
 
 ## Parallel builds and artifacts
 
-The current graph has eight dependency levels, each allowing 20 concurrent jobs subject to runner availability. A dependency level is a topological layer: every package in it can build in parallel because any same-run candidate packages it needs are produced by earlier levels. GitHub job names show `Build dependency level N · SOURCE` and `Test dependency level N packages` so the layout explains both the ordering and the package being handled. Failures do not cancel independent jobs. Missing or failed required producers block consumers.
+The current graph has eight dependency levels, each allowing 20 concurrent jobs subject to runner availability. A dependency level is a topological layer: every package in it can build in parallel because any same-run candidate packages it needs are produced by earlier levels. GitHub groups the matrices as `build_dependency_level_N` and `autopkgtest_dependency_level_N`; the individual jobs remain the direct `Build SOURCE` and `Autopkgtest · SOURCE` labels. Failures do not cancel independent jobs. Missing or failed required producers block consumers.
 
 Cycles are recorded as archive bootstrap edges. Dependencies already available from an earlier dependency level use that run's candidates; only the remaining cycle edges use archive packages for the first build. A subsequent rebuild of cyclic components is required before claiming the complete set was built against candidate dependencies.
 

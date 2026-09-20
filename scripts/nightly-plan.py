@@ -252,8 +252,9 @@ def main():
             handle.write('sources=' + json.dumps({'source': plan['sources']}, separators=(',', ':')) + '\n')
             for index in range(args.max_waves):
                 wave = plan['waves'][index] if index < len(plan['waves']) else []
-                handle.write(f'wave{index}=' + json.dumps({'source': wave or ['__empty__']}, separators=(',', ':')) + '\n')
-                handle.write(f'enabled{index}=' + ('true' if wave else 'false') + '\n')
+                level = index + 1
+                handle.write(f'build_dependency_level_{level}=' + json.dumps({'source': wave or ['__empty__']}, separators=(',', ':')) + '\n')
+                handle.write(f'dependency_level_{level}_enabled=' + ('true' if wave else 'false') + '\n')
     print(json.dumps({'packages': len(plan['sources']), 'waves': [len(w) for w in plan['waves']],
                       'archive_bootstrap_edges': len(plan['archive_bootstrap_edges']), 'resolution_failures': len(plan['resolution_failures'])}))
 
