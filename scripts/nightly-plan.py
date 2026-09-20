@@ -150,6 +150,56 @@ def plan_catalog(catalog, sources=None, max_waves=12, candidate_dependencies=())
                      'cycle_components': [g for g in groups if len(g) > 1]}
 
 
+def render_plan_summary(plan: dict, catalog: dict) -> str:
+    """Render the complete dependency-level plan for GitHub and artifacts."""
+    entries = {entry['source']: entry for entry in catalog['packages']}
+    lines = [
+        '# OpenStack 2026.2 snapshot build plan',
+        '',
+        f"{len(plan['sources'])} source packages across {len(plan['waves'])} dependency levels. "
+        'Levels run in order; packages within one level are eligible to run in parallel. '
+        'Each package job builds and then runs its autopkgtest before the next level starts.',
+        '',
+        '| Dependency level | Package count | Packages |',
+        '|---:|---:|---|',
+    ]
+    for index, packages in enumerate(plan['waves'], 1):
+        package_list = ', '.join(f'`{source}`' for source in packages)
+        lines.append(f'| {index} | {len(packages)} | {package_list} |')
+
+    required = []
+    for source in plan['sources']:
+        for dependency, reason in sorted(entries[source].get('required_candidate_dependencies', {}).items()):
+            required.append((source, dependency, reason))
+    lines.extend([
+        '',
+        '## Dependency policy',
+        '',
+        f"{len(plan['archive_bootstrap_edges'])} dependency edges use Ubuntu archive packages on this first pass "
+        'to break dependency cycles or satisfy dependencies outside an explicit pilot.',
+        '',
+        f'{len(required)} reviewed edges require same-run candidate packages:',
+        '',
+    ])
+    if required:
+        lines.extend(['| Consumer | Candidate dependency | Reason |', '|---|---|---|'])
+        for source, dependency, reason in required:
+            lines.append(f'| `{source}` | `{dependency}` | {reason.replace("|", "\\|")} |')
+    else:
+        lines.append('None.')
+
+    failures = plan.get('resolution_failures', [])
+    lines.extend(['', '## Source resolution', ''])
+    if failures:
+        lines.append(f'{len(failures)} source references failed to resolve:')
+        lines.append('')
+        for failure in failures:
+            lines.append(f"- `{failure['source']}`: {failure['error']}")
+    else:
+        lines.append('All selected source references resolved to immutable commit SHAs.')
+    return '\n'.join(lines) + '\n'
+
+
 def freeze(entry):
     ref = entry['upstream_ref']
     repository = entry['upstream_repository']
@@ -247,6 +297,11 @@ def main():
     plan['catalog_sha256'] = hashlib.sha256(content.encode()).hexdigest()
     plan['resolution_failures'] = [{'source': p['source'], 'error': p['upstream_resolution_error']} for p in catalog['packages'] if p.get('upstream_resolution_error')]
     (args.output / 'plan.json').write_text(json.dumps(plan, indent=2) + '\n')
+    summary = render_plan_summary(plan, catalog)
+    (args.output / 'summary.md').write_text(summary)
+    if os.getenv('GITHUB_STEP_SUMMARY'):
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as handle:
+            handle.write(summary)
     if os.getenv('GITHUB_OUTPUT'):
         with open(os.environ['GITHUB_OUTPUT'], 'a') as handle:
             handle.write('sources=' + json.dumps({'source': plan['sources']}, separators=(',', ':')) + '\n')

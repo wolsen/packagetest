@@ -77,6 +77,21 @@ def test_cycle_uses_candidate_already_available_in_earlier_wave():
     assert [(e['source'], e['dependency']) for e in plan['archive_bootstrap_edges']] == [('b', 'a')]
 
 
+def test_plan_summary_lists_every_dependency_level_and_candidate_rule():
+    policy = [{'source': 'a', 'dependency': 'b', 'reason': 'requires new | API'}]
+    frozen, plan = module.plan_catalog(catalog(), candidate_dependencies=policy)
+    plan['resolution_failures'] = []
+    summary = module.render_plan_summary(plan, frozen)
+
+    assert '# OpenStack 2026.2 snapshot build plan' in summary
+    assert '4 source packages across 3 dependency levels' in summary
+    assert '| 1 | 2 | `b`, `d` |' in summary
+    assert '| 2 | 1 | `a` |' in summary
+    assert '| 3 | 1 | `c` |' in summary
+    assert '| `a` | `b` | requires new \\| API |' in summary
+    assert 'All selected source references resolved to immutable commit SHAs.' in summary
+
+
 def test_reviewed_control_adds_independent_build_dependency_to_graph(tmp_path):
     entries = {'packages': [
         {'source': 'client', 'binaries': ['python3-client'], 'build_depends': 'debhelper',
