@@ -117,6 +117,8 @@ jobs:
                       summary.write(f"| {test['name']} | {test['result']} | {detail} |\n")
           command = 'notice' if result in {'SUPERFICIAL', 'SKIP', 'NO_TESTS'} else 'error' if result in {'FAIL', 'INFRA_ERROR', 'BLOCKED'} else 'notice'
           print(f'::{command} title=Autopkgtest {result}::{os.environ["SOURCE"]}: raw return code {raw}')
+          if command == 'error':
+              raise SystemExit(1)
           PYCODE
         env:
           SOURCE: ${{ matrix.source }}
