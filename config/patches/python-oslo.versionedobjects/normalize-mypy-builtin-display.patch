@@ -1,0 +1,19 @@
+Description: Normalize builtin type display across supported mypy versions
+Forwarded: no
+
+The supported mypy1.19 JSON output qualifies builtin names (builtins.str, builtins.list) while upstream fixtures use short names. Normalize only standalone builtins qualifiers; retain exact type structure, user-defined namespaces, diagnostic line matching and every test.
+
+--- a/oslo_versionedobjects/tests/test_mypy_integration.py
++++ b/oslo_versionedobjects/tests/test_mypy_integration.py
+@@ -110,7 +110,10 @@
+         self.assertNoErrors(messages)
+ 
+         actual = {
+-            m['line']: m['message']
++            # Mypy 1.19 qualifies builtins in JSON reveal_type notes;
++            # later releases display their short names. Normalize that
++            # spelling only, retaining container arguments and user types.
++            m['line']: re.sub(r'(?<![\w.])builtins\.', '', m['message'])
+             for m in messages
+             if m['severity'] == 'note'
+             and m['line'] > 0

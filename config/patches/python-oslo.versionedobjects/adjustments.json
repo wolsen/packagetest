@@ -7,6 +7,22 @@
       "replacement": "control",
       "replacement_sha256": "786b4bc2e885d6335f76932139e8ab260723fda44157132cd475cf4d9c0415ac",
       "reason": "Pinned upstream test-requirements.txt requires mypy>=1.19.0; new mypy plugin unit/integration tests import mypy.nodes and mypy.api at discovery. Add the Resolute python3-mypy build dependency (available1.19.1), preserving every test and keeping this development tool out of mandatory runtime dependencies."
+    },
+    {
+      "name": "patches/series",
+      "sha256": "6fa91114a8baca8ff6f89c6146a6441c6d44e9e6c5ef935e41d4a254f028a785",
+      "replacement": "series",
+      "replacement_sha256": "8ae38220569d68f2529abe477948434390d8bccf540331ffe7446f9b6b9cfad5",
+      "reason": "Retain original patch sequence and enable supported-mypy display compatibility."
+    }
+  ],
+  "add_files": [
+    {
+      "name": "patches/normalize-mypy-builtin-display.patch",
+      "replacement": "normalize-mypy-builtin-display.patch",
+      "replacement_sha256": "56085acc4bdcd74f575b65f9a440326fb8a4c15b0c64fa872d677f4036aa3fff",
+      "mode": "0644",
+      "reason": "The supported mypy1.19 JSON output qualifies builtin names (builtins.str, builtins.list) while upstream fixtures use short names. Normalize only standalone builtins qualifiers; retain exact type structure, user-defined namespaces, diagnostic line matching and every test."
     }
   ]
 }
