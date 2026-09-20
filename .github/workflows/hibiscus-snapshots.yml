@@ -1,5 +1,7 @@
 name: OpenStack 2026.2 snapshot pipeline
 on:
+  schedule:
+    - cron: '0 9 * * *' # 02:00 America/Phoenix; active on the default branch.
   push:
     branches: [codex/hibiscus-snapshot-pipeline]
     paths-ignore: ['**.md']

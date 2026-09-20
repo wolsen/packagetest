@@ -2,6 +2,7 @@
 """Freeze upstream refs once and plan independent snapshot build waves."""
 from __future__ import annotations
 import argparse
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import hashlib
@@ -131,7 +132,15 @@ def main():
             rows.append(row)
         args.output.mkdir(parents=True, exist_ok=True)
         (args.output / 'results.json').write_text(json.dumps(rows, indent=2) + '\n')
-        table = '| Source | Build | Autopkgtest |\n|---|---|---|\n' + ''.join(f"| {row['source']} | {row['build']['result']} | {row['autopkgtest']['result']} |\n" for row in rows)
+        counts = {phase: dict(sorted(Counter(row[phase]['result'] for row in rows).items()))
+                  for phase in ('build', 'autopkgtest')}
+        (args.output / 'counts.json').write_text(json.dumps(counts, indent=2) + '\n')
+        table = f'{len(rows)} requested sources. Regress-stack was not run.\n\n'
+        table += '| Phase | Results |\n|---|---|\n'
+        for phase, outcomes in counts.items():
+            table += f"| {phase} | " + ', '.join(f'{status}: {count}' for status, count in outcomes.items()) + ' |\n'
+        table += '\nSUPERFICIAL, SKIP, NO_TESTS, BLOCKED, and MISSING do not count as substantive test passes.\n\n'
+        table += '| Source | Build | Autopkgtest |\n|---|---|---|\n' + ''.join(f"| {row['source']} | {row['build']['result']} | {row['autopkgtest']['result']} |\n" for row in rows)
         (args.output / 'summary.md').write_text(table)
         if os.getenv('GITHUB_STEP_SUMMARY'):
             with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as handle:

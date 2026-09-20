@@ -26,4 +26,4 @@ Autopkgtest selects compatible binaries through each test’s dependency declara
 
 Artifacts `build-SOURCE` and `autopkgtest-SOURCE` contain tar bundles of results and logs. Small `status-*` artifacts feed `pipeline-summary`. Retention is 14 days.
 
-The workflow runs on pushes to `codex/hibiscus-snapshot-pipeline` and manual dispatch. Empty `sources` selects the catalog; a comma-separated pilot list selects exactly those packages and records outside dependencies as archive bootstrap inputs. Recurring nightly scheduling remains pending validation and integration onto the default branch.
+The workflow runs on pushes to `codex/hibiscus-snapshot-pipeline` and manual dispatch. Empty `sources` selects the catalog; a comma-separated pilot list selects exactly those packages and records outside dependencies as archive bootstrap inputs. Its nightly schedule is 09:00 UTC (02:00 America/Phoenix). GitHub activates scheduled workflows only on the default branch, so recurring runs remain pending validation and default-branch integration; the feature branch is not currently scheduled.
