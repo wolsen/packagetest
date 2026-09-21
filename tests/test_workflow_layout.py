@@ -42,7 +42,9 @@ def test_feature_push_exercises_heat_candidate_closure():
     workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
     policy = json.loads(Path('config/hibiscus-candidate-dependencies.json').read_text())
     assert ("github.event_name == 'push' && "
+            "!contains(github.event.head_commit.message, '[full-snapshot]') && "
             "'python-neutron-lib,python-oslo.versionedobjects,heat,watcher'") in workflow
+    assert "or empty manual dispatch selects the full catalog" in workflow
     assert any(edge['source'] == 'heat' and edge['dependency'] == 'python-neutron-lib'
                for edge in policy)
     assert any(edge['source'] == 'heat' and edge['dependency'] == 'python-oslo.versionedobjects'
