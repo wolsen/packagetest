@@ -30,6 +30,7 @@ Depends:
  ${python3:Depends},
 """)
     (outputs / "result.json").write_text('{"result":"FAILED"}\n')
+    (outputs / "nightly-build.log").write_text("ModuleNotFoundError: No module named 'futurist'\n")
     tests = tmp_path / "test-results"
     (tests / "result").mkdir(parents=True)
     (tests / "result/result.json").write_text('{"result":"BLOCKED"}\n')
@@ -79,3 +80,44 @@ Depends:
     assert report["selected_attempt"] == 1
     assert (tmp_path / "report/attempt-1/proposal.patch").is_file()
     assert "python3-futurist" in (tmp_path / "report/attempt-1/proposal.patch").read_text()
+
+
+def test_rejected_decision_is_preserved_without_building(tmp_path, monkeypatch):
+    module = load_script()
+    outputs = tmp_path / "outputs"
+    tree = outputs / "source-preparation/sample-1"
+    (tree / "debian").mkdir(parents=True)
+    (tree / "debian/control").write_text("""Source: sample
+Build-Depends: python3-oslo.config,
+
+Package: sample
+Architecture: all
+Depends: ${misc:Depends},
+""")
+    (tree / "debian/rules").write_text("cmd --format yaml\n")
+    (outputs / "result.json").write_text('{"result":"FAILED"}\n')
+    (outputs / "nightly-build.log").write_text("tool: error: unrecognized arguments: --format yaml\n")
+    tests = tmp_path / "test-results/result"
+    tests.mkdir(parents=True)
+    (tests / "result.json").write_text('{"result":"BLOCKED"}\n')
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"model")
+    llama = tmp_path / "llama-cli"
+    llama.write_text("fake")
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text('{"packages":[]}\n')
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    response = '{"action":"add_dependency","package":"python3-oslo.config","argument":"","evidence":"wrong"}'
+    monkeypatch.setattr(module, "llama_generate", lambda *args, **kwargs: (response, {"returncode": 0}))
+    monkeypatch.setattr(sys, "argv", [
+        "remediate-package.py", "--source", "sample", "--catalog", str(catalog),
+        "--inputs", str(inputs), "--outputs", str(outputs), "--tests", str(tmp_path / "test-results"),
+        "--report", str(tmp_path / "report"), "--work", str(tmp_path / "work"),
+        "--llama-cli", str(llama), "--model", str(model),
+        "--model-sha256", hashlib.sha256(b"model").hexdigest(), "--run-id", "1", "--run-attempt", "1",
+    ])
+    assert module.main() == 1
+    report = json.loads((tmp_path / "report/result.json").read_text())
+    assert [attempt["result"] for attempt in report["attempts"]] == ["DECISION_REJECTED"] * 2
+    assert json.loads((tmp_path / "report/attempt-1/decision.json").read_text())["package"] == "python3-oslo.config"

@@ -81,6 +81,31 @@ def parse_repair_decision(text: str) -> dict:
     return decision
 
 
+def validate_repair_decision(decision: dict, evidence: str) -> dict:
+    """Require the selected action and value to be directly supported by evidence."""
+    action = decision["action"]
+    if action == "no_fix":
+        return {"result": "ACCEPTED", "error": ""}
+    if action == "add_dependency":
+        modules = re.findall(r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)", evidence)
+        package = decision["package"].removeprefix("python3-").replace("-", "_").lower()
+        supported = {module.split(".")[0].replace("-", "_").lower() for module in modules}
+        if not supported or package not in supported:
+            return {"result": "REJECTED", "error":
+                    f"add_dependency requires a matching ModuleNotFoundError; imports={sorted(supported)}"}
+        if decision["argument"].strip():
+            return {"result": "REJECTED", "error": "add_dependency requires an empty argument"}
+        return {"result": "ACCEPTED", "error": ""}
+    argument = decision["argument"].strip()
+    rejected = re.findall(r"error:\s+unrecognized arguments?:\s*([^\\\n\"]+)", evidence)
+    if not rejected or not any(argument and argument in value for value in rejected):
+        return {"result": "REJECTED", "error":
+                f"remove_rule_argument requires an exact unrecognized argument; errors={rejected[-3:]}"}
+    if decision["package"].strip():
+        return {"result": "REJECTED", "error": "remove_rule_argument requires an empty package"}
+    return {"result": "ACCEPTED", "error": ""}
+
+
 def _replace_file_patch(path: str, before: str, after: str) -> str:
     if before == after:
         raise ValueError(f"repair did not change {path}")
@@ -106,7 +131,13 @@ def _add_control_dependency(text: str, field: str, package: str) -> str:
         return text
     if end and not lines[end - 1].endswith("\n"):
         lines[end - 1] += "\n"
-    lines.insert(end, f" {package},\n")
+    insert = end
+    for index in range(start + 1, end):
+        token = lines[index].strip().split(maxsplit=1)[0].rstrip(",") if lines[index].strip() else ""
+        if token.startswith("${") or token.lower() > package:
+            insert = index
+            break
+    lines.insert(insert, f" {package},\n")
     return "".join(lines)
 
 

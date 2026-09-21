@@ -10,7 +10,7 @@ on:
       sources:
         description: Comma-separated subset of the three repair canaries
         type: string
-        default: aetos,python-glance-store,networking-generic-switch
+        default: aetos
 
 permissions:
   contents: read
@@ -29,7 +29,7 @@ env:
 
 jobs:
   plan:
-    name: Plan three-package repair canary
+    name: Plan focused repair canary
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -40,7 +40,7 @@ jobs:
           persist-credentials: false
       - name: Restrict the canary to reviewed cases
         env:
-          SOURCES: ${{ inputs.sources || 'aetos,python-glance-store,networking-generic-switch' }}
+          SOURCES: ${{ inputs.sources || 'aetos' }}
         run: |
           python3 - <<'PY'
           import os
@@ -51,7 +51,7 @@ jobs:
           PY
       - id: plan
         env:
-          SOURCES: ${{ inputs.sources || 'aetos,python-glance-store,networking-generic-switch' }}
+          SOURCES: ${{ inputs.sources || 'aetos' }}
         run: python3 scripts/nightly-plan.py --sources "$SOURCES"
       - uses: actions/upload-artifact@v4
         with:

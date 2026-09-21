@@ -13,6 +13,7 @@ from packagetest.failure_analysis import (
     safe_evidence_text,
     select_direct_failures,
     validate_source_patch,
+    validate_repair_decision,
     validate_patch,
 )
 
@@ -73,6 +74,20 @@ def test_parses_noisy_structured_repair_decision():
     assert parse_repair_decision(output)["package"] == "python3-futurist"
 
 
+def test_repair_decision_must_match_failure_evidence():
+    missing = "ModuleNotFoundError: No module named 'ncclient'"
+    good_dependency = {"action": "add_dependency", "package": "python3-ncclient",
+                       "argument": "", "evidence": missing}
+    bad_dependency = {**good_dependency, "package": "python3-oslo.config"}
+    assert validate_repair_decision(good_dependency, missing)["result"] == "ACCEPTED"
+    assert validate_repair_decision(bad_dependency, missing)["result"] == "REJECTED"
+    rejected = r"tool: error: unrecognized arguments: --format yaml\nmake: failed"
+    good_argument = {"action": "remove_rule_argument", "package": "",
+                     "argument": "--format yaml", "evidence": rejected}
+    assert validate_repair_decision(good_argument, rejected)["result"] == "ACCEPTED"
+    assert validate_repair_decision({**good_argument, "argument": "--namespace"}, rejected)["result"] == "REJECTED"
+
+
 def test_renders_dependency_and_rule_argument_repairs(tmp_path):
     (tmp_path / "debian").mkdir()
     control = """Source: sample
@@ -91,6 +106,7 @@ Depends:
         "action": "add_dependency", "package": "python3-futurist", "argument": "", "evidence": "missing"
     }, tmp_path)
     assert dependency.count("+ python3-futurist,") == 2
+    assert dependency.index("+ python3-futurist,") < dependency.index(" ${python3:Depends},")
     assert validate_source_patch(dependency, tmp_path)["result"] == "APPLIES"
     argument = render_source_repair({
         "action": "remove_rule_argument", "package": "", "argument": "--format yaml", "evidence": "rejected"
