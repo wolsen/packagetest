@@ -121,3 +121,77 @@ Depends: ${misc:Depends},
     report = json.loads((tmp_path / "report/result.json").read_text())
     assert [attempt["result"] for attempt in report["attempts"]] == ["DECISION_REJECTED"] * 2
     assert json.loads((tmp_path / "report/attempt-1/decision.json").read_text())["package"] == "python3-oslo.config"
+
+
+def test_second_attempt_keeps_first_valid_repair(tmp_path, monkeypatch):
+    module = load_script()
+    outputs = tmp_path / "outputs"
+    tree = outputs / "source-preparation/sample-1"
+    (tree / "debian").mkdir(parents=True)
+    (tree / "debian/control").write_text("""Source: sample
+Build-Depends-Indep:
+ python3-pbr,
+
+Package: python3-sample
+Architecture: all
+Depends:
+ ${python3:Depends},
+""")
+    (outputs / "result.json").write_text('{"result":"FAILED"}\n')
+    (outputs / "nightly-build.log").write_text("ModuleNotFoundError: No module named 'futurist'\n")
+    tests = tmp_path / "test-results/result"
+    tests.mkdir(parents=True)
+    (tests / "result.json").write_text('{"result":"BLOCKED"}\n')
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"model")
+    llama = tmp_path / "llama-cli"
+    llama.write_text("fake")
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text('{"packages":[]}\n')
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    responses = iter([
+        '{"action":"add_dependency","package":"python3-futurist","argument":"","evidence":"missing futurist"}',
+        '{"action":"add_dependency","package":"python3-ncclient","argument":"","evidence":"missing ncclient"}',
+    ])
+    monkeypatch.setattr(module, "llama_generate",
+                        lambda *args, **kwargs: (next(responses), {"returncode": 0}))
+    builds = []
+
+    def build(args, patch, destination, log):
+        builds.append(patch.read_text())
+        destination.mkdir(parents=True)
+        if len(builds) == 1:
+            (destination / "result.json").write_text('{"result":"FAILED"}\n')
+            log.write_text("ModuleNotFoundError: No module named 'ncclient'\n")
+            return 1
+        (destination / "result.json").write_text('{"result":"SUCCEEDED"}\n')
+        (destination / "fixed.deb").write_text("fixed")
+        log.write_text("built")
+        return 0
+
+    def test(args, candidate, destination, log):
+        result = destination / "test-results/result"
+        result.mkdir(parents=True)
+        report = {"result": "PASS"}
+        (result / "result.json").write_text(json.dumps(report))
+        log.write_text("passed")
+        return 0, report
+
+    monkeypatch.setattr(module, "build_attempt", build)
+    monkeypatch.setattr(module, "test_attempt", test)
+    monkeypatch.setattr(sys, "argv", [
+        "remediate-package.py", "--source", "sample", "--catalog", str(catalog),
+        "--inputs", str(inputs), "--outputs", str(outputs),
+        "--tests", str(tmp_path / "test-results"), "--report", str(tmp_path / "report"),
+        "--work", str(tmp_path / "work"), "--llama-cli", str(llama), "--model", str(model),
+        "--model-sha256", hashlib.sha256(b"model").hexdigest(), "--run-id", "1", "--run-attempt", "1",
+    ])
+
+    assert module.main() == 0
+    assert "python3-futurist" in builds[0]
+    assert "python3-futurist" in builds[1]
+    assert "python3-ncclient" in builds[1]
+    report = json.loads((tmp_path / "report/result.json").read_text())
+    assert [attempt["result"] for attempt in report["attempts"]] == ["BUILD_FAILED", "REPAIRED"]
+    assert report["selected_attempt"] == 2

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import difflib
 import hashlib
 import json
 import os
@@ -14,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import time
+import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from packagetest.failure_analysis import (
@@ -83,6 +85,33 @@ def source_context(tree: Path, evidence: str, limit: int = 5_000) -> str:
         if remaining <= 0:
             break
     return "".join(blocks)
+
+
+def render_cumulative_repair(decisions: list[dict], tree: Path) -> str:
+    """Render every accepted decision as one patch against the original tree."""
+    with tempfile.TemporaryDirectory(prefix="packagetest-repair-") as temp:
+        working = Path(temp) / "source"
+        shutil.copytree(tree / "debian", working / "debian", symlinks=True)
+        changed = set()
+        for decision in decisions:
+            patch = render_source_repair(decision, working)
+            validation = validate_source_patch(patch, working, apply=True)
+            if validation["result"] != "APPLIED":
+                raise ValueError(validation["error"] or "could not compose accepted repairs")
+            changed.update(validation["paths"])
+        blocks = []
+        for name in sorted(changed):
+            before = (tree / name).read_text()
+            after = (working / name).read_text()
+            body = "".join(difflib.unified_diff(
+                before.splitlines(keepends=True), after.splitlines(keepends=True),
+                fromfile=f"a/{name}", tofile=f"b/{name}", n=3,
+            ))
+            if body:
+                blocks.append(f"diff --git a/{name} b/{name}\n{body}")
+        if not blocks:
+            raise ValueError("repair decisions produced no cumulative change")
+        return "".join(blocks)
 
 
 def failure_focus(evidence: str, limit: int = 3_000) -> str:
@@ -214,6 +243,7 @@ def main() -> int:
     context = source_context(tree, evidence)
     copy_initial_evidence(args.outputs, args.tests, args.report)
     attempts, feedback, selected = [], "", None
+    accepted_decisions = []
     for number in (1, 2):
         attempt_dir = args.report / f"attempt-{number}"
         attempt_dir.mkdir()
@@ -234,7 +264,8 @@ def main() -> int:
                 attempts.append(record)
                 continue
             try:
-                patch = render_source_repair(decision, tree)
+                patch = ("" if decision["action"] == "no_fix" else
+                         render_cumulative_repair([*accepted_decisions, decision], tree))
             except ValueError as exc:
                 record.update(decision=decision, inference=inference, result="RENDER_REJECTED", error=str(exc))
                 feedback = json.dumps(record, indent=2)
@@ -259,6 +290,8 @@ def main() -> int:
             record.update(build_returncode=build_rc, build_result=candidate_result.get("result"))
             if build_rc or candidate_result.get("result") != "SUCCEEDED":
                 record["result"] = "BUILD_FAILED"
+                accepted_decisions.append(decision)
+                evidence = failure_evidence(candidate, Path("/nonexistent")) + "\n" + tail(build_log)
                 feedback = json.dumps(record, indent=2) + "\n" + tail(build_log)
                 attempts.append(record)
                 continue
@@ -268,6 +301,8 @@ def main() -> int:
             record.update(test_returncode=test_rc, test_result=candidate_test.get("result"))
             if candidate_test.get("result") not in SUCCESSFUL_TESTS:
                 record["result"] = "AUTOPKGTEST_FAILED"
+                accepted_decisions.append(decision)
+                evidence = failure_evidence(candidate, candidate_tests / "test-results") + "\n" + tail(test_log)
                 feedback = json.dumps(record, indent=2) + "\n" + tail(test_log)
                 attempts.append(record)
                 continue
