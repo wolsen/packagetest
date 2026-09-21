@@ -57,18 +57,23 @@ Quote that exact failure in evidence."""
         completed = subprocess.run(command, text=True, capture_output=True, timeout=300, env=env)
         (case_dir / "stdout.txt").write_text(completed.stdout)
         (case_dir / "stderr.txt").write_text(completed.stderr)
-        decision = parse_repair_decision(completed.stdout)
-        (case_dir / "decision.json").write_text(json.dumps(decision, indent=2) + "\n")
-        decision_validation = validate_repair_decision(decision, case["evidence"])
-        patch = "" if decision["action"] == "no_fix" else render_source_repair(decision, args.tree)
-        (case_dir / "proposal.patch").write_text(patch)
-        patch_validation = validate_source_patch(patch, args.tree) if patch else {"result": "REJECTED"}
-        chosen = {key: decision[key] for key in ("action", "package", "argument")}
-        passed = (completed.returncode == 0 and chosen == case["expected"] and
-                  decision_validation["result"] == "ACCEPTED" and patch_validation["result"] == "APPLIES")
-        result = {"name": case["name"], "returncode": completed.returncode, "decision": decision,
-                  "decision_validation": decision_validation, "patch_validation": patch_validation,
-                  "result": "PASS" if passed else "FAIL"}
+        try:
+            decision = parse_repair_decision(completed.stdout)
+            (case_dir / "decision.json").write_text(json.dumps(decision, indent=2) + "\n")
+            decision_validation = validate_repair_decision(decision, case["evidence"])
+            patch = (render_source_repair(decision, args.tree)
+                     if decision_validation["result"] == "ACCEPTED" and decision["action"] != "no_fix" else "")
+            (case_dir / "proposal.patch").write_text(patch)
+            patch_validation = validate_source_patch(patch, args.tree) if patch else {"result": "REJECTED"}
+            chosen = {key: decision[key] for key in ("action", "package", "argument")}
+            passed = (completed.returncode == 0 and chosen == case["expected"] and
+                      decision_validation["result"] == "ACCEPTED" and patch_validation["result"] == "APPLIES")
+            result = {"name": case["name"], "returncode": completed.returncode, "decision": decision,
+                      "decision_validation": decision_validation, "patch_validation": patch_validation,
+                      "result": "PASS" if passed else "FAIL"}
+        except Exception as exc:
+            result = {"name": case["name"], "returncode": completed.returncode,
+                      "result": "FAIL", "error": str(exc)}
         (case_dir / "result.json").write_text(json.dumps(result, indent=2) + "\n")
         results.append(result)
     result = {"result": "PASS" if all(case["result"] == "PASS" for case in results) else "FAIL",

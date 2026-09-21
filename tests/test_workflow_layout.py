@@ -28,12 +28,14 @@ def test_local_ai_repairs_inside_each_package_job_before_publication():
     assert workflow.count('uses: ./.github/actions/build-test-remediate') == 12
     assert 'needs: [plan, prepare_local_ai]' in workflow
     assert 'scripts/remediate-package.py' in action
+    assert action.index('id: initial_test') < action.index('id: ai_cache')
+    assert action.index('id: ai_cache') < action.index('id: remediation')
     assert action.index('scripts/remediate-package.py') < action.index('name: build-${{ inputs.source }}')
     assert 'name: ai-remediation-${{ inputs.source }}' in action
     assert 'scripts/final-package-verdict.py' in action
-    assert 'qwen2.5-coder-1.5b-instruct-q4_k_m.gguf' in workflow
+    assert 'qwen2.5-coder-7b-instruct-q4_k_m.gguf' in workflow
     assert 'Reply with READY.' in workflow
-    assert 'local-ai-llama-b10964-qwen25-coder-15b-q4km-v2' in workflow
+    assert 'local-ai-llama-b10964-qwen25-coder-7b-q4km-v1' in workflow
 
 
 def test_feature_push_exercises_heat_candidate_closure():

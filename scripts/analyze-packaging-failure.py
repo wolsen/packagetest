@@ -249,7 +249,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=Path("failure-analysis"))
     parser.add_argument("--llama-cli", type=Path)
     parser.add_argument("--model", type=Path)
-    parser.add_argument("--model-name", default="Qwen2.5-Coder-1.5B-Instruct-Q4_K_M")
+    parser.add_argument("--model-name", default="Qwen2.5-Coder-7B-Instruct-Q4_K_M")
     parser.add_argument("--model-sha256", default="")
     parser.add_argument("--ollama-url")
     parser.add_argument("--timeout", type=int, default=360)

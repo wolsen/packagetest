@@ -27,7 +27,7 @@ from packagetest.failure_analysis import (
 )
 
 
-MODEL_NAME = "Qwen2.5-Coder-1.5B-Instruct-Q4_K_M"
+MODEL_NAME = "Qwen2.5-Coder-7B-Instruct-Q4_K_M"
 SUCCESSFUL_TESTS = {"PASS", "SUPERFICIAL", "SKIP", "NO_TESTS"}
 
 
