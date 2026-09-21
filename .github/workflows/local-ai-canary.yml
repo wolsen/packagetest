@@ -10,7 +10,7 @@ on:
       sources:
         description: Comma-separated subset of the reviewed repair canaries
         type: string
-        default: heat,watcher
+        default: aetos
 
 permissions:
   contents: read
@@ -40,18 +40,18 @@ jobs:
           persist-credentials: false
       - name: Restrict the canary to reviewed cases
         env:
-          SOURCES: ${{ inputs.sources || 'heat,watcher' }}
+          SOURCES: ${{ inputs.sources || 'aetos' }}
         run: |
           python3 - <<'PY'
           import os
-          allowed = {"aetos", "heat", "watcher", "python-glance-store", "networking-generic-switch"}
+          allowed = {"aetos", "watcher", "python-glance-store", "networking-generic-switch"}
           requested = {item.strip() for item in os.environ["SOURCES"].split(",") if item.strip()}
           if not requested or requested - allowed:
               raise SystemExit(f"Choose one or more of {sorted(allowed)}; got {sorted(requested)}")
           PY
       - id: plan
         env:
-          SOURCES: ${{ inputs.sources || 'heat,watcher' }}
+          SOURCES: ${{ inputs.sources || 'aetos' }}
         run: python3 scripts/nightly-plan.py --sources "$SOURCES"
       - uses: actions/upload-artifact@v4
         with:
@@ -143,7 +143,7 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
-      - name: Build, test, and attempt two local repairs
+      - name: Build, test, and attempt up to three local repairs
         uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
