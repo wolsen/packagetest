@@ -36,6 +36,14 @@ def test_local_ai_repairs_inside_each_package_job_before_publication():
     assert 'local-ai-llama-b10964-qwen25-coder-15b-q4km-v2' in workflow
 
 
+def test_feature_push_exercises_heat_candidate_closure():
+    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    policy = json.loads(Path('config/hibiscus-candidate-dependencies.json').read_text())
+    assert "github.event_name == 'push' && 'python-neutron-lib,heat,watcher'" in workflow
+    assert any(edge['source'] == 'heat' and edge['dependency'] == 'python-neutron-lib'
+               for edge in policy)
+
+
 def test_integrated_test_step_records_blocked_build_and_evidence(tmp_path):
     (tmp_path / 'outputs').mkdir()
     (tmp_path / 'outputs/result.json').write_text('{"result":"FAILED"}\n')

@@ -28,5 +28,10 @@
     "source": "python-openstackclient",
     "dependency": "python-osc-lib",
     "reason": "Pinned OpenStack Client requires osc-lib >=4.6.0 and calls ClientManager.is_service_available with region_name and interface. osc-lib commit 47dd091083b1c88e09dcb8c2952e8317773bab03 adds those parameters; archive 4.4.0 lacks them."
+  },
+  {
+    "source": "heat",
+    "dependency": "python-neutron-lib",
+    "reason": "The 2026.2 Heat snapshot imports neutron_lib.api.definitions.vpn_no_sha1_3des; Resolute archive python3-neutron-lib 3.24.0 lacks that API. Build Heat against the same-run neutron-lib snapshot."
   }
 ]
