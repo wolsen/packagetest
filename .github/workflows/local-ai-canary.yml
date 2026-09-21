@@ -40,7 +40,7 @@ jobs:
           persist-credentials: false
       - name: Restrict the canary to reviewed cases
         env:
-          SOURCES: ${{ inputs.sources }}
+          SOURCES: ${{ inputs.sources || 'aetos,python-glance-store,networking-generic-switch' }}
         run: |
           python3 - <<'PY'
           import os
@@ -51,7 +51,7 @@ jobs:
           PY
       - id: plan
         env:
-          SOURCES: ${{ inputs.sources }}
+          SOURCES: ${{ inputs.sources || 'aetos,python-glance-store,networking-generic-switch' }}
         run: python3 scripts/nightly-plan.py --sources "$SOURCES"
       - uses: actions/upload-artifact@v4
         with:
