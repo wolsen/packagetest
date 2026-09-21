@@ -1,0 +1,136 @@
+name: Local AI packaging repair canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: Comma-separated subset of the three repair canaries
+        type: string
+        default: aetos,python-glance-store,networking-generic-switch
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: local-ai-repair-canary-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AI_CACHE: ${{ github.workspace }}/.cache/packagetest-ai
+  LLAMA_URL: https://github.com/ggml-org/llama.cpp/releases/download/b10964/llama-b10964-bin-ubuntu-x64.tar.gz
+  LLAMA_SHA256: 9abf88aea48a55d0f80edb1ee20220b186848cca0b4e919d71518cfd7ca67443
+  MODEL_URL: https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/f86cb2c1fa58255f8052cc32aeede1b7482d4361/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+  MODEL_SHA256: cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046
+
+jobs:
+  plan:
+    name: Plan three-package repair canary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      sources: ${{ steps.plan.outputs.sources }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Restrict the canary to reviewed cases
+        env:
+          SOURCES: ${{ inputs.sources }}
+        run: |
+          python3 - <<'PY'
+          import os
+          allowed = {"aetos", "python-glance-store", "networking-generic-switch"}
+          requested = {item.strip() for item in os.environ["SOURCES"].split(",") if item.strip()}
+          if not requested or requested - allowed:
+              raise SystemExit(f"Choose one or more of {sorted(allowed)}; got {sorted(requested)}")
+          PY
+      - id: plan
+        env:
+          SOURCES: ${{ inputs.sources }}
+        run: python3 scripts/nightly-plan.py --sources "$SOURCES"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-canary-plan
+          path: nightly-plan/
+          retention-days: 7
+          if-no-files-found: error
+
+  prepare_model:
+    name: Prepare and contract-test local model
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.AI_CACHE }}
+          key: local-ai-llama-b10964-qwen25-coder-15b-q4km-v2
+      - name: Download and verify pinned runtime
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          mkdir -p "$AI_CACHE/runtime"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/llama.tar.gz" "$LLAMA_URL"
+          echo "$LLAMA_SHA256  $RUNNER_TEMP/llama.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/llama.tar.gz" -C "$AI_CACHE/runtime"
+          curl --fail --location --retry 3 --output "$AI_CACHE/model.gguf" "$MODEL_URL"
+          echo "$MODEL_SHA256  $AI_CACHE/model.gguf" | sha256sum --check
+      - name: Exercise real output parsing and patch validation
+        run: |
+          set -euxo pipefail
+          echo "$MODEL_SHA256  $AI_CACHE/model.gguf" | sha256sum --check
+          llama_cli="$(find "$AI_CACHE/runtime" -type f -name llama-cli -print -quit)"
+          test -x "$llama_cli"
+          mkdir -p "$RUNNER_TEMP/contract/debian"
+          printf 'Source: sample\nBuild-Depends: debhelper-compat (= 13)\n' > "$RUNNER_TEMP/contract/debian/control"
+          PYTHONPATH=src python3 scripts/model-contract-test.py \
+            --tree "$RUNNER_TEMP/contract" --llama-cli "$llama_cli" \
+            --model "$AI_CACHE/model.gguf" --output "$RUNNER_TEMP/model-contract"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-ai-contract-output
+          path: ${{ runner.temp }}/model-contract/
+          retention-days: 7
+          if-no-files-found: warn
+
+  repair:
+    name: Repair ${{ matrix.source }}
+    needs: [plan, prepare_model]
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.plan.outputs.sources) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ai-canary-plan
+          path: nightly-plan
+      - name: Verify no same-run producers are required
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          mkdir -p inputs outputs
+          pattern="$(python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE")"
+          test "$pattern" = '__no_dependencies__'
+          PYTHONPATH=src python3 scripts/nightly-build.py --check-dependencies-only \
+            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Prepare Resolute builder
+        run: |
+          set -o pipefail
+          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+      - name: Build, test, and attempt two local repairs
+        uses: ./.github/actions/build-test-remediate
+        with:
+          source: ${{ matrix.source }}
+

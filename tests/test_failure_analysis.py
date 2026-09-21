@@ -47,6 +47,25 @@ END_PATCH
     assert parsed.patch.endswith("\n")
 
 
+def test_response_parser_recovers_last_unwrapped_llama_diff():
+    response = """llama.cpp banner
+> echoed prompt containing diff --git a/bad b/bad
+```diff
+diff --git a/debian/control b/debian/control
+--- a/debian/control
++++ b/debian/control
+@@ -1 +1,2 @@
+ Source: sample
++Build-Depends: python3-futurist
+```
+
+Exiting...
+"""
+    parsed = parse_model_response(response)
+    assert parsed.patch.startswith("diff --git a/debian/control")
+    assert "python3-futurist" in parsed.patch
+
+
 def test_patch_validation_uses_disposable_copy_and_restricts_paths(tmp_path):
     (tmp_path / "config").mkdir()
     (tmp_path / "config/value").write_text("old\n")
@@ -77,6 +96,43 @@ def test_source_patch_is_limited_to_debian_and_can_be_applied(tmp_path):
     assert validate_source_patch(patch, tmp_path)["result"] == "APPLIES"
     assert validate_source_patch(patch, tmp_path, apply=True)["result"] == "APPLIED"
     assert (tmp_path / "debian/control").read_text() == "new\n"
+
+
+def test_source_patch_applies_when_tree_is_relative(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tree = Path("outputs/source-preparation/sample")
+    (tree / "debian").mkdir(parents=True)
+    (tree / "debian/control").write_text("old\n")
+    patch = """diff --git a/debian/control b/debian/control
+--- a/debian/control
++++ b/debian/control
+@@ -1 +1 @@
+-old
++new
+"""
+    assert validate_source_patch(patch, tree)["result"] == "APPLIES"
+
+
+def test_source_patch_rejects_metadata_staging_and_missing_series_file(tmp_path):
+    (tmp_path / "debian/patches").mkdir(parents=True)
+    (tmp_path / "debian/control").write_text("Maintainer: Ubuntu Developers <ubuntu@example.com>\n")
+    metadata = """diff --git a/debian/control b/debian/control
+--- a/debian/control
++++ b/debian/control
+@@ -1 +1 @@
+-Maintainer: Ubuntu Developers <ubuntu@example.com>
++Maintainer: Your Name <your.email@example.com>
+"""
+    assert validate_source_patch(metadata, tmp_path)["result"] == "REJECTED"
+    missing = """diff --git a/debian/patches/series b/debian/patches/series
+--- a/debian/patches/series
++++ b/debian/patches/series
+@@ -0,0 +1 @@
++missing.patch
+"""
+    result = validate_source_patch(missing, tmp_path)
+    assert result["result"] == "REJECTED"
+    assert "do not exist" in result["error"]
 
 
 def test_source_patch_rejects_upstream_files_changelog_and_test_bypass(tmp_path):

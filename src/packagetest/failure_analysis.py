@@ -48,6 +48,16 @@ def parse_model_response(text: str) -> ModelResponse:
     """Parse a deliberately simple format that small local models can follow."""
     diagnosis = _between(text, "BEGIN_DIAGNOSIS", "END_DIAGNOSIS").strip()
     patch = _between(text, "BEGIN_PATCH", "END_PATCH").strip()
+    # llama-cli can echo the prompt and small models sometimes omit the requested
+    # wrapper while still returning one usable diff. Prefer the wrapper, but keep
+    # the final complete diff as a conservative fallback.
+    if not patch:
+        candidates = re.findall(
+            r"(?ms)^diff --git a/\S+ b/\S+.*?(?=^```|^END_PATCH\s*$|^Exiting\.\.\.\s*$|\Z)",
+            text,
+        )
+        if candidates:
+            patch = candidates[-1].strip()
     if patch.startswith("```diff"):
         patch = patch[7:]
     elif patch.startswith("```"):
@@ -149,7 +159,28 @@ def validate_source_patch(patch: str, tree: Path, *, apply: bool = False) -> dic
     if "deleted file mode" in patch and any("test" in path.lower() for path in result["paths"]):
         result["error"] = "patch deletes test content"
         return result
-    patch_path = tree.parent / ".packagetest-remediation.patch"
+    forbidden_content = re.compile(
+        r"(?im)^\+(?:Maintainer|Uploaders|XSBC-Original-Maintainer):|"
+        r"your\.email@example\.com|your name|traceback \(most recent call last\):"
+    )
+    if forbidden_content.search(patch):
+        result["error"] = "patch changes package ownership metadata or contains placeholder/log content"
+        return result
+    if any(re.match(r"debian/[^/]+/usr/", path) for path in result["paths"]):
+        result["error"] = "patch writes into a binary-package staging directory"
+        return result
+    series_additions = {
+        line[1:].strip() for line in patch.splitlines()
+        if line.startswith("+") and not line.startswith("+++") and line[1:].strip().endswith(".patch")
+    }
+    changed = set(result["paths"])
+    missing = sorted(name for name in series_additions
+                     if f"debian/patches/{name}" not in changed and not (tree / "debian/patches" / name).is_file())
+    if missing:
+        result["error"] = f"series references patch files that do not exist: {missing}"
+        return result
+    tree = tree.resolve()
+    patch_path = (tree.parent / ".packagetest-remediation.patch").resolve()
     patch_path.write_text(patch)
     command = ["git", "apply", "--recount", "--whitespace=error-all"]
     if not apply:
