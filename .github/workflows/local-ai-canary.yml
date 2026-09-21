@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       sources:
-        description: Comma-separated subset of the three repair canaries
+        description: Comma-separated subset of the reviewed repair canaries
         type: string
-        default: python-glance-store,networking-generic-switch
+        default: heat,watcher
 
 permissions:
   contents: read
@@ -40,18 +40,18 @@ jobs:
           persist-credentials: false
       - name: Restrict the canary to reviewed cases
         env:
-          SOURCES: ${{ inputs.sources || 'python-glance-store,networking-generic-switch' }}
+          SOURCES: ${{ inputs.sources || 'heat,watcher' }}
         run: |
           python3 - <<'PY'
           import os
-          allowed = {"aetos", "python-glance-store", "networking-generic-switch"}
+          allowed = {"aetos", "heat", "watcher", "python-glance-store", "networking-generic-switch"}
           requested = {item.strip() for item in os.environ["SOURCES"].split(",") if item.strip()}
           if not requested or requested - allowed:
               raise SystemExit(f"Choose one or more of {sorted(allowed)}; got {sorted(requested)}")
           PY
       - id: plan
         env:
-          SOURCES: ${{ inputs.sources || 'python-glance-store,networking-generic-switch' }}
+          SOURCES: ${{ inputs.sources || 'heat,watcher' }}
         run: python3 scripts/nightly-plan.py --sources "$SOURCES"
       - uses: actions/upload-artifact@v4
         with:
