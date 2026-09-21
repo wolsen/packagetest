@@ -83,7 +83,9 @@ jobs:
           tar -xzf "$RUNNER_TEMP/llama.tar.gz" -C "$AI_CACHE/runtime"
           curl --fail --location --retry 3 --output "$AI_CACHE/model.gguf" "$MODEL_URL"
           echo "$MODEL_SHA256  $AI_CACHE/model.gguf" | sha256sum --check
-      - name: Exercise real output parsing and patch validation
+      - id: contract
+        name: Exercise real output parsing and patch validation
+        continue-on-error: true
         run: |
           set -euxo pipefail
           echo "$MODEL_SHA256  $AI_CACHE/model.gguf" | sha256sum --check
@@ -113,6 +115,14 @@ jobs:
           PYTHONPATH=src python3 scripts/model-contract-test.py \
             --tree "$RUNNER_TEMP/contract" --llama-cli "$llama_cli" \
             --model "$AI_CACHE/model.gguf" --output "$RUNNER_TEMP/model-contract"
+      - name: Publish contract decisions even when validation fails
+        if: always()
+        run: |
+          {
+            echo '## Local model contract decisions'
+            find "$RUNNER_TEMP/model-contract" -type f \
+              \( -name decision.json -o -name result.json \) -print -exec cat {} \; 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -120,6 +130,11 @@ jobs:
           path: ${{ runner.temp }}/model-contract/
           retention-days: 7
           if-no-files-found: warn
+      - name: Enforce the model contract
+        if: always()
+        env:
+          CONTRACT_OUTCOME: ${{ steps.contract.outcome }}
+        run: test "$CONTRACT_OUTCOME" = success
 
   repair:
     name: Repair ${{ matrix.source }}
