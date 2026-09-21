@@ -1,4 +1,5 @@
 name: Local AI packaging repair canary
+# A change to this file intentionally starts only the feature-branch canary.
 
 on:
   push:
