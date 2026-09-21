@@ -33,5 +33,10 @@
     "source": "heat",
     "dependency": "python-neutron-lib",
     "reason": "The 2026.2 Heat snapshot imports neutron_lib.api.definitions.vpn_no_sha1_3des; Resolute archive python3-neutron-lib 3.24.0 lacks that API. Build Heat against the same-run neutron-lib snapshot."
+  },
+  {
+    "source": "heat",
+    "dependency": "python-oslo.versionedobjects",
+    "reason": "The 2026.2 Heat snapshot uses the three-argument obj_make_list API supported by stable/2026.2 oslo.versionedobjects; Resolute archive 3.9.0 still requires an explicit item class."
   }
 ]

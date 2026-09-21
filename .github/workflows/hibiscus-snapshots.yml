@@ -62,7 +62,7 @@ jobs:
         env:
           # Feature-branch pushes stay focused while scheduled and manually
           # dispatched runs retain their requested complete/pilot scope.
-          SOURCES: ${{ github.event_name == 'push' && 'python-neutron-lib,heat,watcher' || inputs.sources }}
+          SOURCES: ${{ github.event_name == 'push' && 'python-neutron-lib,python-oslo.versionedobjects,heat,watcher' || inputs.sources }}
         run: python3 scripts/nightly-plan.py --sources "$SOURCES"
       - uses: actions/upload-artifact@v4
         with:

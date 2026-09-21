@@ -143,7 +143,7 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
-      - name: Build, test, and attempt up to three local repairs
+      - name: Build, test, and attempt two local repairs
         uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
