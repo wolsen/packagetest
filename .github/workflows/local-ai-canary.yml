@@ -1,5 +1,5 @@
 name: Local AI packaging repair canary
-# Changes here intentionally start only the structured-repair canary.
+# Changes here intentionally start only the focused structured-repair canary.
 
 on:
   push:
