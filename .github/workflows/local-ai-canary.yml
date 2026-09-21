@@ -103,15 +103,20 @@ jobs:
           Depends:
            ${python3:Depends},
           EOF
-          cat > "$RUNNER_TEMP/contract/debian/rules" <<'EOF'
-          #!/usr/bin/make -f
-          .RECIPEPREFIX := >
-          override_dh_install:
-          >oslopolicy-sample-generator \
-          >  --output-file debian/sample.yaml \
-          >  --format yaml \
-          >  --namespace sample
-          EOF
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          continuation = "\\"
+          lines = [
+              "#!/usr/bin/make -f",
+              "override_dh_install:",
+              "\toslopolicy-sample-generator " + continuation,
+              "\t--output-file debian/sample.yaml " + continuation,
+              "\t--format yaml " + continuation,
+              "\t--namespace sample",
+          ]
+          Path(os.environ["RUNNER_TEMP"], "contract/debian/rules").write_text("\n".join(lines) + "\n")
+          PY
           PYTHONPATH=src python3 scripts/model-contract-test.py \
             --tree "$RUNNER_TEMP/contract" --llama-cli "$llama_cli" \
             --model "$AI_CACHE/model.gguf" --output "$RUNNER_TEMP/model-contract"
