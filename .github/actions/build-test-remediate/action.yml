@@ -36,7 +36,7 @@ runs:
         fail-on-cache-miss: false
 
     - id: remediation
-      name: Make two local AI repair, rebuild, and retest attempts
+      name: Make up to three local AI repair, rebuild, and retest attempts
       if: steps.initial_build.outcome == 'failure' || steps.initial_test.outcome == 'failure'
       continue-on-error: true
       shell: bash

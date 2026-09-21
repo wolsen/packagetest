@@ -244,7 +244,7 @@ def main() -> int:
     copy_initial_evidence(args.outputs, args.tests, args.report)
     attempts, feedback, selected = [], "", None
     accepted_decisions = []
-    for number in (1, 2):
+    for number in range(1, 4):
         attempt_dir = args.report / f"attempt-{number}"
         attempt_dir.mkdir()
         text = prompt(args.source, phase, evidence, context, feedback)

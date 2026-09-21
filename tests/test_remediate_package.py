@@ -119,11 +119,11 @@ Depends: ${misc:Depends},
     ])
     assert module.main() == 1
     report = json.loads((tmp_path / "report/result.json").read_text())
-    assert [attempt["result"] for attempt in report["attempts"]] == ["DECISION_REJECTED"] * 2
+    assert [attempt["result"] for attempt in report["attempts"]] == ["DECISION_REJECTED"] * 3
     assert json.loads((tmp_path / "report/attempt-1/decision.json").read_text())["package"] == "python3-oslo.config"
 
 
-def test_second_attempt_keeps_first_valid_repair(tmp_path, monkeypatch):
+def test_later_attempts_keep_every_valid_repair(tmp_path, monkeypatch):
     module = load_script()
     outputs = tmp_path / "outputs"
     tree = outputs / "source-preparation/sample-1"
@@ -153,6 +153,7 @@ Depends:
     responses = iter([
         '{"action":"add_dependency","package":"python3-futurist","argument":"","evidence":"missing futurist"}',
         '{"action":"add_dependency","package":"python3-ncclient","argument":"","evidence":"missing ncclient"}',
+        '{"action":"add_dependency","package":"python3-gabbi","argument":"","evidence":"missing gabbi"}',
     ])
     monkeypatch.setattr(module, "llama_generate",
                         lambda *args, **kwargs: (next(responses), {"returncode": 0}))
@@ -164,6 +165,10 @@ Depends:
         if len(builds) == 1:
             (destination / "result.json").write_text('{"result":"FAILED"}\n')
             log.write_text("ModuleNotFoundError: No module named 'ncclient'\n")
+            return 1
+        if len(builds) == 2:
+            (destination / "result.json").write_text('{"result":"FAILED"}\n')
+            log.write_text("ModuleNotFoundError: No module named 'gabbi'\n")
             return 1
         (destination / "result.json").write_text('{"result":"SUCCEEDED"}\n')
         (destination / "fixed.deb").write_text("fixed")
@@ -192,6 +197,10 @@ Depends:
     assert "python3-futurist" in builds[0]
     assert "python3-futurist" in builds[1]
     assert "python3-ncclient" in builds[1]
+    assert "python3-futurist" in builds[2]
+    assert "python3-ncclient" in builds[2]
+    assert "python3-gabbi" in builds[2]
     report = json.loads((tmp_path / "report/result.json").read_text())
-    assert [attempt["result"] for attempt in report["attempts"]] == ["BUILD_FAILED", "REPAIRED"]
-    assert report["selected_attempt"] == 2
+    assert [attempt["result"] for attempt in report["attempts"]] == [
+        "BUILD_FAILED", "BUILD_FAILED", "REPAIRED"]
+    assert report["selected_attempt"] == 3
