@@ -44,6 +44,7 @@ def main():
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--run-attempt', required=True)
     parser.add_argument('--check-dependencies-only', action='store_true')
+    parser.add_argument('--remediation-patch', type=Path)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     state = {'source': args.source, 'result': 'PREPARING', 'stage': 'dependency-handoff'}
@@ -76,7 +77,8 @@ def main():
         if producers:
             build_repository(producers, args.output / 'dependency-repository')
         state['stage'] = 'snapshot-source'
-        prepared = prepare_source(entry, args.output / 'source-preparation')
+        prepared = prepare_source(entry, args.output / 'source-preparation',
+                                  remediation_patch=args.remediation_patch)
         dsc = Path(prepared['dsc'])
         source_fields = fields(dsc)
         version = source_fields['Version']
@@ -87,6 +89,8 @@ def main():
                    'external_dependencies': sorted(producers), 'required_build_versions': versions,
                    'input': {'kind': 'prepared-snapshot', 'dsc_sha256': sha256(dsc),
                              'upstream_sha': entry['upstream_sha']}}
+        if prepared['metadata'].get('remediation'):
+            package['input']['remediation'] = prepared['metadata']['remediation']
         lock = {'schema_version': 1, 'target': TARGET, 'catalog_entry': entry,
                 'maintainer': {'name': 'Packaging Build Agent', 'email': 'packaging-agent@example.invalid'},
                 'packages': [package]}

@@ -110,6 +110,61 @@ def validate_patch(patch: str, repository: Path) -> dict:
     return result
 
 
+def source_patch_paths(patch: str) -> list[str]:
+    """Validate paths in a patch intended for one prepared source tree."""
+    paths = []
+    for old, new in re.findall(r"^diff --git a/(\S+) b/(\S+)$", patch, re.MULTILINE):
+        if old != new:
+            raise ValueError("renames and path changes are not accepted")
+        path = PurePosixPath(new)
+        if path.is_absolute() or ".." in path.parts or not path.parts or path.parts[0] == ".git":
+            raise ValueError(f"unsafe source patch path: {new}")
+        if path.parts[0] != "debian" or path == PurePosixPath("debian/changelog"):
+            raise ValueError(f"automatic remediation is restricted to Debian packaging: {new}")
+        paths.append(new)
+    if not paths:
+        raise ValueError("response contains no git unified diff")
+    return paths
+
+
+def validate_source_patch(patch: str, tree: Path, *, apply: bool = False) -> dict:
+    """Check a model patch against prepared source and reject test bypasses."""
+    result = {"result": "REJECTED", "paths": [], "error": ""}
+    if len(patch.encode()) > 256 * 1024:
+        result["error"] = "patch exceeds 256 KiB"
+        return result
+    try:
+        result["paths"] = source_patch_paths(patch)
+    except ValueError as exc:
+        result["error"] = str(exc)
+        return result
+    added = "\n".join(line[1:] for line in patch.splitlines()
+                       if line.startswith("+") and not line.startswith("+++"))
+    bypass = re.compile(
+        r"(?im)(pytest\.mark\.skip|unittest\.skip|@skip|xfail|DEB_BUILD_OPTIONS.*nocheck|"
+        r"override_dh_auto_test[^\n]*:\s*(?:true|:)|exit\s+0\s*(?:#.*)?$)")
+    if bypass.search(added):
+        result["error"] = "patch attempts to skip or bypass tests"
+        return result
+    if "deleted file mode" in patch and any("test" in path.lower() for path in result["paths"]):
+        result["error"] = "patch deletes test content"
+        return result
+    patch_path = tree.parent / ".packagetest-remediation.patch"
+    patch_path.write_text(patch)
+    command = ["git", "apply", "--recount", "--whitespace=error-all"]
+    if not apply:
+        command.append("--check")
+    command.append(str(patch_path))
+    completed = subprocess.run(command, cwd=tree, text=True, capture_output=True, timeout=30)
+    patch_path.unlink(missing_ok=True)
+    if completed.returncode:
+        result["error"] = (completed.stderr or completed.stdout).strip()[-4000:]
+        return result
+    result.update(result="APPLIED" if apply else "APPLIES", error="",
+                  patch_sha256=hashlib.sha256(patch.encode()).hexdigest())
+    return result
+
+
 def safe_evidence_text(evidence: Path, *, limit: int = 12_000) -> str:
     """Read bounded text from evidence bundles without extracting archive members."""
     chunks: list[tuple[int, str, str]] = []

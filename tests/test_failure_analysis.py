@@ -10,6 +10,7 @@ from packagetest.failure_analysis import (
     repository_context,
     safe_evidence_text,
     select_direct_failures,
+    validate_source_patch,
     validate_patch,
 )
 
@@ -61,6 +62,43 @@ def test_patch_validation_uses_disposable_copy_and_restricts_paths(tmp_path):
     assert (tmp_path / "config/value").read_text() == "old\n"
     forbidden = patch.replace("config/value", ".github/workflows/pwn.yml")
     assert validate_patch(forbidden, tmp_path)["result"] == "REJECTED"
+
+
+def test_source_patch_is_limited_to_debian_and_can_be_applied(tmp_path):
+    (tmp_path / "debian").mkdir()
+    (tmp_path / "debian/control").write_text("old\n")
+    patch = """diff --git a/debian/control b/debian/control
+--- a/debian/control
++++ b/debian/control
+@@ -1 +1 @@
+-old
++new
+"""
+    assert validate_source_patch(patch, tmp_path)["result"] == "APPLIES"
+    assert validate_source_patch(patch, tmp_path, apply=True)["result"] == "APPLIED"
+    assert (tmp_path / "debian/control").read_text() == "new\n"
+
+
+def test_source_patch_rejects_upstream_files_changelog_and_test_bypass(tmp_path):
+    (tmp_path / "debian/tests").mkdir(parents=True)
+    (tmp_path / "debian/tests/control").write_text("Tests: smoke\n")
+    upstream = """diff --git a/setup.cfg b/setup.cfg
+--- a/setup.cfg
++++ b/setup.cfg
+@@ -0,0 +1 @@
++bad
+"""
+    changelog = upstream.replace("setup.cfg", "debian/changelog")
+    bypass = """diff --git a/debian/tests/control b/debian/tests/control
+--- a/debian/tests/control
++++ b/debian/tests/control
+@@ -1 +1,2 @@
+ Tests: smoke
++pytest.mark.skip
+"""
+    assert validate_source_patch(upstream, tmp_path)["result"] == "REJECTED"
+    assert validate_source_patch(changelog, tmp_path)["result"] == "REJECTED"
+    assert validate_source_patch(bypass, tmp_path)["result"] == "REJECTED"
 
 
 def test_evidence_reader_ignores_tar_traversal_and_prioritizes_result(tmp_path):

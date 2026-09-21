@@ -71,14 +71,14 @@ jobs:
 
   build_dependency_level_1:
     name: Build ${{ matrix.source }}
-    needs: [plan]
+    needs: [plan, prepare_local_ai]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dependency_level_1_enabled == 'true' }}
     strategy:
       fail-fast: false
       max-parallel: 20
       matrix: ${{ fromJSON(needs.plan.outputs.build_dependency_level_1) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -117,48 +117,9 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
-      - name: Build snapshot against this run's producers
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          set -o pipefail
-          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
-            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
-            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
-      - name: Bundle packages and complete failure evidence
+      - name: Build, test, and repair the snapshot
         if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs bundles
-          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
-          sudo chmod a+r "bundles/$SOURCE.tar.gz"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-${{ matrix.source }}
-          path: bundles/*.tar.gz
-          retention-days: 14
-          if-no-files-found: error
-      - name: Record infrastructure failures without a build manifest
-        if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs
-          if [ ! -f outputs/result.json ]; then
-            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: status-build-${{ matrix.source }}
-          path: outputs/result.json
-          retention-days: 14
-          if-no-files-found: error
-      - name: Test installed snapshot package
-        if: always()
-        uses: ./.github/actions/test-built-snapshot
+        uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
   build_dependency_level_2:
@@ -170,7 +131,7 @@ jobs:
       max-parallel: 20
       matrix: ${{ fromJSON(needs.plan.outputs.build_dependency_level_2) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -209,48 +170,9 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
-      - name: Build snapshot against this run's producers
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          set -o pipefail
-          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
-            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
-            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
-      - name: Bundle packages and complete failure evidence
+      - name: Build, test, and repair the snapshot
         if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs bundles
-          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
-          sudo chmod a+r "bundles/$SOURCE.tar.gz"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-${{ matrix.source }}
-          path: bundles/*.tar.gz
-          retention-days: 14
-          if-no-files-found: error
-      - name: Record infrastructure failures without a build manifest
-        if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs
-          if [ ! -f outputs/result.json ]; then
-            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: status-build-${{ matrix.source }}
-          path: outputs/result.json
-          retention-days: 14
-          if-no-files-found: error
-      - name: Test installed snapshot package
-        if: always()
-        uses: ./.github/actions/test-built-snapshot
+        uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
   build_dependency_level_3:
@@ -262,7 +184,7 @@ jobs:
       max-parallel: 20
       matrix: ${{ fromJSON(needs.plan.outputs.build_dependency_level_3) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -301,48 +223,9 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
-      - name: Build snapshot against this run's producers
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          set -o pipefail
-          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
-            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
-            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
-      - name: Bundle packages and complete failure evidence
+      - name: Build, test, and repair the snapshot
         if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs bundles
-          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
-          sudo chmod a+r "bundles/$SOURCE.tar.gz"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-${{ matrix.source }}
-          path: bundles/*.tar.gz
-          retention-days: 14
-          if-no-files-found: error
-      - name: Record infrastructure failures without a build manifest
-        if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs
-          if [ ! -f outputs/result.json ]; then
-            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: status-build-${{ matrix.source }}
-          path: outputs/result.json
-          retention-days: 14
-          if-no-files-found: error
-      - name: Test installed snapshot package
-        if: always()
-        uses: ./.github/actions/test-built-snapshot
+        uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
   build_dependency_level_4:
@@ -354,7 +237,7 @@ jobs:
       max-parallel: 20
       matrix: ${{ fromJSON(needs.plan.outputs.build_dependency_level_4) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -393,48 +276,9 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
-      - name: Build snapshot against this run's producers
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          set -o pipefail
-          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
-            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
-            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
-      - name: Bundle packages and complete failure evidence
+      - name: Build, test, and repair the snapshot
         if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs bundles
-          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
-          sudo chmod a+r "bundles/$SOURCE.tar.gz"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-${{ matrix.source }}
-          path: bundles/*.tar.gz
-          retention-days: 14
-          if-no-files-found: error
-      - name: Record infrastructure failures without a build manifest
-        if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs
-          if [ ! -f outputs/result.json ]; then
-            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: status-build-${{ matrix.source }}
-          path: outputs/result.json
-          retention-days: 14
-          if-no-files-found: error
-      - name: Test installed snapshot package
-        if: always()
-        uses: ./.github/actions/test-built-snapshot
+        uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
   build_dependency_level_5:
@@ -446,7 +290,7 @@ jobs:
       max-parallel: 20
       matrix: ${{ fromJSON(needs.plan.outputs.build_dependency_level_5) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -485,48 +329,9 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
-      - name: Build snapshot against this run's producers
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          set -o pipefail
-          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
-            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
-            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
-      - name: Bundle packages and complete failure evidence
+      - name: Build, test, and repair the snapshot
         if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs bundles
-          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
-          sudo chmod a+r "bundles/$SOURCE.tar.gz"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-${{ matrix.source }}
-          path: bundles/*.tar.gz
-          retention-days: 14
-          if-no-files-found: error
-      - name: Record infrastructure failures without a build manifest
-        if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs
-          if [ ! -f outputs/result.json ]; then
-            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: status-build-${{ matrix.source }}
-          path: outputs/result.json
-          retention-days: 14
-          if-no-files-found: error
-      - name: Test installed snapshot package
-        if: always()
-        uses: ./.github/actions/test-built-snapshot
+        uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
   build_dependency_level_6:
@@ -538,7 +343,7 @@ jobs:
       max-parallel: 20
       matrix: ${{ fromJSON(needs.plan.outputs.build_dependency_level_6) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -577,48 +382,9 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
-      - name: Build snapshot against this run's producers
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          set -o pipefail
-          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
-            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
-            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
-      - name: Bundle packages and complete failure evidence
+      - name: Build, test, and repair the snapshot
         if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs bundles
-          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
-          sudo chmod a+r "bundles/$SOURCE.tar.gz"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-${{ matrix.source }}
-          path: bundles/*.tar.gz
-          retention-days: 14
-          if-no-files-found: error
-      - name: Record infrastructure failures without a build manifest
-        if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs
-          if [ ! -f outputs/result.json ]; then
-            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: status-build-${{ matrix.source }}
-          path: outputs/result.json
-          retention-days: 14
-          if-no-files-found: error
-      - name: Test installed snapshot package
-        if: always()
-        uses: ./.github/actions/test-built-snapshot
+        uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
   build_dependency_level_7:
@@ -630,7 +396,7 @@ jobs:
       max-parallel: 20
       matrix: ${{ fromJSON(needs.plan.outputs.build_dependency_level_7) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -669,48 +435,9 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
-      - name: Build snapshot against this run's producers
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          set -o pipefail
-          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
-            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
-            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
-      - name: Bundle packages and complete failure evidence
+      - name: Build, test, and repair the snapshot
         if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs bundles
-          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
-          sudo chmod a+r "bundles/$SOURCE.tar.gz"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-${{ matrix.source }}
-          path: bundles/*.tar.gz
-          retention-days: 14
-          if-no-files-found: error
-      - name: Record infrastructure failures without a build manifest
-        if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs
-          if [ ! -f outputs/result.json ]; then
-            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: status-build-${{ matrix.source }}
-          path: outputs/result.json
-          retention-days: 14
-          if-no-files-found: error
-      - name: Test installed snapshot package
-        if: always()
-        uses: ./.github/actions/test-built-snapshot
+        uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
   build_dependency_level_8:
@@ -722,7 +449,7 @@ jobs:
       max-parallel: 20
       matrix: ${{ fromJSON(needs.plan.outputs.build_dependency_level_8) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -761,48 +488,9 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
-      - name: Build snapshot against this run's producers
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          set -o pipefail
-          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
-            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
-            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
-      - name: Bundle packages and complete failure evidence
+      - name: Build, test, and repair the snapshot
         if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs bundles
-          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
-          sudo chmod a+r "bundles/$SOURCE.tar.gz"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-${{ matrix.source }}
-          path: bundles/*.tar.gz
-          retention-days: 14
-          if-no-files-found: error
-      - name: Record infrastructure failures without a build manifest
-        if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs
-          if [ ! -f outputs/result.json ]; then
-            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: status-build-${{ matrix.source }}
-          path: outputs/result.json
-          retention-days: 14
-          if-no-files-found: error
-      - name: Test installed snapshot package
-        if: always()
-        uses: ./.github/actions/test-built-snapshot
+        uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
   build_dependency_level_9:
@@ -814,7 +502,7 @@ jobs:
       max-parallel: 20
       matrix: ${{ fromJSON(needs.plan.outputs.build_dependency_level_9) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -853,48 +541,9 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
-      - name: Build snapshot against this run's producers
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          set -o pipefail
-          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
-            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
-            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
-      - name: Bundle packages and complete failure evidence
+      - name: Build, test, and repair the snapshot
         if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs bundles
-          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
-          sudo chmod a+r "bundles/$SOURCE.tar.gz"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-${{ matrix.source }}
-          path: bundles/*.tar.gz
-          retention-days: 14
-          if-no-files-found: error
-      - name: Record infrastructure failures without a build manifest
-        if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs
-          if [ ! -f outputs/result.json ]; then
-            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: status-build-${{ matrix.source }}
-          path: outputs/result.json
-          retention-days: 14
-          if-no-files-found: error
-      - name: Test installed snapshot package
-        if: always()
-        uses: ./.github/actions/test-built-snapshot
+        uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
   build_dependency_level_10:
@@ -906,7 +555,7 @@ jobs:
       max-parallel: 20
       matrix: ${{ fromJSON(needs.plan.outputs.build_dependency_level_10) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -945,48 +594,9 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
-      - name: Build snapshot against this run's producers
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          set -o pipefail
-          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
-            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
-            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
-      - name: Bundle packages and complete failure evidence
+      - name: Build, test, and repair the snapshot
         if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs bundles
-          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
-          sudo chmod a+r "bundles/$SOURCE.tar.gz"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-${{ matrix.source }}
-          path: bundles/*.tar.gz
-          retention-days: 14
-          if-no-files-found: error
-      - name: Record infrastructure failures without a build manifest
-        if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs
-          if [ ! -f outputs/result.json ]; then
-            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: status-build-${{ matrix.source }}
-          path: outputs/result.json
-          retention-days: 14
-          if-no-files-found: error
-      - name: Test installed snapshot package
-        if: always()
-        uses: ./.github/actions/test-built-snapshot
+        uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
   build_dependency_level_11:
@@ -998,7 +608,7 @@ jobs:
       max-parallel: 20
       matrix: ${{ fromJSON(needs.plan.outputs.build_dependency_level_11) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1037,48 +647,9 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
-      - name: Build snapshot against this run's producers
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          set -o pipefail
-          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
-            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
-            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
-      - name: Bundle packages and complete failure evidence
+      - name: Build, test, and repair the snapshot
         if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs bundles
-          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
-          sudo chmod a+r "bundles/$SOURCE.tar.gz"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-${{ matrix.source }}
-          path: bundles/*.tar.gz
-          retention-days: 14
-          if-no-files-found: error
-      - name: Record infrastructure failures without a build manifest
-        if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs
-          if [ ! -f outputs/result.json ]; then
-            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: status-build-${{ matrix.source }}
-          path: outputs/result.json
-          retention-days: 14
-          if-no-files-found: error
-      - name: Test installed snapshot package
-        if: always()
-        uses: ./.github/actions/test-built-snapshot
+        uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
   build_dependency_level_12:
@@ -1090,7 +661,7 @@ jobs:
       max-parallel: 20
       matrix: ${{ fromJSON(needs.plan.outputs.build_dependency_level_12) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1129,48 +700,9 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
-      - name: Build snapshot against this run's producers
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          set -o pipefail
-          sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
-            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
-            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
-      - name: Bundle packages and complete failure evidence
+      - name: Build, test, and repair the snapshot
         if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs bundles
-          sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
-          sudo chmod a+r "bundles/$SOURCE.tar.gz"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-${{ matrix.source }}
-          path: bundles/*.tar.gz
-          retention-days: 14
-          if-no-files-found: error
-      - name: Record infrastructure failures without a build manifest
-        if: always()
-        env:
-          SOURCE: ${{ matrix.source }}
-        run: |
-          mkdir -p outputs
-          if [ ! -f outputs/result.json ]; then
-            SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: status-build-${{ matrix.source }}
-          path: outputs/result.json
-          retention-days: 14
-          if-no-files-found: error
-      - name: Test installed snapshot package
-        if: always()
-        uses: ./.github/actions/test-built-snapshot
+        uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
 
@@ -1201,37 +733,10 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-  failure_analysis_plan:
-    name: Plan local AI analysis of direct failures
-    needs: [summary]
-    if: ${{ always() && !cancelled() && needs.summary.result == 'success' }}
-    continue-on-error: true
-    runs-on: ubuntu-24.04
-    outputs:
-      enabled: ${{ steps.plan.outputs.enabled }}
-      matrix: ${{ steps.plan.outputs.matrix }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@v4
-        with:
-          name: pipeline-summary
-          path: pipeline-summary
-      - id: plan
-        name: Select direct build and autopkgtest failures
-        run: python3 scripts/plan-failure-analysis.py pipeline-summary/results.json
-      - uses: actions/upload-artifact@v4
-        with:
-          name: failure-analysis-plan
-          path: failure-analysis-plan/
-          retention-days: 14
-          if-no-files-found: error
-
   prepare_local_ai:
     name: Prepare pinned local AI runtime
-    needs: [failure_analysis_plan]
-    if: ${{ needs.failure_analysis_plan.outputs.enabled == 'true' }}
+    needs: [plan]
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' }}
     continue-on-error: true
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -1246,7 +751,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.AI_CACHE }}
-          key: local-ai-llama-b10964-qwen25-coder-15b-q4km-v1
+          key: local-ai-llama-b10964-qwen25-coder-15b-q4km-v2
       - name: Download and verify runtime and model
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
@@ -1258,95 +763,13 @@ jobs:
           curl --fail --location --retry 3 --output "$AI_CACHE/model.gguf" "$MODEL_URL"
           echo "$MODEL_SHA256  $AI_CACHE/model.gguf" | sha256sum --check
           test -x "$(find "$AI_CACHE/runtime" -type f -name llama-cli -print -quit)"
-
-  analyze_failure:
-    name: Local AI analysis ${{ matrix.source }}
-    needs: [failure_analysis_plan, prepare_local_ai]
-    if: ${{ always() && !cancelled() && needs.failure_analysis_plan.outputs.enabled == 'true' && needs.prepare_local_ai.result == 'success' }}
-    continue-on-error: true
-    strategy:
-      fail-fast: false
-      max-parallel: 3
-      matrix: ${{ fromJSON(needs.failure_analysis_plan.outputs.matrix) }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    env:
-      AI_CACHE: ${{ github.workspace }}/.cache/packagetest-ai
-      MODEL_SHA256: cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.AI_CACHE }}
-          key: local-ai-llama-b10964-qwen25-coder-15b-q4km-v1
-          fail-on-cache-miss: true
-      - uses: actions/download-artifact@v4
-        with:
-          name: nightly-plan
-          path: evidence/nightly-plan
-      - uses: actions/download-artifact@v4
-        with:
-          name: build-${{ matrix.source }}
-          path: evidence/build
-      - uses: actions/download-artifact@v4
-        with:
-          name: autopkgtest-${{ matrix.source }}
-          path: evidence/autopkgtest
-      - name: Make two bounded local-model repair attempts
-        env:
-          SOURCE: ${{ matrix.source }}
-          PHASE: ${{ matrix.phase }}
-          ORIGINAL_RESULT: ${{ matrix.result }}
+      - name: Validate cached files and run an actual model smoke test
         run: |
-          LLAMA_CLI="$(find "$AI_CACHE/runtime" -type f -name llama-cli -print -quit)"
-          python3 scripts/analyze-packaging-failure.py \
-            --source "$SOURCE" --phase "$PHASE" --original-result "$ORIGINAL_RESULT" \
-            --evidence evidence --output "failure-analysis/$SOURCE" \
-            --llama-cli "$LLAMA_CLI" --model "$AI_CACHE/model.gguf" \
-            --model-sha256 "$MODEL_SHA256"
-      - id: upload
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ai-remediation-${{ matrix.source }}
-          path: failure-analysis/${{ matrix.source }}/
-          retention-days: 14
-          if-no-files-found: warn
-      - name: Add patch download to the job summary
-        if: always() && steps.upload.outputs.artifact-url != ''
-        env:
-          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
-          SOURCE: ${{ matrix.source }}
-        run: printf '\n[Download both AI patch attempts and evidence for `%s`](%s)\n' "$SOURCE" "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
-
-  failure_analysis_summary:
-    name: Summarize local AI repair experiment
-    needs: [failure_analysis_plan, analyze_failure]
-    if: ${{ always() && !cancelled() && needs.failure_analysis_plan.outputs.enabled == 'true' }}
-    continue-on-error: true
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          pattern: ai-remediation-*
-          path: ai-remediation
-      - run: python3 scripts/analyze-packaging-failure.py --aggregate ai-remediation --output ai-remediation-summary
-      - id: upload
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ai-remediation-summary
-          path: ai-remediation-summary/
-          retention-days: 14
-          if-no-files-found: error
-      - name: Add report download to the job summary
-        if: always() && steps.upload.outputs.artifact-url != ''
-        env:
-          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
-        run: printf '\n[Download the consolidated local AI experiment report](%s)\n' "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+          set -euxo pipefail
+          echo "$MODEL_SHA256  $AI_CACHE/model.gguf" | sha256sum --check
+          llama_cli="$(find "$AI_CACHE/runtime" -type f -name llama-cli -print -quit)"
+          test -x "$llama_cli"
+          runtime_dir="$(dirname "$llama_cli")"
+          LD_LIBRARY_PATH="$runtime_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$llama_cli" --version
+          timeout 300 env LD_LIBRARY_PATH="$runtime_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"             "$llama_cli" -m "$AI_CACHE/model.gguf" -p 'Reply with READY.' -n 8 -c 2048             --temp 0 --seed 1 --threads 2 --no-display-prompt --single-turn --simple-io             --no-show-timings > "$RUNNER_TEMP/model-smoke.txt"
+          grep -q '[Rr][Ee][Aa][Dd][Yy]' "$RUNNER_TEMP/model-smoke.txt"

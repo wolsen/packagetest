@@ -99,4 +99,10 @@ mkdir -p test-bundles
 sudo tar -czf "test-bundles/$source_name.tar.gz" -C test-results .
 sudo chmod a+r "test-bundles/$source_name.tar.gz"
 
-exit "$test_rc"
+# The raw autopkgtest code remains in result.json.  Coverage gaps are visible
+# but nonfatal; only classified correctness/infrastructure failures fail here.
+result=$(python3 -c 'import json; print(json.load(open("test-results/result/result.json"))["result"])')
+case "$result" in
+  PASS|SUPERFICIAL|SKIP|NO_TESTS) exit 0 ;;
+  *) exit 1 ;;
+esac

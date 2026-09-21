@@ -244,7 +244,8 @@ def git_archive(build: Preparation, checkout: Path, selected: dict, destination:
     return {**selected, 'sdist_sha256': sha256(destination), 'sdist_file': destination.name, 'backend': 'git-archive'}
 
 
-def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None) -> dict:
+def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
+                   remediation_patch: Path | None = None) -> dict:
     """Resolve and prepare one source; never overwrite an earlier generation.
 
     Return absolute ``dsc`` and ``lock`` paths plus metadata. Failure leaves
@@ -300,6 +301,17 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None)
         ubuntu_maintainer(tree / 'debian' / 'control')
         report['packaging_adjustments'] = packaging_adjustments(entry, tree)
         report['packaging_adjustments'].extend(already_applied_patches(tree))
+        if remediation_patch is not None:
+            from .failure_analysis import validate_source_patch
+            patch = remediation_patch.read_text()
+            validation = validate_source_patch(patch, tree, apply=True)
+            if validation['result'] != 'APPLIED':
+                raise ValueError('Remediation patch rejected: ' + validation['error'])
+            report['remediation'] = {
+                'patch_file': remediation_patch.name,
+                'patch_sha256': validation['patch_sha256'],
+                'paths': validation['paths'],
+            }
         build.command('dch', '--newversion', version, '--distribution', 'resolute', '--force-distribution',
                       'Nightly OpenStack 2026.2 snapshot from pinned upstream commit ' + selected['sha'] + '.',
                       cwd=tree, env={'DEBFULLNAME': 'Packaging Build Agent', 'DEBEMAIL': 'packaging-agent@example.invalid'})

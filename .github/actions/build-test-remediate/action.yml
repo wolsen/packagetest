@@ -1,0 +1,139 @@
+name: Build, test, and repair snapshot
+description: Build one source, run autopkgtest, and locally repair failures before publication
+inputs:
+  source:
+    description: Source package to build
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: initial_build
+      name: Build snapshot against this run's producers
+      continue-on-error: true
+      shell: bash
+      env:
+        SOURCE: ${{ inputs.source }}
+      run: |
+        set -o pipefail
+        sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
+          --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+          --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
+
+    - id: initial_test
+      name: Run installed-package tests
+      if: always()
+      continue-on-error: true
+      shell: bash
+      run: bash scripts/test-built-snapshot.sh "${{ inputs.source }}"
+
+    - id: ai_cache
+      name: Restore local AI only for a failed package
+      if: steps.initial_build.outcome == 'failure' || steps.initial_test.outcome == 'failure'
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ github.workspace }}/.cache/packagetest-ai
+        key: local-ai-llama-b10964-qwen25-coder-15b-q4km-v2
+        fail-on-cache-miss: false
+
+    - id: remediation
+      name: Make two local AI repair, rebuild, and retest attempts
+      if: steps.initial_build.outcome == 'failure' || steps.initial_test.outcome == 'failure'
+      continue-on-error: true
+      shell: bash
+      env:
+        SOURCE: ${{ inputs.source }}
+        AI_CACHE: ${{ github.workspace }}/.cache/packagetest-ai
+        MODEL_SHA256: cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046
+      run: |
+        set -uo pipefail
+        report="ai-remediation/$SOURCE"
+        mkdir -p "$report"
+        llama_cli="$(find "$AI_CACHE/runtime" -type f -name llama-cli -print -quit 2>/dev/null || true)"
+        if [[ -z "$llama_cli" || ! -f "$AI_CACHE/model.gguf" ]]; then
+          printf '{"source":"%s","result":"AI_UNAVAILABLE","error":"Pinned runtime cache was unavailable"}\n' "$SOURCE" > "$report/result.json"
+          printf '## %s local AI remediation: AI_UNAVAILABLE\n\nThe pinned runtime cache was unavailable.\n' "$SOURCE" > "$report/summary.md"
+          cat "$report/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+        fi
+        PYTHONPATH=src python3 scripts/remediate-package.py \
+          --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs \
+          --outputs outputs --tests test-results --report "$report" \
+          --work "$RUNNER_TEMP/ai-remediation-$SOURCE" --llama-cli "$llama_cli" \
+          --model "$AI_CACHE/model.gguf" --model-sha256 "$MODEL_SHA256" \
+          --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+
+    - name: Record infrastructure failures without a build manifest
+      if: always()
+      shell: bash
+      env:
+        SOURCE: ${{ inputs.source }}
+      run: |
+        mkdir -p outputs test-results/result
+        if [[ ! -f outputs/result.json ]]; then
+          SOURCE="$SOURCE" python3 -c 'import json,os; open("outputs/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"INFRA_ERROR","error":"Build did not reach executor; inspect job logs"}))'
+        fi
+        if [[ ! -f test-results/result/result.json ]]; then
+          SOURCE="$SOURCE" python3 -c 'import json,os; open("test-results/result/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"BLOCKED","error":"No tested build candidate"}))'
+        fi
+
+    - name: Bundle the final candidate and evidence
+      if: always()
+      shell: bash
+      env:
+        SOURCE: ${{ inputs.source }}
+      run: |
+        rm -rf bundles test-bundles
+        mkdir -p bundles test-bundles
+        sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
+        sudo tar -czf "test-bundles/$SOURCE.tar.gz" -C test-results .
+        sudo chmod a+r "bundles/$SOURCE.tar.gz" "test-bundles/$SOURCE.tar.gz"
+
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: build-${{ inputs.source }}
+        path: bundles/*.tar.gz
+        retention-days: 14
+        if-no-files-found: error
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: status-build-${{ inputs.source }}
+        path: outputs/result.json
+        retention-days: 14
+        if-no-files-found: error
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: status-autopkgtest-${{ inputs.source }}
+        path: test-results/result/result.json
+        retention-days: 14
+        if-no-files-found: error
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: autopkgtest-${{ inputs.source }}
+        path: test-bundles/*.tar.gz
+        retention-days: 14
+        if-no-files-found: error
+
+    - id: upload_ai
+      uses: actions/upload-artifact@v4
+      if: always() && (steps.initial_build.outcome == 'failure' || steps.initial_test.outcome == 'failure')
+      with:
+        name: ai-remediation-${{ inputs.source }}
+        path: ai-remediation/${{ inputs.source }}/
+        retention-days: 14
+        if-no-files-found: warn
+    - name: Link the repair evidence and patches
+      if: always() && steps.upload_ai.outputs.artifact-url != ''
+      shell: bash
+      env:
+        ARTIFACT_URL: ${{ steps.upload_ai.outputs.artifact-url }}
+        SOURCE: ${{ inputs.source }}
+      run: printf '\n[Download AI prompts, patches, rebuild logs, and test evidence for `%s`](%s)\n' "$SOURCE" "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Enforce the final build and test result
+      if: always()
+      shell: bash
+      run: python3 scripts/final-package-verdict.py outputs/result.json test-results/result/result.json
