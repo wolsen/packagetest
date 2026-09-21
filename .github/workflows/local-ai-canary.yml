@@ -101,6 +101,15 @@ jobs:
           Depends:
            ${python3:Depends},
           EOF
+          cat > "$RUNNER_TEMP/contract/debian/rules" <<'EOF'
+          #!/usr/bin/make -f
+          .RECIPEPREFIX := >
+          override_dh_install:
+          >oslopolicy-sample-generator \
+          >  --output-file debian/sample.yaml \
+          >  --format yaml \
+          >  --namespace sample
+          EOF
           PYTHONPATH=src python3 scripts/model-contract-test.py \
             --tree "$RUNNER_TEMP/contract" --llama-cli "$llama_cli" \
             --model "$AI_CACHE/model.gguf" --output "$RUNNER_TEMP/model-contract"
