@@ -9,7 +9,6 @@ from pathlib import Path
 import subprocess
 
 from packagetest.failure_analysis import (
-    REPAIR_DECISION_SCHEMA,
     parse_repair_decision,
     render_source_repair,
     validate_source_patch,
@@ -24,12 +23,12 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    prompt = """Return only JSON matching the supplied schema. A Debian package build failed with:
+    prompt = """Return only one JSON object with exactly these string keys: action, package, argument, evidence.
+A Debian package build failed with:
 ModuleNotFoundError: No module named 'futurist'
 Choose add_dependency with the corresponding Debian Python 3 package, or no_fix if unjustified.
 Use an empty argument and quote the error in evidence."""
     command = [str(args.llama_cli), "-m", str(args.model), "-p", prompt, "-n", "512", "-c", "4096",
-               "--json-schema", json.dumps(REPAIR_DECISION_SCHEMA, separators=(",", ":")),
                "--temp", "0", "--seed", "1", "--threads", "2", "--no-display-prompt",
                "--single-turn", "--simple-io", "--no-show-timings"]
     env = dict(os.environ)

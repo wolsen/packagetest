@@ -17,7 +17,6 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from packagetest.failure_analysis import (
-    REPAIR_DECISION_SCHEMA,
     parse_repair_decision,
     render_source_repair,
     validate_source_patch,
@@ -98,7 +97,7 @@ def failure_focus(evidence: str, limit: int = 3_000) -> str:
 def prompt(source: str, phase: str, evidence: str, context: str, feedback: str = "") -> str:
     retry = f"\nPREVIOUS ATTEMPT AND VALIDATION:\n{feedback[-2_000:]}\n" if feedback else ""
     value = f"""Classify one Debian packaging repair for OpenStack source {source} after a {phase} failure.
-Return only the JSON object required by the supplied schema. Do not write a patch.
+Return only one JSON object with exactly these string keys: action, package, argument, evidence. Do not write a patch.
 
 Use action add_dependency when a Python import is missing. Set package to its Debian python3-* package,
 argument to an empty string, and quote the exact import failure in evidence.
@@ -125,7 +124,6 @@ def llama_generate(executable: Path, model: Path, text: str, attempt: int, timeo
     started = time.monotonic()
     command = [str(executable), "-m", str(model), "-p", text, "-n", "512", "-c", "8192",
                "--temp", "0", "--seed", str(attempt), "--threads", str(min(4, os.cpu_count() or 2)),
-               "--json-schema", json.dumps(REPAIR_DECISION_SCHEMA, separators=(",", ":")),
                "--no-display-prompt", "--single-turn", "--simple-io", "--no-show-timings"]
     env = dict(os.environ)
     runtime = str(executable.resolve().parent)
