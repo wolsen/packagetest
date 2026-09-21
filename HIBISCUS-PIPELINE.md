@@ -30,4 +30,16 @@ Autopkgtest selects compatible binaries through each test’s dependency declara
 
 Artifacts `build-SOURCE` and `autopkgtest-SOURCE` contain tar bundles of results and logs. Small `status-*` artifacts feed `pipeline-summary`. Retention is 14 days.
 
+## Experimental local AI failure analysis
+
+After the authoritative pipeline summary, `failure_analysis_plan` selects direct `FAILED`/`INFRA_ERROR` builds and `FAIL`/`INFRA_ERROR` autopkgtests. It excludes `BLOCKED` dependents because their logs describe a missing producer rather than an independent repair. Up to three source analyses run concurrently after a single cache-population job.
+
+Inference stays on the GitHub runner. The experiment uses the CPU build of llama.cpp `b10964` and the official Apache-2.0 Qwen2.5-Coder-1.5B-Instruct Q4_K_M model. Both downloads have pinned revisions and SHA256 values. Prompts are bounded to selected error logs, package metadata, and existing `config/patches` adaptations for the failed source and candidate producers implicated by missing imports; the model does not receive GitHub credentials.
+
+Each analysis makes two attempts. Attempt 2 receives attempt 1 and its independent patch-validation error. Model output is treated as untrusted data: the workflow never executes proposed commands or modified code, forbids workflow and artifact paths, and applies each diff only inside a disposable repository copy. An applicable diff proves that the patch is syntactically usable against the triggering checkout. It does not prove that the package builds or passes autopkgtest.
+
+Every `Local AI analysis SOURCE` job writes its diagnosis and validation table to the GitHub job summary. Its downloadable `ai-remediation-SOURCE` artifact contains both prompts, raw model responses, proposed patches, validation JSON, and a machine-readable result. `ai-remediation-summary` reports the aggregate patch-application rate. Analysis jobs are advisory and do not alter package results or publish patches.
+
+An initial local sanity check used the larger Qwen3.5 4.7B Q4_K_M model on the retained Heat failure. It found the `heatclient.v1` and `magnumclient.v1` import symptoms, but it did not identify the confirmed producer-package discovery defect or produce a complete patch in either attempt. Inference took 133–273 seconds per attempt on the local CPU. That result is useful diagnosis assistance, but it is not evidence that a local model is ready to repair packages autonomously. The CI experiment measures whether the smaller coding-specific model improves with the same bounded evidence; clean application and later human/build review remain separate gates.
+
 The workflow runs on pushes to `codex/hibiscus-snapshot-pipeline` and manual dispatch. Empty `sources` selects the catalog; a comma-separated pilot list selects exactly those packages and records outside dependencies as archive bootstrap inputs. Its nightly schedule is 09:00 UTC (02:00 America/Phoenix). GitHub activates scheduled workflows only on the default branch, so recurring runs remain pending validation and default-branch integration; the feature branch is not currently scheduled.

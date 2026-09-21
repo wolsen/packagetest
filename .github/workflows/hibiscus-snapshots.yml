@@ -1200,3 +1200,153 @@ jobs:
           path: summary/
           retention-days: 14
           if-no-files-found: error
+
+  failure_analysis_plan:
+    name: Plan local AI analysis of direct failures
+    needs: [summary]
+    if: ${{ always() && !cancelled() && needs.summary.result == 'success' }}
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    outputs:
+      enabled: ${{ steps.plan.outputs.enabled }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: pipeline-summary
+          path: pipeline-summary
+      - id: plan
+        name: Select direct build and autopkgtest failures
+        run: python3 scripts/plan-failure-analysis.py pipeline-summary/results.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: failure-analysis-plan
+          path: failure-analysis-plan/
+          retention-days: 14
+          if-no-files-found: error
+
+  prepare_local_ai:
+    name: Prepare pinned local AI runtime
+    needs: [failure_analysis_plan]
+    if: ${{ needs.failure_analysis_plan.outputs.enabled == 'true' }}
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      AI_CACHE: ${{ github.workspace }}/.cache/packagetest-ai
+      LLAMA_URL: https://github.com/ggml-org/llama.cpp/releases/download/b10964/llama-b10964-bin-ubuntu-x64.tar.gz
+      LLAMA_SHA256: 9abf88aea48a55d0f80edb1ee20220b186848cca0b4e919d71518cfd7ca67443
+      MODEL_URL: https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/f86cb2c1fa58255f8052cc32aeede1b7482d4361/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+      MODEL_SHA256: cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046
+    steps:
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.AI_CACHE }}
+          key: local-ai-llama-b10964-qwen25-coder-15b-q4km-v1
+      - name: Download and verify runtime and model
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          mkdir -p "$AI_CACHE/runtime"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/llama.tar.gz" "$LLAMA_URL"
+          echo "$LLAMA_SHA256  $RUNNER_TEMP/llama.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/llama.tar.gz" -C "$AI_CACHE/runtime"
+          curl --fail --location --retry 3 --output "$AI_CACHE/model.gguf" "$MODEL_URL"
+          echo "$MODEL_SHA256  $AI_CACHE/model.gguf" | sha256sum --check
+          test -x "$(find "$AI_CACHE/runtime" -type f -name llama-cli -print -quit)"
+
+  analyze_failure:
+    name: Local AI analysis ${{ matrix.source }}
+    needs: [failure_analysis_plan, prepare_local_ai]
+    if: ${{ always() && !cancelled() && needs.failure_analysis_plan.outputs.enabled == 'true' && needs.prepare_local_ai.result == 'success' }}
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.failure_analysis_plan.outputs.matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      AI_CACHE: ${{ github.workspace }}/.cache/packagetest-ai
+      MODEL_SHA256: cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.AI_CACHE }}
+          key: local-ai-llama-b10964-qwen25-coder-15b-q4km-v1
+          fail-on-cache-miss: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-plan
+          path: evidence/nightly-plan
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-${{ matrix.source }}
+          path: evidence/build
+      - uses: actions/download-artifact@v4
+        with:
+          name: autopkgtest-${{ matrix.source }}
+          path: evidence/autopkgtest
+      - name: Make two bounded local-model repair attempts
+        env:
+          SOURCE: ${{ matrix.source }}
+          PHASE: ${{ matrix.phase }}
+          ORIGINAL_RESULT: ${{ matrix.result }}
+        run: |
+          LLAMA_CLI="$(find "$AI_CACHE/runtime" -type f -name llama-cli -print -quit)"
+          python3 scripts/analyze-packaging-failure.py \
+            --source "$SOURCE" --phase "$PHASE" --original-result "$ORIGINAL_RESULT" \
+            --evidence evidence --output "failure-analysis/$SOURCE" \
+            --llama-cli "$LLAMA_CLI" --model "$AI_CACHE/model.gguf" \
+            --model-sha256 "$MODEL_SHA256"
+      - id: upload
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-remediation-${{ matrix.source }}
+          path: failure-analysis/${{ matrix.source }}/
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Add patch download to the job summary
+        if: always() && steps.upload.outputs.artifact-url != ''
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          SOURCE: ${{ matrix.source }}
+        run: printf '\n[Download both AI patch attempts and evidence for `%s`](%s)\n' "$SOURCE" "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+
+  failure_analysis_summary:
+    name: Summarize local AI repair experiment
+    needs: [failure_analysis_plan, analyze_failure]
+    if: ${{ always() && !cancelled() && needs.failure_analysis_plan.outputs.enabled == 'true' }}
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: ai-remediation-*
+          path: ai-remediation
+      - run: python3 scripts/analyze-packaging-failure.py --aggregate ai-remediation --output ai-remediation-summary
+      - id: upload
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-remediation-summary
+          path: ai-remediation-summary/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Add report download to the job summary
+        if: always() && steps.upload.outputs.artifact-url != ''
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: printf '\n[Download the consolidated local AI experiment report](%s)\n' "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"

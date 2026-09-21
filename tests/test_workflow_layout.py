@@ -20,6 +20,18 @@ def test_child_jobs_keep_direct_package_build_names():
     assert workflow.count('name: Build ${{ matrix.source }}') == 12
 
 
+def test_local_ai_analysis_is_advisory_parallel_and_downloadable():
+    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    assert 'failure_analysis_plan:' in workflow
+    assert 'name: Local AI analysis ${{ matrix.source }}' in workflow
+    assert 'max-parallel: 3' in workflow
+    assert 'continue-on-error: true' in workflow
+    assert 'name: ai-remediation-${{ matrix.source }}' in workflow
+    assert 'name: ai-remediation-summary' in workflow
+    assert 'qwen2.5-coder-1.5b-instruct-q4_k_m.gguf' in workflow
+    assert workflow.count('MODEL_SHA256: cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046') == 2
+
+
 def test_integrated_test_step_records_blocked_build_and_evidence(tmp_path):
     (tmp_path / 'outputs').mkdir()
     (tmp_path / 'outputs/result.json').write_text('{"result":"FAILED"}\n')
