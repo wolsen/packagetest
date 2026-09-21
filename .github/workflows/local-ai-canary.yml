@@ -1,6 +1,9 @@
 name: Local AI packaging repair canary
 
 on:
+  push:
+    branches: [codex/hibiscus-snapshot-pipeline]
+    paths: [.github/workflows/local-ai-canary.yml]
   workflow_dispatch:
     inputs:
       sources:
@@ -133,4 +136,3 @@ jobs:
         uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
-

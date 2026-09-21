@@ -4,7 +4,7 @@ on:
     - cron: '0 9 * * *' # 02:00 America/Phoenix; active on the default branch.
   push:
     branches: [codex/hibiscus-snapshot-pipeline]
-    paths-ignore: ['**.md']
+    paths-ignore: ['**.md', '.github/workflows/local-ai-canary.yml']
   workflow_dispatch:
     inputs:
       sources:
