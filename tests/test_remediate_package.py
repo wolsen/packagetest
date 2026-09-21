@@ -19,7 +19,16 @@ def test_successful_attempt_promotes_rebuilt_and_retested_candidate(tmp_path, mo
     outputs = tmp_path / "outputs"
     tree = outputs / "source-preparation/sample-1"
     (tree / "debian").mkdir(parents=True)
-    (tree / "debian/control").write_text("old\n")
+    (tree / "debian/control").write_text("""Source: sample
+Build-Depends: debhelper-compat (= 13),
+Build-Depends-Indep:
+ python3-pbr,
+
+Package: python3-sample
+Architecture: all
+Depends:
+ ${python3:Depends},
+""")
     (outputs / "result.json").write_text('{"result":"FAILED"}\n')
     tests = tmp_path / "test-results"
     (tests / "result").mkdir(parents=True)
@@ -33,18 +42,7 @@ def test_successful_attempt_promotes_rebuilt_and_retested_candidate(tmp_path, mo
     inputs = tmp_path / "inputs"
     inputs.mkdir()
 
-    response = """BEGIN_DIAGNOSIS
-The control file is wrong.
-END_DIAGNOSIS
-BEGIN_PATCH
-diff --git a/debian/control b/debian/control
---- a/debian/control
-+++ b/debian/control
-@@ -1 +1 @@
--old
-+new
-END_PATCH
-"""
+    response = '{"action":"add_dependency","package":"python3-futurist","argument":"","evidence":"missing futurist"}'
     monkeypatch.setattr(module, "llama_generate", lambda *args, **kwargs: (response, {"returncode": 0}))
 
     def build(args, patch, destination, log):
@@ -80,3 +78,4 @@ END_PATCH
     assert report["result"] == "REPAIRED"
     assert report["selected_attempt"] == 1
     assert (tmp_path / "report/attempt-1/proposal.patch").is_file()
+    assert "python3-futurist" in (tmp_path / "report/attempt-1/proposal.patch").read_text()

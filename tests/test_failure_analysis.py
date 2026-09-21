@@ -6,7 +6,9 @@ import subprocess
 import tarfile
 
 from packagetest.failure_analysis import (
+    parse_repair_decision,
     parse_model_response,
+    render_source_repair,
     repository_context,
     safe_evidence_text,
     select_direct_failures,
@@ -64,6 +66,38 @@ Exiting...
     parsed = parse_model_response(response)
     assert parsed.patch.startswith("diff --git a/debian/control")
     assert "python3-futurist" in parsed.patch
+
+
+def test_parses_noisy_structured_repair_decision():
+    output = 'banner\n> prompt\n{"action":"add_dependency","package":"python3-futurist","argument":"","evidence":"missing futurist"}\nExiting...\n'
+    assert parse_repair_decision(output)["package"] == "python3-futurist"
+
+
+def test_renders_dependency_and_rule_argument_repairs(tmp_path):
+    (tmp_path / "debian").mkdir()
+    control = """Source: sample
+Build-Depends: debhelper-compat (= 13),
+Build-Depends-Indep:
+ python3-pbr,
+
+Package: python3-sample
+Architecture: all
+Depends:
+ ${python3:Depends},
+"""
+    (tmp_path / "debian/control").write_text(control)
+    (tmp_path / "debian/rules").write_text("cmd \\\n\t--output file \\\n\t--format yaml \\\n\t--namespace sample\n")
+    dependency = render_source_repair({
+        "action": "add_dependency", "package": "python3-futurist", "argument": "", "evidence": "missing"
+    }, tmp_path)
+    assert dependency.count("+ python3-futurist,") == 2
+    assert validate_source_patch(dependency, tmp_path)["result"] == "APPLIES"
+    argument = render_source_repair({
+        "action": "remove_rule_argument", "package": "", "argument": "--format yaml", "evidence": "rejected"
+    }, tmp_path)
+    assert "--- a/debian/rules" in argument
+    assert "\n-\t--format yaml" in argument
+    assert validate_source_patch(argument, tmp_path)["result"] == "APPLIES"
 
 
 def test_patch_validation_uses_disposable_copy_and_restricts_paths(tmp_path):

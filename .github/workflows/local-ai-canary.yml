@@ -90,7 +90,17 @@ jobs:
           llama_cli="$(find "$AI_CACHE/runtime" -type f -name llama-cli -print -quit)"
           test -x "$llama_cli"
           mkdir -p "$RUNNER_TEMP/contract/debian"
-          printf 'Source: sample\nBuild-Depends: debhelper-compat (= 13)\n' > "$RUNNER_TEMP/contract/debian/control"
+          cat > "$RUNNER_TEMP/contract/debian/control" <<'EOF'
+          Source: sample
+          Build-Depends: debhelper-compat (= 13),
+          Build-Depends-Indep:
+           python3-pbr,
+
+          Package: python3-sample
+          Architecture: all
+          Depends:
+           ${python3:Depends},
+          EOF
           PYTHONPATH=src python3 scripts/model-contract-test.py \
             --tree "$RUNNER_TEMP/contract" --llama-cli "$llama_cli" \
             --model "$AI_CACHE/model.gguf" --output "$RUNNER_TEMP/model-contract"

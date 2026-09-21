@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import difflib
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -42,6 +43,108 @@ def select_direct_failures(rows: Iterable[dict]) -> list[dict]:
 class ModelResponse:
     diagnosis: str
     patch: str
+
+
+REPAIR_DECISION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": ["add_dependency", "remove_rule_argument", "no_fix"]},
+        "package": {"type": "string"},
+        "argument": {"type": "string"},
+        "evidence": {"type": "string"},
+    },
+    "required": ["action", "package", "argument", "evidence"],
+    "additionalProperties": False,
+}
+
+
+def parse_repair_decision(text: str) -> dict:
+    """Extract the last schema-shaped JSON object from noisy llama-cli output."""
+    decoder = json.JSONDecoder()
+    matches = []
+    for offset, character in enumerate(text):
+        if character != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(text[offset:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and set(REPAIR_DECISION_SCHEMA["required"]) <= value.keys():
+            matches.append(value)
+    if not matches:
+        raise ValueError("model output contains no repair decision JSON")
+    decision = matches[-1]
+    if decision["action"] not in REPAIR_DECISION_SCHEMA["properties"]["action"]["enum"]:
+        raise ValueError(f"unsupported repair action: {decision['action']}")
+    if not all(isinstance(decision[key], str) for key in REPAIR_DECISION_SCHEMA["required"]):
+        raise ValueError("repair decision values must be strings")
+    return decision
+
+
+def _replace_file_patch(path: str, before: str, after: str) -> str:
+    if before == after:
+        raise ValueError(f"repair did not change {path}")
+    body = "".join(difflib.unified_diff(
+        before.splitlines(keepends=True), after.splitlines(keepends=True),
+        fromfile=f"a/{path}", tofile=f"b/{path}", n=3,
+    ))
+    return f"diff --git a/{path} b/{path}\n{body}"
+
+
+def _add_control_dependency(text: str, field: str, package: str) -> str:
+    lines = text.splitlines(keepends=True)
+    start = next((index for index, line in enumerate(lines) if line.startswith(field + ":")), None)
+    if start is None:
+        raise ValueError(f"control paragraph has no {field} field")
+    end = start + 1
+    while end < len(lines) and (lines[end].startswith((" ", "\t")) or not lines[end].strip()):
+        if not lines[end].strip():
+            break
+        end += 1
+    current = "".join(lines[start:end])
+    if re.search(rf"(?<![A-Za-z0-9+.-]){re.escape(package)}(?![A-Za-z0-9+.-])", current):
+        return text
+    if end and not lines[end - 1].endswith("\n"):
+        lines[end - 1] += "\n"
+    lines.insert(end, f" {package},\n")
+    return "".join(lines)
+
+
+def render_source_repair(decision: dict, tree: Path) -> str:
+    """Render a narrow, trusted Debian packaging patch from a model decision."""
+    action = decision["action"]
+    if action == "no_fix":
+        return ""
+    if action == "remove_rule_argument":
+        argument = decision["argument"].strip()
+        if not re.fullmatch(r"--[A-Za-z0-9][A-Za-z0-9 _=.+-]*", argument):
+            raise ValueError(f"unsafe rule argument: {argument!r}")
+        path = tree / "debian/rules"
+        before = path.read_text()
+        lines = before.splitlines(keepends=True)
+        matching = [index for index, line in enumerate(lines) if line.strip().rstrip("\\").strip() == argument]
+        if len(matching) != 1:
+            raise ValueError(f"expected one exact {argument!r} line in debian/rules, found {len(matching)}")
+        del lines[matching[0]]
+        return _replace_file_patch("debian/rules", before, "".join(lines))
+    package = decision["package"].strip().lower()
+    if not re.fullmatch(r"python3-[a-z0-9][a-z0-9+.-]*", package):
+        raise ValueError(f"unsupported dependency package: {package!r}")
+    path = tree / "debian/control"
+    before = path.read_text()
+    paragraphs = re.split(r"(\n\s*\n)", before)
+    paragraphs[0] = _add_control_dependency(
+        paragraphs[0], "Build-Depends-Indep" if "Build-Depends-Indep:" in paragraphs[0] else "Build-Depends", package)
+    changed_runtime = False
+    for index in range(2, len(paragraphs), 2):
+        paragraph = paragraphs[index]
+        if re.search(r"(?m)^Package:\s+python3-", paragraph) and "Depends:" in paragraph:
+            updated = _add_control_dependency(paragraph, "Depends", package)
+            changed_runtime = changed_runtime or updated != paragraph
+            paragraphs[index] = updated
+    if not changed_runtime:
+        raise ValueError("no Python 3 binary package dependency stanza was updated")
+    return _replace_file_patch("debian/control", before, "".join(paragraphs))
 
 
 def parse_model_response(text: str) -> ModelResponse:
