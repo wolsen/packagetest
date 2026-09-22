@@ -99,7 +99,11 @@ def main():
                             external_artifacts=producers, timeout=5400)
         result = build.run()
         stamp_generation(build.root / 'generation-manifest.json', run_id=args.run_id, run_attempt=args.run_attempt)
+        failed = next((item for item in build.manifest['packages'] if item.get('result') == 'FAILED'), None)
         state.update(result=build.manifest['result'], generation=str(build.root))
+        if failed:
+            state['stage'] = failed.get('failed_stage', state['stage'])
+            state['error'] = failed.get('error')
         return result
     except Exception as error:
         state.update(result='BLOCKED' if state['stage'] == 'dependency-handoff' else 'FAILED', error=str(error))

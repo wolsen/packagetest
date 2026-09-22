@@ -1,0 +1,114 @@
+Description: Import optional Kazoo utilities before patching them in tests
+Author: Packaging Build Agent <packaging-agent@example.invalid>
+Forwarded: no
+Last-Update: 2026-09-21
+
+Python 3.14 unittest.mock resolves each dotted component with getattr. Taskflow
+keeps taskflow.utils.__init__ empty, so the test decorators cannot resolve the
+kazoo_utils child until it has been imported. The production driver retains
+its lazy import; the unit tests import the optional module and patch its
+members directly.
+
+--- a/octavia/tests/unit/controller/worker/v2/test_taskflow_jobboard_driver.py
++++ b/octavia/tests/unit/controller/worker/v2/test_taskflow_jobboard_driver.py
+@@ -19,6 +19,8 @@
+ from oslo_config import cfg
+ from oslo_config import fixture as oslo_fixture
+
++from taskflow.utils import kazoo_utils
++
+ from octavia.controller.worker.v2 import taskflow_jobboard_driver
+ from octavia.tests.unit import base
+
+@@ -374,7 +376,7 @@
+
+     @mock.patch('octavia.controller.worker.v2.taskflow_jobboard_driver.'
+                 'job_backends')
+-    @mock.patch('taskflow.utils.kazoo_utils.make_client')
++    @mock.patch.object(kazoo_utils, 'make_client')
+     def test_first_job_board_call_creates_client(self, mock_make_client,
+                                                  mock_job_backends):
+         mock_client = mock.Mock()
+@@ -398,7 +400,7 @@
+
+     @mock.patch('octavia.controller.worker.v2.taskflow_jobboard_driver.'
+                 'job_backends')
+-    @mock.patch('taskflow.utils.kazoo_utils.make_client')
++    @mock.patch.object(kazoo_utils, 'make_client')
+     def test_job_board_passes_shared_client(self, mock_make_client,
+                                             mock_job_backends):
+         mock_client = mock.Mock()
+@@ -415,7 +417,7 @@
+
+     @mock.patch('octavia.controller.worker.v2.taskflow_jobboard_driver.'
+                 'job_backends')
+-    @mock.patch('taskflow.utils.kazoo_utils.make_client')
++    @mock.patch.object(kazoo_utils, 'make_client')
+     def test_job_board_reuses_client(self, mock_make_client,
+                                      mock_job_backends):
+         mock_make_client.return_value = mock.Mock()
+@@ -430,7 +432,7 @@
+
+     @mock.patch('octavia.controller.worker.v2.taskflow_jobboard_driver.'
+                 'job_backends')
+-    @mock.patch('taskflow.utils.kazoo_utils.make_client')
++    @mock.patch.object(kazoo_utils, 'make_client')
+     def test_concurrent_job_board_creates_single_client(self,
+                                                         mock_make_client,
+                                                         mock_job_backends):
+@@ -447,10 +449,10 @@
+         self.assertEqual(1, mock_make_client.call_count)
+         self.assertEqual(1, mock_client.start.call_count)
+
+-    @mock.patch('taskflow.utils.kazoo_utils.finalize_client')
+-    @mock.patch('octavia.controller.worker.v2.taskflow_jobboard_driver.'
+-                'job_backends')
+-    @mock.patch('taskflow.utils.kazoo_utils.make_client')
++    @mock.patch.object(kazoo_utils, 'finalize_client')
++    @mock.patch('octavia.controller.worker.v2.taskflow_jobboard_driver.'
++                'job_backends')
++    @mock.patch.object(kazoo_utils, 'make_client')
+     def test_shutdown_finalizes_client(self, mock_make, mock_job_backends,
+                                        mock_finalize):
+         mock_client = mock.Mock()
+@@ -464,10 +466,10 @@
+         mock_finalize.assert_called_once_with(mock_client)
+         self.assertIsNone(driver._client)
+
+-    @mock.patch('taskflow.utils.kazoo_utils.finalize_client')
+-    @mock.patch('octavia.controller.worker.v2.taskflow_jobboard_driver.'
+-                'job_backends')
+-    @mock.patch('taskflow.utils.kazoo_utils.make_client')
++    @mock.patch.object(kazoo_utils, 'finalize_client')
++    @mock.patch('octavia.controller.worker.v2.taskflow_jobboard_driver.'
++                'job_backends')
++    @mock.patch.object(kazoo_utils, 'make_client')
+     def test_shutdown_before_job_board_is_safe(self, mock_make,
+                                                mock_job_backends,
+                                                mock_finalize):
+@@ -478,10 +480,10 @@
+         mock_finalize.assert_not_called()
+         self.assertIsNone(driver._client)
+
+-    @mock.patch('taskflow.utils.kazoo_utils.finalize_client')
+-    @mock.patch('octavia.controller.worker.v2.taskflow_jobboard_driver.'
+-                'job_backends')
+-    @mock.patch('taskflow.utils.kazoo_utils.make_client')
++    @mock.patch.object(kazoo_utils, 'finalize_client')
++    @mock.patch('octavia.controller.worker.v2.taskflow_jobboard_driver.'
++                'job_backends')
++    @mock.patch.object(kazoo_utils, 'make_client')
+     def test_shutdown_idempotent(self, mock_make, mock_job_backends,
+                                  mock_finalize):
+         mock_client = mock.Mock()
+@@ -494,8 +496,8 @@
+
+         mock_finalize.assert_called_once()
+
+-    @mock.patch('taskflow.utils.kazoo_utils.finalize_client')
+-    @mock.patch('taskflow.utils.kazoo_utils.make_client')
++    @mock.patch.object(kazoo_utils, 'finalize_client')
++    @mock.patch.object(kazoo_utils, 'make_client')
+     def test_ensure_client_cleans_up_if_start_fails(self, mock_make,
+                                                     mock_finalize):
+         mock_client = mock.Mock()

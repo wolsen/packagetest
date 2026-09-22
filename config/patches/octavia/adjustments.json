@@ -1,0 +1,21 @@
+{
+  "archive_dsc_sha256": "0fd664914f4046c1be6250717d7d9b6158ec6e9ae47b0c9a66056f7fe2c9ec2a",
+  "replace_files": [
+    {
+      "name": "patches/series",
+      "sha256": "f15f474cdcf0eb439141bbb770e940b6f5dc94aa2f6e39a2241892e14472a99d",
+      "replacement": "series",
+      "replacement_sha256": "0dff3054093672e88117fc7d09e10343789ab7dbda8a8661a26a09ceda8bf72a",
+      "reason": "Enable the Python 3.14 unittest.mock compatibility patch without suppressing any tests."
+    }
+  ],
+  "add_files": [
+    {
+      "name": "patches/import-kazoo-utils-for-tests.patch",
+      "replacement": "import-kazoo-utils-for-tests.patch",
+      "replacement_sha256": "f749f962a54e7fda31ab53215fd10e03259cde83a9d249609fbc4d3734427d56",
+      "mode": "0644",
+      "reason": "Import Taskflow Kazoo utilities before dotted mock targets are resolved; keep the production lazy import and run all tests."
+    }
+  ]
+}

@@ -3,7 +3,7 @@ on:
   schedule:
     - cron: '0 9 * * *' # 02:00 America/Phoenix; active on the default branch.
   push:
-    branches: [codex/hibiscus-snapshot-pipeline]
+    branches: [codex/hibiscus-snapshot-pipeline, codex/horizon-octavia-canary]
     paths-ignore: ['**.md', '.github/workflows/local-ai-canary.yml']
   workflow_dispatch:
     inputs:
@@ -62,7 +62,7 @@ jobs:
         env:
           # Ordinary feature-branch pushes stay focused. A deliberately marked
           # push, scheduled run, or empty manual dispatch selects the full catalog.
-          SOURCES: ${{ github.event_name == 'push' && !contains(github.event.head_commit.message, '[full-snapshot]') && 'python-neutron-lib,python-oslo.versionedobjects,heat,watcher' || inputs.sources }}
+          SOURCES: ${{ github.ref_name == 'codex/horizon-octavia-canary' && 'horizon,octavia' || github.event_name == 'push' && !contains(github.event.head_commit.message, '[full-snapshot]') && 'python-neutron-lib,python-oslo.versionedobjects,heat,watcher' || inputs.sources }}
         run: python3 scripts/nightly-plan.py --sources "$SOURCES"
       - uses: actions/upload-artifact@v4
         with:

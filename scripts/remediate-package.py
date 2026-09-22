@@ -9,7 +9,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import re
 import shlex
 import shutil
 import subprocess
@@ -25,6 +24,7 @@ from packagetest.failure_analysis import (
     validate_source_patch,
     write_json,
 )
+from packagetest.remediation_evidence import extract_test_failure_evidence, structured_failure
 
 
 MODEL_NAME = "Qwen2.5-Coder-7B-Instruct-Q4_K_M"
@@ -47,20 +47,25 @@ def tail(path: Path, limit: int = 10_000) -> str:
 
 
 def failure_evidence(outputs: Path, tests: Path) -> str:
-    candidates = [outputs / "result.json", outputs / "nightly-build.log",
-                  tests / "result/result.json", tests / "autopkgtest.log"]
-    build_logs = sorted(outputs.rglob("*.build"))
-    if build_logs:
-        candidates.append(build_logs[-1])
     failure_json = sorted(outputs.rglob("failure.json"))
-    if failure_json:
-        candidates.append(failure_json[-1])
     blocks = []
-    for path in candidates:
-        text = tail(path)
-        if text:
-            blocks.append(f"\n--- {path} ---\n{text}")
-    return "".join(blocks)[-9_000:]
+    if failure_json:
+        blocks.append(structured_failure(failure_json[-1]))
+    else:
+        build_log = outputs / "nightly-build.log"
+        if build_log.is_file():
+            blocks.append(tail(build_log, 8_000))
+    autopkgtest = tests / "autopkgtest.log"
+    if autopkgtest.is_file():
+        blocks.append(extract_test_failure_evidence(autopkgtest.read_text(errors="replace")))
+    for path in (outputs / "result.json", tests / "result/result.json"):
+        if path.is_file():
+            blocks.append(f"--- {path.name} ---\n{tail(path, 2_000)}")
+    if not blocks:
+        for path in (autopkgtest,):
+            if path.is_file():
+                blocks.append(tail(path, 8_000))
+    return "\n\n".join(blocks)[:20_000]
 
 
 def prepared_tree(outputs: Path) -> Path:
@@ -115,8 +120,10 @@ def render_cumulative_repair(decisions: list[dict], tree: Path) -> str:
 
 
 def failure_focus(evidence: str, limit: int = 3_000) -> str:
-    markers = ["ModuleNotFoundError", "error: unrecognized arguments", "Failures during discovery",
-               "dpkg-buildpackage: error"]
+    if evidence.startswith(("STRUCTURED LINTIAN FAILURE", "STRUCTURED TEST FAILURE")):
+        return evidence[:limit]
+    markers = ["ModuleNotFoundError", "AttributeError", "error: unrecognized arguments",
+               "Failures during discovery", "dpkg-buildpackage: error"]
     positions = [evidence.rfind(marker) for marker in markers if marker in evidence]
     if not positions:
         return evidence[-limit:]
@@ -241,11 +248,13 @@ def main() -> int:
     if phase == "autopkgtest" and test_result.get("result") in SUCCESSFUL_TESTS:
         return 0
     evidence = failure_evidence(args.outputs, args.tests)
+    (args.report / "failure-evidence.txt").write_text(evidence + "\n")
     tree = prepared_tree(args.outputs)
     context = source_context(tree, evidence)
     copy_initial_evidence(args.outputs, args.tests, args.report)
     attempts, feedback, selected = [], "", None
     accepted_decisions = []
+    prior_decisions = set()
     for number in range(1, 4):
         attempt_dir = args.report / f"attempt-{number}"
         attempt_dir.mkdir()
@@ -257,6 +266,12 @@ def main() -> int:
             (attempt_dir / "model-output.txt").write_text(output)
             decision = parse_repair_decision(output)
             write_json(attempt_dir / "decision.json", decision)
+            decision_key = json.dumps(decision, sort_keys=True)
+            if decision_key in prior_decisions:
+                record.update(decision=decision, inference=inference, result="DUPLICATE_DECISION")
+                attempts.append(record)
+                break
+            prior_decisions.add(decision_key)
             decision_validation = validate_repair_decision(decision, evidence)
             write_json(attempt_dir / "decision-validation.json", decision_validation)
             if decision_validation["result"] != "ACCEPTED":
@@ -265,6 +280,11 @@ def main() -> int:
                 feedback = json.dumps(record, indent=2)
                 attempts.append(record)
                 continue
+            if decision["action"] == "no_fix":
+                record.update(decision=decision, inference=inference,
+                              decision_validation=decision_validation, result="NO_FIX")
+                attempts.append(record)
+                break
             try:
                 patch = ("" if decision["action"] == "no_fix" else
                          render_cumulative_repair([*accepted_decisions, decision], tree))
@@ -332,9 +352,13 @@ def main() -> int:
     write_json(args.report / "result.json", report)
     with (args.report / "summary.md").open("w") as stream:
         stream.write(f"## {args.source} local AI remediation: {report['result']}\n\n")
-        stream.write("| Attempt | Patch | Build | Autopkgtest | Result |\n|---:|---|---|---|---|\n")
+        stream.write(f"Initial failed stage: `{phase}`. The focused evidence used by the model is included "
+                     "in the downloadable remediation artifact.\n\n")
+        stream.write("| Attempt | Decision | Patch | Build | Autopkgtest | Result |\n"
+                     "|---:|---|---|---|---|---|\n")
         for item in attempts:
-            stream.write(f"| {item['number']} | {item.get('patch_validation', {}).get('result', '—')} | "
+            stream.write(f"| {item['number']} | {item.get('decision', {}).get('action', '—')} | "
+                         f"{item.get('patch_validation', {}).get('result', '—')} | "
                          f"{item.get('build_result', '—')} | {item.get('test_result', '—')} | {item['result']} |\n")
         if selected:
             stream.write(f"\nAttempt {selected} was rebuilt and tested; its packages are the canonical downstream artifact.\n")

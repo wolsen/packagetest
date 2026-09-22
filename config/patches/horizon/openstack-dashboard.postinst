@@ -1,0 +1,58 @@
+#!/bin/sh
+# vim: set ts=2 et:
+
+set -e
+
+# Complete the historical Apache conffile migrations in every maintscript.
+dpkg-maintscript-helper mv_conffile \
+  /etc/apache2/conf.d/dashboard.conf /etc/apache2/conf.d/openstack-dashboard.conf \
+  2012.1~rc1-0ubuntu1 -- "$@"
+dpkg-maintscript-helper mv_conffile \
+  /etc/apache2/conf.d/openstack-dashboard.conf \
+  /etc/apache2/conf-available/openstack-dashboard.conf \
+  1:2013.2~b2-0ubuntu3 -- "$@"
+
+CONF="openstack-dashboard.conf"
+
+if [ "$1" = "configure" ]; then
+
+  if ! getent group horizon > /dev/null 2>&1 ; then
+    addgroup --system horizon >/dev/null
+  fi
+
+  if ! getent passwd horizon > /dev/null 2>&1 ; then
+    adduser --system --home /var/lib/openstack-dashboard --ingroup horizon \
+            --no-create-home --shell /usr/sbin/nologin horizon
+  fi
+
+  (
+    cd /usr/share/openstack-dashboard
+    echo "Collecting and compressing static assets..."
+    rm -rf /var/lib/openstack-dashboard/static/ || :
+    python3 manage.py collectstatic --noinput 2>&1 > /dev/null
+    python3 manage.py compress --force 2>&1 > /dev/null
+  )
+
+  invoke-rc.d memcached restart > /dev/null 2>&1 || true
+
+  find /etc/openstack-dashboard -exec chown root:horizon "{}" +
+  find /etc/openstack-dashboard -type f -exec chmod 0640 "{}" + -o -type d -exec chmod 0750 "{}" +
+
+  find /var/lib/openstack-dashboard -exec chown horizon:horizon "{}" +
+  find /var/lib/openstack-dashboard -type f -exec chmod 0640 "{}" + -o -type d -exec chmod 0750 "{}" +
+
+  # Ensure Apache2 has access to static assets
+  chmod 0755 /var/lib/openstack-dashboard
+  find /var/lib/openstack-dashboard/static -type f -exec chmod 0644 "{}" + -o -type d -exec chmod 0755 "{}" +
+
+  chmod 600 /var/lib/openstack-dashboard/secret_key
+
+  # apache 2.4
+  if [ -e /usr/share/apache2/apache2-maintscript-helper ] ; then
+      . /usr/share/apache2/apache2-maintscript-helper
+  fi
+  apache2_invoke enconf $CONF || exit $?
+
+fi
+
+#DEBHELPER#

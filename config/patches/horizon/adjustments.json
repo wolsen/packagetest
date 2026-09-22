@@ -7,6 +7,27 @@
       "replacement": "ubuntu_settings.patch",
       "replacement_sha256": "24e8a06d85f6d83ed8bc8c1ceab83ad1f07bdc8492e0d38d4fc27d0a20be74e2",
       "reason": "Refresh final local-settings context while retaining every Ubuntu default and all test patches."
+    },
+    {
+      "name": "control",
+      "sha256": "1241c204ae9d8f8e38081070aa5e2e8ce5f2e0cb45e3da77b2e52c33e0cb08ce",
+      "replacement": "control",
+      "replacement_sha256": "40fc53c8fc138023d5fa35088888395e0dab7e894d2879c780d0ba423a5da417",
+      "reason": "Declare the Python interpreter used by the installed dashboard management script."
+    },
+    {
+      "name": "openstack-dashboard.postinst",
+      "sha256": "d279d84025ebc8c25a9533aab18e7cbde8282f0352f119e36ef90aef50b0bec0",
+      "replacement": "openstack-dashboard.postinst",
+      "replacement_sha256": "bd8df787d1394dcb3c808dc93cf52cfce9bb0ddbf141262746d4a535aa13cf27",
+      "reason": "Run both historical conffile moves in postinst as required by dpkg-maintscript-helper."
+    },
+    {
+      "name": "rules",
+      "sha256": "0c53fb901d35c71bbb59d64f51ffc21da4197831dcd5ca6d934c9de2a1dc2e40",
+      "replacement": "rules",
+      "replacement_sha256": "d45f2d2252f2f6d338efdc19a134e9543ad7ffa894cc6c0511bb66a5998c8454",
+      "reason": "Exclude ESLint development configuration and Bootswatch demonstration pages with remote trackers from runtime packages."
     }
   ]
 }

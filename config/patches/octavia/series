@@ -1,0 +1,6 @@
+install-missing-db-files.patch
+install-missing-files.patch
+disable-sphinxcontrib.rsvgconverter.patch
+cryptography-compat.patch
+fix-simplejson-compat.patch
+import-kazoo-utils-for-tests.patch

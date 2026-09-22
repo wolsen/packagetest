@@ -119,7 +119,9 @@ Depends: ${misc:Depends},
     ])
     assert module.main() == 1
     report = json.loads((tmp_path / "report/result.json").read_text())
-    assert [attempt["result"] for attempt in report["attempts"]] == ["DECISION_REJECTED"] * 3
+    assert [attempt["result"] for attempt in report["attempts"]] == [
+        "DECISION_REJECTED", "DUPLICATE_DECISION"
+    ]
     assert json.loads((tmp_path / "report/attempt-1/decision.json").read_text())["package"] == "python3-oslo.config"
 
 
