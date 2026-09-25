@@ -14,6 +14,28 @@ def load_script():
     return module
 
 
+def test_source_context_exposes_failed_patch_target_and_moved_path(tmp_path):
+    module = load_script()
+    (tmp_path / "debian/patches").mkdir(parents=True)
+    (tmp_path / "debian/control").write_text("Source: sample\n")
+    (tmp_path / "debian/rules").write_text(
+        "oslo-config-generator --config-file=aodh/cmd/aodh-config-generator.conf\n")
+    (tmp_path / "debian/patches/series").write_text("feature.patch\n")
+    (tmp_path / "debian/patches/feature.patch").write_text(
+        "--- a/sample/module.py\n+++ b/sample/module.py\n@@ -1 +1 @@\n-old\n+new\n")
+    (tmp_path / "sample").mkdir()
+    (tmp_path / "sample/module.py").write_text("final upstream implementation\n")
+    (tmp_path / "etc/aodh").mkdir(parents=True)
+    (tmp_path / "etc/aodh/aodh-config-generator.conf").write_text("[DEFAULT]\n")
+    evidence = ("feature.patch subprocess returned exit status 1; "
+                "aodh/cmd/aodh-config-generator.conf was not found")
+    context = module.source_context(tmp_path, evidence)
+    assert "current upstream sample/module.py" in context
+    assert "final upstream implementation" in context
+    assert "upstream candidates for missing aodh/cmd/aodh-config-generator.conf" in context
+    assert "etc/aodh/aodh-config-generator.conf" in context
+
+
 def test_successful_attempt_promotes_rebuilt_and_retested_candidate(tmp_path, monkeypatch):
     module = load_script()
     outputs = tmp_path / "outputs"
@@ -43,7 +65,7 @@ Depends:
     inputs = tmp_path / "inputs"
     inputs.mkdir()
 
-    response = '{"action":"add_dependency","package":"python3-futurist","argument":"","evidence":"missing futurist"}'
+    response = '{"action":"add_dependency","subject":"python3-futurist","replacement":"","evidence":"missing futurist"}'
     monkeypatch.setattr(module, "llama_generate", lambda *args, **kwargs: (response, {"returncode": 0}))
 
     def build(args, patch, destination, log):
@@ -108,7 +130,7 @@ Depends: ${misc:Depends},
     catalog.write_text('{"packages":[]}\n')
     inputs = tmp_path / "inputs"
     inputs.mkdir()
-    response = '{"action":"add_dependency","package":"python3-oslo.config","argument":"","evidence":"wrong"}'
+    response = '{"action":"add_dependency","subject":"python3-oslo.config","replacement":"","evidence":"wrong"}'
     monkeypatch.setattr(module, "llama_generate", lambda *args, **kwargs: (response, {"returncode": 0}))
     monkeypatch.setattr(sys, "argv", [
         "remediate-package.py", "--source", "sample", "--catalog", str(catalog),
@@ -122,7 +144,7 @@ Depends: ${misc:Depends},
     assert [attempt["result"] for attempt in report["attempts"]] == [
         "DECISION_REJECTED", "DUPLICATE_DECISION"
     ]
-    assert json.loads((tmp_path / "report/attempt-1/decision.json").read_text())["package"] == "python3-oslo.config"
+    assert json.loads((tmp_path / "report/attempt-1/decision.json").read_text())["subject"] == "python3-oslo.config"
 
 
 def test_later_attempts_keep_every_valid_repair(tmp_path, monkeypatch):
@@ -153,9 +175,9 @@ Depends:
     inputs = tmp_path / "inputs"
     inputs.mkdir()
     responses = iter([
-        '{"action":"add_dependency","package":"python3-futurist","argument":"","evidence":"missing futurist"}',
-        '{"action":"add_dependency","package":"python3-ncclient","argument":"","evidence":"missing ncclient"}',
-        '{"action":"add_dependency","package":"python3-gabbi","argument":"","evidence":"missing gabbi"}',
+        '{"action":"add_dependency","subject":"python3-futurist","replacement":"","evidence":"missing futurist"}',
+        '{"action":"add_dependency","subject":"python3-ncclient","replacement":"","evidence":"missing ncclient"}',
+        '{"action":"add_dependency","subject":"python3-gabbi","replacement":"","evidence":"missing gabbi"}',
     ])
     monkeypatch.setattr(module, "llama_generate",
                         lambda *args, **kwargs: (next(responses), {"returncode": 0}))

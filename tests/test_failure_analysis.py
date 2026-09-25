@@ -16,6 +16,7 @@ from packagetest.failure_analysis import (
     validate_repair_decision,
     validate_patch,
 )
+from packagetest.remediation_evidence import extract_test_failure_evidence
 
 
 def test_selects_direct_failures_and_omits_blocked_dependents():
@@ -70,22 +71,22 @@ Exiting...
 
 
 def test_parses_noisy_structured_repair_decision():
-    output = 'banner\n> prompt\n{"action":"add_dependency","package":"python3-futurist","argument":"","evidence":"missing futurist"}\nExiting...\n'
-    assert parse_repair_decision(output)["package"] == "python3-futurist"
+    output = 'banner\n> prompt\n{"action":"add_dependency","subject":"python3-futurist","replacement":"","evidence":"missing futurist"}\nExiting...\n'
+    assert parse_repair_decision(output)["subject"] == "python3-futurist"
 
 
 def test_repair_decision_must_match_failure_evidence():
     missing = "ModuleNotFoundError: No module named 'ncclient'"
-    good_dependency = {"action": "add_dependency", "package": "python3-ncclient",
-                       "argument": "", "evidence": missing}
-    bad_dependency = {**good_dependency, "package": "python3-oslo.config"}
+    good_dependency = {"action": "add_dependency", "subject": "python3-ncclient",
+                       "replacement": "", "evidence": missing}
+    bad_dependency = {**good_dependency, "subject": "python3-oslo.config"}
     assert validate_repair_decision(good_dependency, missing)["result"] == "ACCEPTED"
     assert validate_repair_decision(bad_dependency, missing)["result"] == "REJECTED"
     rejected = r"tool: error: unrecognized arguments: --format yaml\nmake: failed"
-    good_argument = {"action": "remove_rule_argument", "package": "",
-                     "argument": "--format yaml", "evidence": rejected}
+    good_argument = {"action": "remove_rule_argument", "subject": "--format yaml",
+                     "replacement": "", "evidence": rejected}
     assert validate_repair_decision(good_argument, rejected)["result"] == "ACCEPTED"
-    assert validate_repair_decision({**good_argument, "argument": "--namespace"}, rejected)["result"] == "REJECTED"
+    assert validate_repair_decision({**good_argument, "subject": "--namespace"}, rejected)["result"] == "REJECTED"
 
 
 def test_renders_dependency_and_rule_argument_repairs(tmp_path):
@@ -103,17 +104,121 @@ Depends:
     (tmp_path / "debian/control").write_text(control)
     (tmp_path / "debian/rules").write_text("cmd \\\n\t--output file \\\n\t--format yaml \\\n\t--namespace sample\n")
     dependency = render_source_repair({
-        "action": "add_dependency", "package": "python3-futurist", "argument": "", "evidence": "missing"
+        "action": "add_dependency", "subject": "python3-futurist", "replacement": "", "evidence": "missing"
     }, tmp_path)
     assert dependency.count("+ python3-futurist,") == 2
     assert dependency.index("+ python3-futurist,") < dependency.index(" ${python3:Depends},")
     assert validate_source_patch(dependency, tmp_path)["result"] == "APPLIES"
     argument = render_source_repair({
-        "action": "remove_rule_argument", "package": "", "argument": "--format yaml", "evidence": "rejected"
+        "action": "remove_rule_argument", "subject": "--format yaml", "replacement": "", "evidence": "rejected"
     }, tmp_path)
     assert "--- a/debian/rules" in argument
     assert "\n-\t--format yaml" in argument
     assert validate_source_patch(argument, tmp_path)["result"] == "APPLIES"
+
+
+def test_renders_failed_quilt_patch_as_reviewed_drop_candidate(tmp_path):
+    (tmp_path / "debian/patches").mkdir(parents=True)
+    (tmp_path / "debian/patches/series").write_text("embedded-xstatic.patch\nkeep.patch -p1\n")
+    evidence = ("embedded-xstatic.patch subprocess returned exit status 1; "
+                "Hunk #1 FAILED at 8")
+    decision = {
+        "action": "drop_quilt_patch", "subject": "embedded-xstatic.patch",
+        "replacement": "", "evidence": evidence,
+    }
+    assert validate_repair_decision(decision, evidence)["result"] == "ACCEPTED"
+    patch = render_source_repair(decision, tmp_path)
+    assert "+# Superseded upstream after snapshot rebase: embedded-xstatic.patch" in patch
+    assert validate_source_patch(patch, tmp_path)["result"] == "APPLIES"
+
+
+def test_mechanically_refreshes_quilt_patch_with_changed_context(tmp_path):
+    (tmp_path / "debian/patches").mkdir(parents=True)
+    (tmp_path / "debian/patches/series").write_text("feature.patch\n")
+    (tmp_path / "debian/patches/feature.patch").write_text("""Description: retain feature
+diff --git a/sample.txt b/sample.txt
+--- a/sample.txt
++++ b/sample.txt
+@@ -1,4 +1,4 @@
+ heading
+ keep
+-old
++new
+ tail
+""")
+    (tmp_path / "sample.txt").write_text("changed heading\nkeep\nold\ntail\n")
+    evidence = "feature.patch subprocess returned exit status 1; Hunk #1 FAILED"
+    decision = {
+        "action": "refresh_quilt_patch", "subject": "feature.patch",
+        "replacement": "", "evidence": evidence,
+    }
+    assert validate_repair_decision(decision, evidence)["result"] == "ACCEPTED"
+    patch = render_source_repair(decision, tmp_path)
+    assert "diff --git a/debian/patches/feature.patch" in patch
+    assert " changed heading" in patch
+    assert validate_source_patch(patch, tmp_path)["result"] == "APPLIES"
+
+
+def test_quilt_refresh_keeps_needed_section_and_omits_upstream_section(tmp_path):
+    (tmp_path / "debian/patches").mkdir(parents=True)
+    (tmp_path / "debian/patches/series").write_text("mixed.patch\n")
+    (tmp_path / "debian/patches/mixed.patch").write_text("""Description: mixed upstream status
+diff --git a/needed.txt b/needed.txt
+--- a/needed.txt
++++ b/needed.txt
+@@ -1 +1 @@
+-old
++new
+diff --git a/upstream.txt b/upstream.txt
+--- a/upstream.txt
++++ b/upstream.txt
+@@ -1 +1 @@
+-removed upstream
++replacement upstream
+""")
+    (tmp_path / "needed.txt").write_text("old\n")
+    (tmp_path / "upstream.txt").write_text("replacement upstream\n")
+    decision = {
+        "action": "refresh_quilt_patch", "subject": "mixed.patch",
+        "replacement": "", "evidence": "mixed.patch Hunk #1 FAILED",
+    }
+    patch = render_source_repair(decision, tmp_path)
+    assert validate_source_patch(patch, tmp_path, apply=True)["result"] == "APPLIED"
+    refreshed = (tmp_path / "debian/patches/mixed.patch").read_text()
+    assert "diff --git a/needed.txt b/needed.txt" in refreshed
+    assert "diff --git a/upstream.txt b/upstream.txt" not in refreshed
+
+
+def test_replaces_missing_upstream_path_only_when_candidate_exists(tmp_path):
+    (tmp_path / "debian").mkdir()
+    (tmp_path / "debian/rules").write_text(
+        "oslo-config-generator --config-file=aodh/cmd/aodh-config-generator.conf\n")
+    (tmp_path / "etc/aodh").mkdir(parents=True)
+    (tmp_path / "etc/aodh/aodh-config-generator.conf").write_text("[DEFAULT]\n")
+    evidence = ("ConfigFilesNotFoundError: Failed to find some config files: "
+                "aodh/cmd/aodh-config-generator.conf")
+    decision = {
+        "action": "replace_packaging_path", "subject": "aodh/cmd/aodh-config-generator.conf",
+        "replacement": "etc/aodh/aodh-config-generator.conf", "evidence": evidence,
+    }
+    assert validate_repair_decision(decision, evidence)["result"] == "ACCEPTED"
+    patch = render_source_repair(decision, tmp_path)
+    assert "+oslo-config-generator --config-file=etc/aodh/aodh-config-generator.conf" in patch
+    assert validate_source_patch(patch, tmp_path)["result"] == "APPLIES"
+
+
+def test_test_evidence_preserves_import_discovery_runtime_error():
+    log = """Failures during discovery
+Failed to import test module: nova.tests.unit.cmd.test_compute
+Traceback (most recent call last):
+  File \"nova/cmd/compute.py\", line 19, in <module>
+    monkey_patch.patch(backend='threading')
+RuntimeError: eventlet library imported early preventing native threading
+Ran 0 tests in 6.456s
+"""
+    evidence = extract_test_failure_evidence(log)
+    assert "Failed to import test module: nova.tests.unit.cmd.test_compute" in evidence
+    assert "RuntimeError: eventlet library imported early" in evidence
 
 
 def test_patch_validation_uses_disposable_copy_and_restricts_paths(tmp_path):

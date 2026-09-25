@@ -91,7 +91,7 @@ jobs:
           echo "$MODEL_SHA256  $AI_CACHE/model.gguf" | sha256sum --check
           llama_cli="$(find "$AI_CACHE/runtime" -type f -name llama-cli -print -quit)"
           test -x "$llama_cli"
-          mkdir -p "$RUNNER_TEMP/contract/debian"
+          mkdir -p "$RUNNER_TEMP/contract/debian/patches" "$RUNNER_TEMP/contract/etc/aodh"
           cat > "$RUNNER_TEMP/contract/debian/control" <<'EOF'
           Source: sample
           Build-Depends: debhelper-compat (= 13),
@@ -114,8 +114,17 @@ jobs:
               "\t--output-file debian/sample.yaml " + continuation,
               "\t--format yaml " + continuation,
               "\t--namespace sample",
+              "\toslo-config-generator --config-file=aodh/cmd/aodh-config-generator.conf",
           ]
           Path(os.environ["RUNNER_TEMP"], "contract/debian/rules").write_text("\n".join(lines) + "\n")
+          Path(os.environ["RUNNER_TEMP"], "contract/debian/patches/series").write_text(
+              "context-only.patch\nembedded-xstatic.patch\n")
+          Path(os.environ["RUNNER_TEMP"], "contract/debian/patches/context-only.patch").write_text(
+              "--- a/sample.txt\n+++ b/sample.txt\n@@ -1,4 +1,4 @@\n heading\n keep\n-old\n+new\n tail\n")
+          Path(os.environ["RUNNER_TEMP"], "contract/sample.txt").write_text(
+              "changed heading\nkeep\nold\ntail\n")
+          Path(os.environ["RUNNER_TEMP"], "contract/etc/aodh/aodh-config-generator.conf").write_text(
+              "[DEFAULT]\n")
           PY
           PYTHONPATH=src python3 scripts/model-contract-test.py \
             --tree "$RUNNER_TEMP/contract" --llama-cli "$llama_cli" \

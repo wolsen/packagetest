@@ -65,11 +65,14 @@ def extract_test_failure_evidence(text: str, *, limit: int = 12_000) -> str:
     lines = text.splitlines()
     selected: list[str] = []
     for index, line in enumerate(lines):
-        if line.startswith(("FAIL: ", "ERROR: ")):
+        if line.startswith(("FAIL: ", "ERROR: ", "Failed to import test module:")):
             start = max(0, index - 1)
-            end = min(len(lines), index + 35)
+            end = min(len(lines), index + 60)
             selected.extend(lines[start:end])
-        elif re.match(r"^(Ran \d+ tests|FAILED \(|ERROR: InvocationError|ModuleNotFoundError:|AttributeError:)", line):
+        elif re.match(
+                r"^(Ran \d+ tests|FAILED \(|ERROR: InvocationError|(?:ModuleNotFoundError|ImportError|"
+                r"AttributeError|NameError|RuntimeError|ValueError|AssertionError|"
+                r"[A-Za-z0-9_.]+Error):)", line):
             selected.append(line)
     # Preserve order while collapsing repeated traceback lines from overlapping windows.
     unique = list(dict.fromkeys(selected))

@@ -31,23 +31,50 @@ def main() -> int:
         {
             "name": "missing-dependency",
             "evidence": "ModuleNotFoundError: No module named 'futurist'",
-            "expected": {"action": "add_dependency", "package": "python3-futurist", "argument": ""},
+            "expected": {"action": "add_dependency", "subject": "python3-futurist", "replacement": ""},
         },
         {
             "name": "rejected-rule-argument",
             "evidence": "oslopolicy-sample-generator: error: unrecognized arguments: --format yaml",
-            "expected": {"action": "remove_rule_argument", "package": "", "argument": "--format yaml"},
+            "expected": {"action": "remove_rule_argument", "subject": "--format yaml", "replacement": ""},
+        },
+        {
+            "name": "context-drifted-quilt-patch",
+            "evidence": ("context-only.patch subprocess returned exit status 1; Hunk #1 FAILED. "
+                         "The old transformation remains applicable and only surrounding context changed."),
+            "expected": {"action": "refresh_quilt_patch", "subject": "context-only.patch", "replacement": ""},
+        },
+        {
+            "name": "superseded-quilt-patch",
+            "evidence": ("embedded-xstatic.patch subprocess returned exit status 1; Hunk #1 FAILED. "
+                         "The supplied current upstream target implements the patch's intended behavior."),
+            "expected": {"action": "drop_quilt_patch", "subject": "embedded-xstatic.patch", "replacement": ""},
+        },
+        {
+            "name": "moved-upstream-config",
+            "evidence": ("ConfigFilesNotFoundError: Failed to find some config files: "
+                         "aodh/cmd/aodh-config-generator.conf. Snapshot candidate: "
+                         "etc/aodh/aodh-config-generator.conf"),
+            "expected": {"action": "replace_packaging_path",
+                         "subject": "aodh/cmd/aodh-config-generator.conf",
+                         "replacement": "etc/aodh/aodh-config-generator.conf"},
         },
     ]
     results = []
     for number, case in enumerate(cases, 1):
         case_dir = args.output / case["name"]
         case_dir.mkdir()
-        prompt = f"""Return only one JSON object with exactly these string keys: action, package, argument, evidence.
-Use add_dependency only for an exact ModuleNotFoundError and set package to the corresponding Debian python3-* package.
-Use remove_rule_argument for an exact 'error: unrecognized arguments:' failure and set argument to the rejected
+        prompt = f"""Return only one JSON object with exactly these string keys: action, subject, replacement, evidence.
+Use add_dependency only for an exact ModuleNotFoundError and set subject to the corresponding Debian python3-* package.
+Use remove_rule_argument for an exact 'error: unrecognized arguments:' failure and set subject to the rejected
 option exactly as it appears in debian/rules. This rule has priority over any command usage text.
-Use no_fix if neither action is justified. Use an empty string for the field not used by the selected action.
+Use refresh_quilt_patch when a named patch's old transformation remains applicable and only its context changed.
+Set subject to the patch filename and replacement to empty.
+Use drop_quilt_patch only when a named patch fails and the evidence says current upstream implements its purpose.
+Set subject to the patch filename and replacement to empty.
+Use replace_packaging_path when a packaging path is missing and an existing snapshot replacement is named.
+Set subject to the missing path and replacement to the existing path.
+Use no_fix if neither action is justified. Use an empty replacement when it is unused.
 A Debian package build failed with:
 {case['evidence']}
 Quote that exact failure in evidence."""
@@ -65,7 +92,7 @@ Quote that exact failure in evidence."""
                      if decision_validation["result"] == "ACCEPTED" and decision["action"] != "no_fix" else "")
             (case_dir / "proposal.patch").write_text(patch)
             patch_validation = validate_source_patch(patch, args.tree) if patch else {"result": "REJECTED"}
-            chosen = {key: decision[key] for key in ("action", "package", "argument")}
+            chosen = {key: decision[key] for key in ("action", "subject", "replacement")}
             passed = (completed.returncode == 0 and chosen == case["expected"] and
                       decision_validation["result"] == "ACCEPTED" and patch_validation["result"] == "APPLIES")
             result = {"name": case["name"], "returncode": completed.returncode, "decision": decision,
