@@ -1,6 +1,5 @@
 import io
 import json
-from pathlib import Path
 import tarfile
 
 import pytest
@@ -60,6 +59,47 @@ def test_debian_maintainer_is_preserved_when_deriving_ubuntu_package(tmp_path):
     assert 'Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>' in result
     ubuntu_maintainer(path)
     assert path.read_text() == result
+
+
+def test_existing_ubuntu_maintainer_is_byte_stable(tmp_path):
+    from packagetest.nightly_source import ubuntu_maintainer
+    path = tmp_path / 'control'
+    content = ('Source: sample\n'
+               'Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>\n\n'
+               'Package: sample\nDescription: test\n')
+    path.write_text(content)
+    ubuntu_maintainer(path)
+    assert path.read_text() == content
+
+
+def test_ubuntu_maintainer_normalization_precedes_checksum_guarded_adjustment(tmp_path):
+    import hashlib
+    from packagetest.nightly_source import packaging_adjustments, ubuntu_maintainer
+    tree = tmp_path / 'tree'
+    (tree / 'debian').mkdir(parents=True)
+    control = tree / 'debian/control'
+    original = ('Source: sample\n'
+                'Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>\n\n'
+                'Package: sample\nDescription: test\n')
+    control.write_text(original)
+    config = tmp_path / 'config/sample'
+    config.mkdir(parents=True)
+    replacement = config / 'control'
+    replacement.write_text(original.replace('Description: test', 'Description: reviewed'))
+    original_sha256 = hashlib.sha256(control.read_bytes()).hexdigest()
+    replacement_sha256 = hashlib.sha256(replacement.read_bytes()).hexdigest()
+    (config / 'adjustments.json').write_text(json.dumps({
+        'archive_dsc_sha256': 'a' * 64,
+        'replace_files': [{
+            'name': 'control', 'sha256': original_sha256, 'replacement': 'control',
+            'replacement_sha256': replacement_sha256,
+        }],
+    }))
+    ubuntu_maintainer(control)
+    actions = packaging_adjustments(
+        {'source': 'sample', 'archive_source': {'sha256': 'a' * 64}}, tree, config.parent)
+    assert actions[0]['action'] == 'replace-packaging-file'
+    assert control.read_text() == replacement.read_text()
 
 
 def test_patch_adaptation_requires_exact_source_and_patch_checksums(tmp_path):

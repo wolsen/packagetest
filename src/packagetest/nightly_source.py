@@ -72,7 +72,9 @@ def ubuntu_maintainer(control: Path) -> None:
     if not match:
         raise ValueError('Source control lacks Maintainer')
     original = match.group(1)
-    if '@ubuntu.com' in original:
+    # Ubuntu's canonical maintainer address is hosted on lists.ubuntu.com;
+    # individual Ubuntu maintainers commonly use ubuntu.com directly.
+    if re.search(r'@(?:[A-Za-z0-9-]+\.)*ubuntu\.com\b', original, re.I):
         return
     replacement = 'Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>'
     if not re.search(r'^XSBC-Original-Maintainer:', source, re.M):
