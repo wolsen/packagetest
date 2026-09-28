@@ -31,6 +31,11 @@ from packagetest.remediation_evidence import extract_test_failure_evidence, stru
 
 MODEL_NAME = "Qwen2.5-Coder-7B-Instruct-Q4_K_M"
 SUCCESSFUL_TESTS = {"PASS", "SUPERFICIAL", "SKIP", "NO_TESTS"}
+DEFAULT_MAX_MODEL_CALLS = 8
+DEFAULT_MAX_REBUILDS = 4
+DEFAULT_MAX_REPAIRS = 8
+DEFAULT_REMEDIATION_SECONDS = 45 * 60
+MAX_MODEL_RETRIES_PER_EVIDENCE = 2
 
 
 class ModelTimeoutError(TimeoutError):
@@ -227,6 +232,53 @@ def failure_focus(evidence: str, limit: int = 3_000) -> str:
     return evidence[max(0, center - 800):center + limit - 800]
 
 
+def failure_signature(evidence: str) -> str:
+    """Identify materially identical failures without volatile log details."""
+    modules = sorted(set(re.findall(
+        r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)", evidence)))
+    if modules:
+        value = "missing-modules\n" + "\n".join(modules)
+    else:
+        value = failure_focus(evidence)
+        value = re.sub(r"/home/runner/work/_temp/[^\s'\"]+", "/tmp/WORK", value)
+        value = re.sub(r"\b[0-9a-f]{12,64}\b", "HASH", value)
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def batch_missing_dependency_decisions(primary: dict, evidence: str) -> list[dict]:
+    """Add straightforward missing-module repairs to one validated model choice."""
+    if primary.get("action") != "add_dependency":
+        return [primary]
+    decisions = [primary]
+    subjects = {primary["subject"]}
+    modules = list(dict.fromkeys(re.findall(
+        r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)", evidence)))
+    for imported in modules:
+        root = imported.split(".")[0]
+        # OpenStack's oslo_* imports map to dotted Debian names and need model
+        # judgment. Lowercase direct and underscore-to-hyphen names are safe
+        # candidates whose existence will still be checked by the rebuild.
+        if root.startswith("oslo_") or not re.fullmatch(r"[a-z][a-z0-9_]*", root):
+            continue
+        subject = "python3-" + root.replace("_", "-")
+        if subject in subjects:
+            continue
+        decision = {
+            "action": "add_dependency", "subject": subject, "replacement": "",
+            "evidence": f"ModuleNotFoundError: No module named '{imported}'",
+        }
+        if validate_repair_decision(decision, evidence)["result"] == "ACCEPTED":
+            decisions.append(decision)
+            subjects.add(subject)
+    return decisions
+
+
+def decision_key(decision: dict) -> str:
+    """Identify the requested mutation independently of quoted evidence."""
+    return json.dumps({key: decision.get(key, "")
+                       for key in ("action", "subject", "replacement")}, sort_keys=True)
+
+
 def prompt(source: str, phase: str, evidence: str, context: str, feedback: str = "") -> str:
     retry = f"\nPREVIOUS ATTEMPT AND VALIDATION:\n{feedback[-2_000:]}\n" if feedback else ""
     value = f"""Classify one Debian packaging repair for OpenStack source {source} after a {phase} failure.
@@ -239,7 +291,8 @@ WSGI, eventlet, or configuration-layout change. Use the supplied patch, current 
 candidates to distinguish these cases. The rebuild and autopkgtest gates validate any proposed adaptation.
 
 Use action add_dependency when an exact ModuleNotFoundError proves a dependency is absent. Set subject to its
-Debian python3-* package and replacement to an empty string.
+Debian python3-* package and replacement to an empty string. The harness may batch other unambiguous missing
+modules from the same failure into the same rebuild.
 Use action remove_rule_argument when a packaging command rejects one exact option. Set subject to the rejected
 option exactly as it appears in debian/rules and replacement to an empty string.
 Use action refresh_quilt_patch when a named quilt patch failed only because its surrounding upstream context
@@ -306,25 +359,36 @@ def run_logged(command: list[str], log: Path, *, env: dict | None = None, timeou
     return completed.returncode
 
 
+def bounded_timeout(args, requested: int) -> int:
+    """Bound a phase by both its own timeout and the remediation deadline."""
+    deadline = getattr(args, "remediation_deadline", None)
+    if deadline is None:
+        return requested
+    return max(1, min(requested, int(deadline - time.monotonic())))
+
+
 def build_attempt(args, patch_path: Path, destination: Path, log: Path) -> int:
     command = ["python3", "scripts/nightly-build.py", "--source", args.source,
                "--catalog", str(args.catalog), "--inputs", str(args.inputs),
                "--output", str(destination), "--run-id", args.run_id,
                "--run-attempt", args.run_attempt, "--remediation-patch", str(patch_path)]
     wrapped = ["sg", "sbuild", "-c", shlex.join(command)]
-    return run_logged(wrapped, log, env={**os.environ, "PYTHONPATH": "src"}, timeout=args.build_timeout)
+    return run_logged(wrapped, log, env={**os.environ, "PYTHONPATH": "src"},
+                      timeout=bounded_timeout(args, args.build_timeout))
 
 
 def test_attempt(args, candidate: Path, destination: Path, log: Path) -> tuple[int, dict]:
     image_command = ["bash", "scripts/prepare-autopkgtest.sh", "resolute",
                      str(Path(os.environ["RUNNER_TEMP"]) / "autopkgtest-image")]
-    image = subprocess.check_output(image_command, text=True, timeout=1800).strip().splitlines()[-1]
+    image = subprocess.check_output(
+        image_command, text=True, timeout=bounded_timeout(args, 1800)).strip().splitlines()[-1]
     result_dir = destination / "test-results/result"
     command = ["python3", "scripts/nightly-autopkgtest.py", "--catalog", str(args.catalog),
                "--source", args.source, "--inputs", str(args.inputs),
                "--candidate-input", str(candidate), "--output", str(result_dir),
                "--run-id", args.run_id, "--run-attempt", args.run_attempt, "--image", image]
-    rc = run_logged(command, log, env={**os.environ, "PYTHONPATH": "src"}, timeout=args.test_timeout)
+    rc = run_logged(command, log, env={**os.environ, "PYTHONPATH": "src"},
+                    timeout=bounded_timeout(args, args.test_timeout))
     report = json.loads((result_dir / "result.json").read_text())
     return rc, report
 
@@ -357,6 +421,10 @@ def main() -> int:
     parser.add_argument("--model-timeout", type=int, default=420)
     parser.add_argument("--build-timeout", type=int, default=6000)
     parser.add_argument("--test-timeout", type=int, default=10800)
+    parser.add_argument("--max-model-calls", type=int, default=DEFAULT_MAX_MODEL_CALLS)
+    parser.add_argument("--max-rebuilds", type=int, default=DEFAULT_MAX_REBUILDS)
+    parser.add_argument("--max-repairs", type=int, default=DEFAULT_MAX_REPAIRS)
+    parser.add_argument("--remediation-seconds", type=int, default=DEFAULT_REMEDIATION_SECONDS)
     args = parser.parse_args()
     args.report.mkdir(parents=True, exist_ok=True)
     args.work.mkdir(parents=True, exist_ok=True)
@@ -366,36 +434,47 @@ def main() -> int:
     test_path = args.tests / "result/result.json"
     test_result = json.loads(test_path.read_text()) if test_path.is_file() else {"result": "BLOCKED"}
     phase = "build" if build_result.get("result") != "SUCCEEDED" else "autopkgtest"
+    initial_phase = phase
     if phase == "autopkgtest" and test_result.get("result") in SUCCESSFUL_TESTS:
         return 0
     evidence = failure_evidence(args.outputs, args.tests)
     (args.report / "failure-evidence.txt").write_text(evidence + "\n")
     tree = prepared_tree(args.outputs)
-    context = source_context(tree, evidence)
     copy_initial_evidence(args.outputs, args.tests, args.report)
     attempts, feedback, selected = [], "", None
     accepted_decisions = []
     prior_decisions = set()
-    for number in range(1, 4):
+    evidence_retries: dict[str, int] = {}
+    model_calls = rebuilds = 0
+    stop_reason = "remediation budget exhausted"
+    deadline = time.monotonic() + args.remediation_seconds
+    args.remediation_deadline = deadline
+    while (model_calls < args.max_model_calls and rebuilds < args.max_rebuilds
+           and len(prior_decisions) < args.max_repairs and time.monotonic() < deadline):
+        number = model_calls + 1
+        signature = failure_signature(evidence)
+        context = source_context(tree, evidence)
         attempt_dir = args.report / f"attempt-{number}"
         attempt_dir.mkdir()
         text = prompt(args.source, phase, evidence, context, feedback)
         (attempt_dir / "prompt.txt").write_text(text)
         record = {"number": number, "result": "MODEL_ERROR"}
+        model_calls += 1
         try:
-            output, inference = llama_generate(args.llama_cli, args.model, text, number, args.model_timeout)
+            output, inference = llama_generate(
+                args.llama_cli, args.model, text, number, bounded_timeout(args, args.model_timeout))
             (attempt_dir / "model-output.txt").write_text(output)
             raw_decision = parse_repair_decision(output)
             decision = normalize_repair_decision(raw_decision, tree, evidence)
             if decision != raw_decision:
                 write_json(attempt_dir / "raw-decision.json", raw_decision)
             write_json(attempt_dir / "decision.json", decision)
-            decision_key = json.dumps(decision, sort_keys=True)
-            if decision_key in prior_decisions:
+            key = decision_key(decision)
+            if key in prior_decisions:
                 record.update(decision=decision, inference=inference, result="DUPLICATE_DECISION")
                 attempts.append(record)
+                stop_reason = "model repeated an existing decision without progress"
                 break
-            prior_decisions.add(decision_key)
             decision_validation = validate_repair_decision(decision, evidence)
             write_json(attempt_dir / "decision-validation.json", decision_validation)
             if decision_validation["result"] != "ACCEPTED":
@@ -403,19 +482,48 @@ def main() -> int:
                               decision_validation=decision_validation, result="DECISION_REJECTED")
                 feedback = json.dumps(record, indent=2)
                 attempts.append(record)
+                evidence_retries[signature] = evidence_retries.get(signature, 0) + 1
+                if evidence_retries[signature] >= MAX_MODEL_RETRIES_PER_EVIDENCE:
+                    stop_reason = "model could not produce a valid decision for unchanged evidence"
+                    break
                 continue
             if decision["action"] == "no_fix":
                 record.update(decision=decision, inference=inference,
                               decision_validation=decision_validation, result="NO_FIX")
                 attempts.append(record)
+                stop_reason = "model reported no supported repair"
                 break
+            batch = batch_missing_dependency_decisions(decision, evidence)
+            new_decisions = []
+            for candidate_decision in batch:
+                candidate_key = decision_key(candidate_decision)
+                if candidate_key not in prior_decisions:
+                    new_decisions.append(candidate_decision)
+            if not new_decisions:
+                record.update(decision=decision, inference=inference, result="DUPLICATE_DECISION")
+                attempts.append(record)
+                stop_reason = "repair batch contained no new validated decisions"
+                break
+            if len(prior_decisions) + len(new_decisions) > args.max_repairs:
+                record.update(decision=decision, inference=inference, result="REPAIR_BUDGET_EXHAUSTED")
+                attempts.append(record)
+                stop_reason = "validated repair budget exhausted"
+                break
+            for candidate_decision in new_decisions:
+                prior_decisions.add(decision_key(candidate_decision))
+            if len(new_decisions) > 1:
+                write_json(attempt_dir / "batched-decisions.json", new_decisions)
+                record["batched_decisions"] = new_decisions
             try:
-                patch = ("" if decision["action"] == "no_fix" else
-                         render_cumulative_repair([*accepted_decisions, decision], tree))
+                patch = render_cumulative_repair([*accepted_decisions, *new_decisions], tree)
             except ValueError as exc:
                 record.update(decision=decision, inference=inference, result="RENDER_REJECTED", error=str(exc))
                 feedback = json.dumps(record, indent=2)
                 attempts.append(record)
+                evidence_retries[signature] = evidence_retries.get(signature, 0) + 1
+                if evidence_retries[signature] >= MAX_MODEL_RETRIES_PER_EVIDENCE:
+                    stop_reason = "validated decisions could not be rendered for unchanged evidence"
+                    break
                 continue
             patch_path = attempt_dir / "proposal.patch"
             patch_path.write_text(patch)
@@ -428,7 +536,12 @@ def main() -> int:
             if validation["result"] != "APPLIES":
                 feedback = json.dumps(record, indent=2)
                 attempts.append(record)
+                evidence_retries[signature] = evidence_retries.get(signature, 0) + 1
+                if evidence_retries[signature] >= MAX_MODEL_RETRIES_PER_EVIDENCE:
+                    stop_reason = "rendered patches failed validation for unchanged evidence"
+                    break
                 continue
+            rebuilds += 1
             candidate = args.work / f"attempt-{number}-build"
             build_log = attempt_dir / "build.log"
             build_rc = build_attempt(args, patch_path, candidate, build_log)
@@ -436,10 +549,15 @@ def main() -> int:
             record.update(build_returncode=build_rc, build_result=candidate_result.get("result"))
             if build_rc or candidate_result.get("result") != "SUCCEEDED":
                 record["result"] = "BUILD_FAILED"
-                accepted_decisions.append(decision)
-                evidence = failure_evidence(candidate, Path("/nonexistent")) + "\n" + tail(build_log)
+                accepted_decisions.extend(new_decisions)
+                next_evidence = failure_evidence(candidate, Path("/nonexistent")) + "\n" + tail(build_log)
                 feedback = json.dumps(record, indent=2) + "\n" + tail(build_log)
                 attempts.append(record)
+                if failure_signature(next_evidence) == signature:
+                    stop_reason = "rebuild reproduced the same failure signature"
+                    break
+                evidence = next_evidence
+                phase = "build"
                 continue
             candidate_tests = args.work / f"attempt-{number}-test"
             test_log = attempt_dir / "autopkgtest.log"
@@ -447,13 +565,19 @@ def main() -> int:
             record.update(test_returncode=test_rc, test_result=candidate_test.get("result"))
             if candidate_test.get("result") not in SUCCESSFUL_TESTS:
                 record["result"] = "AUTOPKGTEST_FAILED"
-                accepted_decisions.append(decision)
-                evidence = failure_evidence(candidate, candidate_tests / "test-results") + "\n" + tail(test_log)
+                accepted_decisions.extend(new_decisions)
+                next_evidence = failure_evidence(candidate, candidate_tests / "test-results") + "\n" + tail(test_log)
                 feedback = json.dumps(record, indent=2) + "\n" + tail(test_log)
                 attempts.append(record)
+                if failure_signature(next_evidence) == signature:
+                    stop_reason = "autopkgtest reproduced the same failure signature"
+                    break
+                evidence = next_evidence
+                phase = "autopkgtest"
                 continue
             record["result"] = "REPAIRED"
             selected = number
+            stop_reason = "package rebuilt and passed autopkgtest"
             attempts.append(record)
             shutil.rmtree(args.outputs)
             shutil.move(str(candidate), args.outputs)
@@ -469,15 +593,37 @@ def main() -> int:
             write_json(attempt_dir / "inference.json", exc.metadata)
             record.update(result="MODEL_TIMEOUT", error=str(exc), inference=exc.metadata)
             attempts.append(record)
+            stop_reason = "local model inference timed out"
+            break
+        except subprocess.TimeoutExpired as exc:
+            record.update(result="REMEDIATION_TIMEOUT", error=str(exc))
+            attempts.append(record)
+            stop_reason = "remediation wall-clock budget exhausted"
             break
         except Exception as exc:
             record["error"] = str(exc)
             feedback = json.dumps(record, indent=2)
             attempts.append(record)
+            evidence_retries[signature] = evidence_retries.get(signature, 0) + 1
+            if evidence_retries[signature] >= MAX_MODEL_RETRIES_PER_EVIDENCE:
+                stop_reason = "model failed repeatedly for unchanged evidence"
+                break
+    if not selected and stop_reason == "remediation budget exhausted":
+        if model_calls >= args.max_model_calls:
+            stop_reason = "model-call budget exhausted"
+        elif rebuilds >= args.max_rebuilds:
+            stop_reason = "rebuild budget exhausted"
+        elif len(prior_decisions) >= args.max_repairs:
+            stop_reason = "validated repair budget exhausted"
+        elif time.monotonic() >= deadline:
+            stop_reason = "remediation wall-clock budget exhausted"
     report = {
-        "schema_version": 1, "source": args.source, "initial_phase": phase,
+        "schema_version": 1, "source": args.source, "initial_phase": initial_phase,
         "result": "REPAIRED" if selected else "UNRESOLVED", "selected_attempt": selected,
         "attempts": attempts, "model": {"name": MODEL_NAME, "sha256": args.model_sha256},
+        "progress": {"model_calls": model_calls, "rebuilds": rebuilds,
+                     "validated_repairs": len(prior_decisions),
+                     "stop_reason": stop_reason},
         "ci": {"run_id": args.run_id, "run_attempt": args.run_attempt,
                "checkout_sha": os.environ.get("GITHUB_SHA")},
         "finished_at": datetime.now(timezone.utc).isoformat(),
@@ -485,18 +631,22 @@ def main() -> int:
     write_json(args.report / "result.json", report)
     with (args.report / "summary.md").open("w") as stream:
         stream.write(f"## {args.source} local AI remediation: {report['result']}\n\n")
-        stream.write(f"Initial failed stage: `{phase}`. The focused evidence used by the model is included "
+        stream.write(f"Initial failed stage: `{initial_phase}`. The focused evidence used by the model is included "
                      "in the downloadable remediation artifact.\n\n")
         stream.write("| Attempt | Decision | Patch | Build | Autopkgtest | Result |\n"
                      "|---:|---|---|---|---|---|\n")
         for item in attempts:
-            stream.write(f"| {item['number']} | {item.get('decision', {}).get('action', '—')} | "
+            batched = len(item.get("batched_decisions", []))
+            decision_label = item.get("decision", {}).get("action", "—")
+            if batched > 1:
+                decision_label += f" (+{batched - 1} batched)"
+            stream.write(f"| {item['number']} | {decision_label} | "
                          f"{item.get('patch_validation', {}).get('result', '—')} | "
                          f"{item.get('build_result', '—')} | {item.get('test_result', '—')} | {item['result']} |\n")
         if selected:
             stream.write(f"\nAttempt {selected} was rebuilt and tested; its packages are the canonical downstream artifact.\n")
         else:
-            stream.write("\nNo attempt passed both the package build and autopkgtest gates.\n")
+            stream.write(f"\nStopped because: {stop_reason}.\n")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
             summary.write((args.report / "summary.md").read_text())

@@ -79,6 +79,38 @@ dpkg-buildpackage: error: debian/rules binary subprocess failed
     assert "irrelevant" not in focused
 
 
+def test_batches_straightforward_missing_imports_into_one_rebuild(tmp_path):
+    module = load_script()
+    evidence = """ModuleNotFoundError: No module named 'wsgi_intercept'
+ModuleNotFoundError: No module named 'gabbi'
+ModuleNotFoundError: No module named 'oslo_config'
+"""
+    primary = {
+        "action": "add_dependency", "subject": "python3-wsgi-intercept", "replacement": "",
+        "evidence": "ModuleNotFoundError: No module named 'wsgi_intercept'",
+    }
+    batched = module.batch_missing_dependency_decisions(primary, evidence)
+    assert [decision["subject"] for decision in batched] == [
+        "python3-wsgi-intercept", "python3-gabbi"]
+    assert all(module.validate_repair_decision(decision, evidence)["result"] == "ACCEPTED"
+               for decision in batched)
+
+
+def test_failure_signature_tracks_progress_between_missing_module_sets():
+    module = load_script()
+    first = """volatile path /home/runner/work/_temp/one
+ModuleNotFoundError: No module named 'gabbi'
+ModuleNotFoundError: No module named 'werkzeug'
+"""
+    reordered = """different surrounding log
+ModuleNotFoundError: No module named 'werkzeug'
+ModuleNotFoundError: No module named 'gabbi'
+"""
+    progressed = "ModuleNotFoundError: No module named 'werkzeug'\n"
+    assert module.failure_signature(first) == module.failure_signature(reordered)
+    assert module.failure_signature(first) != module.failure_signature(progressed)
+
+
 def test_llama_timeout_retains_partial_output_and_uses_small_budget(tmp_path, monkeypatch):
     module = load_script()
     executable = tmp_path / "llama-cli"
@@ -210,8 +242,10 @@ Depends: ${misc:Depends},
     assert module.main() == 1
     report = json.loads((tmp_path / "report/result.json").read_text())
     assert [attempt["result"] for attempt in report["attempts"]] == [
-        "DECISION_REJECTED", "DUPLICATE_DECISION"
+        "DECISION_REJECTED", "DECISION_REJECTED"
     ]
+    assert report["progress"]["stop_reason"] == (
+        "model could not produce a valid decision for unchanged evidence")
     assert json.loads((tmp_path / "report/attempt-1/decision.json").read_text())["subject"] == "python3-oslo.config"
 
 
@@ -246,6 +280,7 @@ Depends:
         '{"action":"add_dependency","subject":"python3-futurist","replacement":"","evidence":"missing futurist"}',
         '{"action":"add_dependency","subject":"python3-ncclient","replacement":"","evidence":"missing ncclient"}',
         '{"action":"add_dependency","subject":"python3-gabbi","replacement":"","evidence":"missing gabbi"}',
+        '{"action":"add_dependency","subject":"python3-debtcollector","replacement":"","evidence":"missing debtcollector"}',
     ])
     monkeypatch.setattr(module, "llama_generate",
                         lambda *args, **kwargs: (next(responses), {"returncode": 0}))
@@ -261,6 +296,10 @@ Depends:
         if len(builds) == 2:
             (destination / "result.json").write_text('{"result":"FAILED"}\n')
             log.write_text("ModuleNotFoundError: No module named 'gabbi'\n")
+            return 1
+        if len(builds) == 3:
+            (destination / "result.json").write_text('{"result":"FAILED"}\n')
+            log.write_text("ModuleNotFoundError: No module named 'debtcollector'\n")
             return 1
         (destination / "result.json").write_text('{"result":"SUCCEEDED"}\n')
         (destination / "fixed.deb").write_text("fixed")
@@ -292,7 +331,15 @@ Depends:
     assert "python3-futurist" in builds[2]
     assert "python3-ncclient" in builds[2]
     assert "python3-gabbi" in builds[2]
+    assert "python3-futurist" in builds[3]
+    assert "python3-ncclient" in builds[3]
+    assert "python3-gabbi" in builds[3]
+    assert "python3-debtcollector" in builds[3]
     report = json.loads((tmp_path / "report/result.json").read_text())
     assert [attempt["result"] for attempt in report["attempts"]] == [
-        "BUILD_FAILED", "BUILD_FAILED", "REPAIRED"]
-    assert report["selected_attempt"] == 3
+        "BUILD_FAILED", "BUILD_FAILED", "BUILD_FAILED", "REPAIRED"]
+    assert report["selected_attempt"] == 4
+    assert report["progress"] == {
+        "model_calls": 4, "rebuilds": 4, "validated_repairs": 4,
+        "stop_reason": "package rebuilt and passed autopkgtest",
+    }
