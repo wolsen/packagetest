@@ -133,6 +133,30 @@ def validate_repair_decision(decision: dict, evidence: str) -> dict:
     return {"result": "ACCEPTED", "error": ""}
 
 
+def normalize_repair_decision(decision: dict, tree: Path) -> dict:
+    """Correct an unambiguous old/new path reversal using the prepared tree."""
+    normalized = dict(decision)
+    if decision.get("action") != "replace_packaging_path":
+        return normalized
+    old = decision.get("subject", "").strip()
+    new = decision.get("replacement", "").strip()
+    rules_path = tree / "debian/rules"
+    if not old or not new or not rules_path.is_file():
+        return normalized
+    rules = rules_path.read_text(errors="replace")
+
+    def safe_regular_file(value: str) -> bool:
+        path = PurePosixPath(value)
+        return (not path.is_absolute() and ".." not in path.parts and bool(path.parts)
+                and (tree / path).is_file() and not (tree / path).is_symlink())
+
+    # The missing path is the one referenced by packaging but absent from the
+    # source tree. The replacement must be an existing regular source file.
+    if rules.count(new) == 1 and not (tree / new).exists() and safe_regular_file(old):
+        normalized["subject"], normalized["replacement"] = new, old
+    return normalized
+
+
 def _replace_file_patch(path: str, before: str, after: str) -> str:
     if before == after:
         raise ValueError(f"repair did not change {path}")

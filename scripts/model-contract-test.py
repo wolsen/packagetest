@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 
 from packagetest.failure_analysis import (
+    normalize_repair_decision,
     parse_repair_decision,
     render_source_repair,
     validate_source_patch,
@@ -85,7 +86,10 @@ Quote that exact failure in evidence."""
         (case_dir / "stdout.txt").write_text(completed.stdout)
         (case_dir / "stderr.txt").write_text(completed.stderr)
         try:
-            decision = parse_repair_decision(completed.stdout)
+            raw_decision = parse_repair_decision(completed.stdout)
+            decision = normalize_repair_decision(raw_decision, args.tree)
+            if decision != raw_decision:
+                (case_dir / "raw-decision.json").write_text(json.dumps(raw_decision, indent=2) + "\n")
             (case_dir / "decision.json").write_text(json.dumps(decision, indent=2) + "\n")
             decision_validation = validate_repair_decision(decision, case["evidence"])
             patch = (render_source_repair(decision, args.tree)

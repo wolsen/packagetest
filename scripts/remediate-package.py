@@ -19,6 +19,7 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from packagetest.failure_analysis import (
+    normalize_repair_decision,
     parse_repair_decision,
     render_source_repair,
     validate_repair_decision,
@@ -327,7 +328,10 @@ def main() -> int:
         try:
             output, inference = llama_generate(args.llama_cli, args.model, text, number, args.model_timeout)
             (attempt_dir / "model-output.txt").write_text(output)
-            decision = parse_repair_decision(output)
+            raw_decision = parse_repair_decision(output)
+            decision = normalize_repair_decision(raw_decision, tree)
+            if decision != raw_decision:
+                write_json(attempt_dir / "raw-decision.json", raw_decision)
             write_json(attempt_dir / "decision.json", decision)
             decision_key = json.dumps(decision, sort_keys=True)
             if decision_key in prior_decisions:

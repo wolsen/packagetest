@@ -6,6 +6,7 @@ import subprocess
 import tarfile
 
 from packagetest.failure_analysis import (
+    normalize_repair_decision,
     parse_repair_decision,
     parse_model_response,
     render_source_repair,
@@ -205,6 +206,39 @@ def test_replaces_missing_upstream_path_only_when_candidate_exists(tmp_path):
     patch = render_source_repair(decision, tmp_path)
     assert "+oslo-config-generator --config-file=etc/aodh/aodh-config-generator.conf" in patch
     assert validate_source_patch(patch, tmp_path)["result"] == "APPLIES"
+
+
+def test_normalizes_reversed_missing_and_existing_paths(tmp_path):
+    (tmp_path / "debian").mkdir()
+    (tmp_path / "debian/rules").write_text(
+        "oslo-config-generator --config-file=aodh/cmd/aodh-config-generator.conf\n")
+    (tmp_path / "etc/aodh").mkdir(parents=True)
+    (tmp_path / "etc/aodh/aodh-config-generator.conf").write_text("[DEFAULT]\n")
+    reversed_decision = {
+        "action": "replace_packaging_path",
+        "subject": "etc/aodh/aodh-config-generator.conf",
+        "replacement": "aodh/cmd/aodh-config-generator.conf",
+        "evidence": "aodh/cmd/aodh-config-generator.conf was not found",
+    }
+    assert normalize_repair_decision(reversed_decision, tmp_path) == {
+        **reversed_decision,
+        "subject": "aodh/cmd/aodh-config-generator.conf",
+        "replacement": "etc/aodh/aodh-config-generator.conf",
+    }
+
+
+def test_path_normalization_preserves_canonical_or_ambiguous_decisions(tmp_path):
+    (tmp_path / "debian").mkdir()
+    (tmp_path / "debian/rules").write_text("install old/path\n")
+    (tmp_path / "new").mkdir()
+    (tmp_path / "new/path").write_text("new\n")
+    canonical = {
+        "action": "replace_packaging_path", "subject": "old/path",
+        "replacement": "new/path", "evidence": "old/path missing",
+    }
+    assert normalize_repair_decision(canonical, tmp_path) == canonical
+    ambiguous = {**canonical, "subject": "unrelated", "replacement": "missing"}
+    assert normalize_repair_decision(ambiguous, tmp_path) == ambiguous
 
 
 def test_test_evidence_preserves_import_discovery_runtime_error():

@@ -120,6 +120,7 @@ jobs:
           Path(os.environ["RUNNER_TEMP"], "contract/debian/patches/series").write_text(
               "context-only.patch\nembedded-xstatic.patch\n")
           Path(os.environ["RUNNER_TEMP"], "contract/debian/patches/context-only.patch").write_text(
+              "diff --git a/sample.txt b/sample.txt\n"
               "--- a/sample.txt\n+++ b/sample.txt\n@@ -1,4 +1,4 @@\n heading\n keep\n-old\n+new\n tail\n")
           Path(os.environ["RUNNER_TEMP"], "contract/sample.txt").write_text(
               "changed heading\nkeep\nold\ntail\n")
