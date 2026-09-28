@@ -1,4 +1,5 @@
 name: OpenStack 2026.2 snapshot pipeline
+# A pushed commit containing [full-snapshot] selects the complete catalog.
 on:
   schedule:
     - cron: '0 9 * * *' # 02:00 America/Phoenix; active on the default branch.
