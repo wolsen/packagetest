@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 import sys
 
 
@@ -34,6 +35,73 @@ def test_source_context_exposes_failed_patch_target_and_moved_path(tmp_path):
     assert "final upstream implementation" in context
     assert "upstream candidates for missing aodh/cmd/aodh-config-generator.conf" in context
     assert "etc/aodh/aodh-config-generator.conf" in context
+
+
+def test_missing_import_context_contains_only_source_build_dependencies(tmp_path):
+    module = load_script()
+    (tmp_path / "debian").mkdir()
+    (tmp_path / "debian/control").write_text("""Source: watcher
+Build-Depends:
+ debhelper-compat (= 13),
+Build-Depends-Indep:
+ python3-stestr,
+
+Package: python3-watcher
+Depends:
+ python3-runtime-only,
+Description: binary stanza must not reach the model
+""")
+    evidence = """ModuleNotFoundError: No module named 'wsgi_intercept'
+ModuleNotFoundError: No module named 'gabbi'
+"""
+    context = module.source_context(tmp_path, evidence)
+    assert "Build-Depends-Indep:" in context
+    assert "python3-stestr" in context
+    assert "python3-wsgi-intercept" in context
+    assert "python3-gabbi" in context
+    assert "python3-runtime-only" not in context
+    assert "binary stanza" not in context
+
+
+def test_missing_import_focus_omits_unrelated_build_log(tmp_path):
+    module = load_script()
+    evidence = """thousands of irrelevant build lines
+Failed to import test module: watcher.tests.functional.test_basic
+traceback detail
+ModuleNotFoundError: No module named 'wsgi_intercept'
+more unrelated output
+dpkg-buildpackage: error: debian/rules binary subprocess failed
+"""
+    focused = module.failure_focus(evidence)
+    assert "Failed to import test module" in focused
+    assert "ModuleNotFoundError" in focused
+    assert "dpkg-buildpackage: error" in focused
+    assert "irrelevant" not in focused
+
+
+def test_llama_timeout_retains_partial_output_and_uses_small_budget(tmp_path, monkeypatch):
+    module = load_script()
+    executable = tmp_path / "llama-cli"
+    executable.write_text("fake")
+    model = tmp_path / "model.gguf"
+    model.write_text("fake")
+    captured = {}
+
+    def timeout(command, **kwargs):
+        captured["command"] = command
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"],
+                                        output='{"action":"add_', stderr="still running")
+
+    monkeypatch.setattr(module.subprocess, "run", timeout)
+    try:
+        module.llama_generate(executable, model, "prompt", 1, 7)
+    except module.ModelTimeoutError as exc:
+        assert exc.stdout == '{"action":"add_'
+        assert exc.stderr == "still running"
+        assert exc.metadata["timeout_seconds"] == 7
+    else:
+        raise AssertionError("expected inference timeout")
+    assert captured["command"][captured["command"].index("-n") + 1] == "128"
 
 
 def test_successful_attempt_promotes_rebuilt_and_retested_candidate(tmp_path, monkeypatch):

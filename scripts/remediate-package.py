@@ -33,6 +33,19 @@ MODEL_NAME = "Qwen2.5-Coder-7B-Instruct-Q4_K_M"
 SUCCESSFUL_TESTS = {"PASS", "SUPERFICIAL", "SKIP", "NO_TESTS"}
 
 
+class ModelTimeoutError(TimeoutError):
+    """Inference exceeded its deadline, with any partial output retained."""
+
+    def __init__(self, timeout: int, stdout: str, stderr: str, duration: float):
+        super().__init__(f"local model inference timed out after {timeout} seconds")
+        self.stdout = stdout
+        self.stderr = stderr
+        self.metadata = {
+            "duration_seconds": round(duration, 3), "timeout_seconds": timeout,
+            "stdout_tail": stdout[-4000:], "stderr_tail": stderr[-4000:],
+        }
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -80,7 +93,33 @@ def prepared_tree(outputs: Path) -> Path:
 def source_context(tree: Path, evidence: str, limit: int = 12_000) -> str:
     patch_names = set(re.findall(r"([A-Za-z0-9][A-Za-z0-9_.+~-]*\.patch)", evidence))
     if "ModuleNotFoundError" in evidence:
-        relative = ["debian/control", "debian/rules"]
+        control_path = tree / "debian/control"
+        if not control_path.is_file() or control_path.is_symlink():
+            return ""
+        source_paragraph = re.split(r"\n\s*\n", control_path.read_text(errors="replace"), maxsplit=1)[0]
+        lines = source_paragraph.splitlines(keepends=True)
+        fields = []
+        index = 0
+        while index < len(lines):
+            match = re.match(r"^(Build-Depends(?:-Indep)?):", lines[index])
+            if not match:
+                index += 1
+                continue
+            block = [lines[index]]
+            index += 1
+            while index < len(lines) and lines[index].startswith((" ", "\t")):
+                block.append(lines[index])
+                index += 1
+            fields.append("".join(block).rstrip())
+        modules = list(dict.fromkeys(re.findall(
+            r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)", evidence)))
+        candidates = ["python3-" + module.split(".")[0].replace("_", "-").lower()
+                      for module in modules]
+        value = "\n--- debian/control source build dependencies ---\n" + "\n".join(fields) + "\n"
+        if candidates:
+            value += "\n--- Debian package candidates inferred from missing imports ---\n"
+            value += "\n".join(dict.fromkeys(candidates)) + "\n"
+        return value[:limit]
     elif patch_names:
         relative = ["debian/patches/series", *(f"debian/patches/{name}" for name in sorted(patch_names)),
                     "debian/rules", "debian/control"]
@@ -168,6 +207,16 @@ def render_cumulative_repair(decisions: list[dict], tree: Path) -> str:
 def failure_focus(evidence: str, limit: int = 3_000) -> str:
     if evidence.startswith(("STRUCTURED LINTIAN FAILURE", "STRUCTURED TEST FAILURE")):
         return evidence[:limit]
+    if "ModuleNotFoundError" in evidence:
+        relevant = []
+        for line in evidence.splitlines():
+            if any(marker in line for marker in (
+                    "Failed to import test module:", "ModuleNotFoundError:",
+                    "make[", "dpkg-buildpackage: error:")):
+                if line not in relevant:
+                    relevant.append(line)
+        if relevant:
+            return "\n".join(relevant)[:limit]
     markers = ["ModuleNotFoundError", "ImportError", "RuntimeError", "NameError",
                "ConfigFilesNotFoundError", "Hunk #", "error: unrecognized arguments",
                "Failures during discovery", "subprocess returned exit status", "dpkg-buildpackage: error"]
@@ -225,13 +274,21 @@ RELEVANT PACKAGING CONTENT:
 
 def llama_generate(executable: Path, model: Path, text: str, attempt: int, timeout: int) -> tuple[str, dict]:
     started = time.monotonic()
-    command = [str(executable), "-m", str(model), "-p", text, "-n", "512", "-c", "8192",
+    command = [str(executable), "-m", str(model), "-p", text, "-n", "128", "-c", "8192",
                "--temp", "0", "--seed", str(attempt), "--threads", str(min(4, os.cpu_count() or 2)),
                "--no-display-prompt", "--single-turn", "--simple-io", "--no-show-timings"]
     env = dict(os.environ)
     runtime = str(executable.resolve().parent)
     env["LD_LIBRARY_PATH"] = runtime + (":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else "")
-    completed = subprocess.run(command, text=True, capture_output=True, timeout=timeout, env=env)
+    try:
+        completed = subprocess.run(command, text=True, capture_output=True, timeout=timeout, env=env)
+    except subprocess.TimeoutExpired as exc:
+        def as_text(value: str | bytes | None) -> str:
+            if value is None:
+                return ""
+            return value.decode(errors="replace") if isinstance(value, bytes) else value
+        raise ModelTimeoutError(
+            timeout, as_text(exc.stdout), as_text(exc.stderr), time.monotonic() - started) from exc
     metadata = {"duration_seconds": round(time.monotonic() - started, 3),
                 "returncode": completed.returncode, "stderr_tail": completed.stderr[-4000:]}
     if completed.returncode:
@@ -403,6 +460,15 @@ def main() -> int:
             if args.tests.exists():
                 shutil.rmtree(args.tests)
             shutil.move(str(candidate_tests / "test-results"), args.tests)
+            break
+        except ModelTimeoutError as exc:
+            if exc.stdout:
+                (attempt_dir / "model-output.txt").write_text(exc.stdout)
+            if exc.stderr:
+                (attempt_dir / "model-stderr.txt").write_text(exc.stderr)
+            write_json(attempt_dir / "inference.json", exc.metadata)
+            record.update(result="MODEL_TIMEOUT", error=str(exc), inference=exc.metadata)
+            attempts.append(record)
             break
         except Exception as exc:
             record["error"] = str(exc)

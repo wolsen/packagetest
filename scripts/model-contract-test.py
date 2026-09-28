@@ -79,7 +79,7 @@ Use no_fix if neither action is justified. Use an empty replacement when it is u
 A Debian package build failed with:
 {case['evidence']}
 Quote that exact failure in evidence."""
-        command = [str(args.llama_cli), "-m", str(args.model), "-p", prompt, "-n", "512", "-c", "4096",
+        command = [str(args.llama_cli), "-m", str(args.model), "-p", prompt, "-n", "128", "-c", "4096",
                    "--temp", "0", "--seed", str(number), "--threads", "2", "--no-display-prompt",
                    "--single-turn", "--simple-io", "--no-show-timings"]
         completed = subprocess.run(command, text=True, capture_output=True, timeout=300, env=env)
