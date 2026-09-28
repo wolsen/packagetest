@@ -386,7 +386,7 @@ def main() -> int:
             output, inference = llama_generate(args.llama_cli, args.model, text, number, args.model_timeout)
             (attempt_dir / "model-output.txt").write_text(output)
             raw_decision = parse_repair_decision(output)
-            decision = normalize_repair_decision(raw_decision, tree)
+            decision = normalize_repair_decision(raw_decision, tree, evidence)
             if decision != raw_decision:
                 write_json(attempt_dir / "raw-decision.json", raw_decision)
             write_json(attempt_dir / "decision.json", decision)

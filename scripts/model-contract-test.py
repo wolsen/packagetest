@@ -87,7 +87,7 @@ Quote that exact failure in evidence."""
         (case_dir / "stderr.txt").write_text(completed.stderr)
         try:
             raw_decision = parse_repair_decision(completed.stdout)
-            decision = normalize_repair_decision(raw_decision, args.tree)
+            decision = normalize_repair_decision(raw_decision, args.tree, case["evidence"])
             if decision != raw_decision:
                 (case_dir / "raw-decision.json").write_text(json.dumps(raw_decision, indent=2) + "\n")
             (case_dir / "decision.json").write_text(json.dumps(decision, indent=2) + "\n")

@@ -241,6 +241,34 @@ def test_path_normalization_preserves_canonical_or_ambiguous_decisions(tmp_path)
     assert normalize_repair_decision(ambiguous, tmp_path) == ambiguous
 
 
+def test_normalizes_dependency_subject_from_models_quoted_missing_import(tmp_path):
+    evidence = """ModuleNotFoundError: No module named 'werkzeug'
+ModuleNotFoundError: No module named 'gabbi'
+"""
+    confused = {
+        "action": "add_dependency", "subject": "python3-wsgi-intercept", "replacement": "",
+        "evidence": "ModuleNotFoundError: No module named 'werkzeug'",
+    }
+    assert normalize_repair_decision(confused, tmp_path, evidence) == {
+        **confused, "subject": "python3-werkzeug",
+    }
+
+
+def test_dependency_normalization_requires_one_supported_quoted_import(tmp_path):
+    decision = {
+        "action": "add_dependency", "subject": "python3-existing", "replacement": "",
+        "evidence": "ModuleNotFoundError: No module named 'unknown'",
+    }
+    assert normalize_repair_decision(
+        decision, tmp_path, "ModuleNotFoundError: No module named 'gabbi'") == decision
+    ambiguous = {
+        **decision,
+        "evidence": ("ModuleNotFoundError: No module named 'werkzeug'\n"
+                     "ModuleNotFoundError: No module named 'gabbi'"),
+    }
+    assert normalize_repair_decision(ambiguous, tmp_path, ambiguous["evidence"]) == ambiguous
+
+
 def test_test_evidence_preserves_import_discovery_runtime_error():
     log = """Failures during discovery
 Failed to import test module: nova.tests.unit.cmd.test_compute

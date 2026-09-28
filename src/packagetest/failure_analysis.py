@@ -133,9 +133,25 @@ def validate_repair_decision(decision: dict, evidence: str) -> dict:
     return {"result": "ACCEPTED", "error": ""}
 
 
-def normalize_repair_decision(decision: dict, tree: Path) -> dict:
-    """Correct an unambiguous old/new path reversal using the prepared tree."""
+def normalize_repair_decision(decision: dict, tree: Path, evidence: str = "") -> dict:
+    """Correct unambiguous model field mismatches using evidence and the tree."""
     normalized = dict(decision)
+    if decision.get("action") == "add_dependency":
+        quoted = list(dict.fromkeys(re.findall(
+            r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)",
+            decision.get("evidence", ""))))
+        supported = {
+            module.split(".")[0].replace("-", "_").lower()
+            for module in re.findall(
+                r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)", evidence)
+        }
+        if len(quoted) == 1:
+            module = quoted[0].split(".")[0].replace("-", "_").lower()
+            package_module = decision.get("subject", "").removeprefix(
+                "python3-").replace("-", "_").lower()
+            if module in supported and package_module != module:
+                normalized["subject"] = "python3-" + module.replace("_", "-")
+        return normalized
     if decision.get("action") != "replace_packaging_path":
         return normalized
     old = decision.get("subject", "").strip()
