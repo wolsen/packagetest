@@ -86,6 +86,7 @@ def test_snapshot_rc_python_version_is_canonical():
     assert snapshot_pep440_version('33.0.0~rc1+git20260911.2.8cd693a') == '33.0.0rc1+git20260911.2.8cd693a'
     assert snapshot_pep440_version('33.0.0~b2+git20260811.0.8cd693a') == '33.0.0b2+git20260811.0.8cd693a'
     assert snapshot_pep440_version('6.9.0+git20260903.2.8fe7cb0') == '6.9.0+git20260903.2.8fe7cb0'
+    assert snapshot_pep440_version('2.11.0+git20260923.3.0037426') == '2.11.0+git20260923.3.37426'
 
 
 def test_declared_changelog_opt_out_still_requires_exact_version(tmp_path):

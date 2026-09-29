@@ -40,9 +40,9 @@
   "replace_files": [
     {
       "name": "control",
-      "sha256": "ea6be3ea1e1e4663d578514e648457347f87709baf642b46592a0ddefb18f3e8",
+      "sha256": "4c7cdd31216d0d8d37aa4072b7f060aa33261b26b26bb9c86041528d4c77d185",
       "replacement": "control",
-      "replacement_sha256": "ee7c94472549a34fa8cae78719cdd5a7fa41e1d5e1832f09392e899d3f61b52f",
+      "replacement_sha256": "b7d9f11dbff976955b3204132a8ee3ed180dbed4370346f14c5ed3b5601d5008",
       "reason": "API binary ships a Python 3 executable and must directly declare its interpreter dependency; retain the existing service/module dependencies and Lintian checks."
     }
   ]

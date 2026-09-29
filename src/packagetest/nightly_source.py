@@ -10,11 +10,13 @@ from datetime import datetime, timezone
 import gzip
 import io
 import json
+import os
 import re
 from pathlib import Path
 import shutil
 import subprocess
 import tarfile
+import tempfile
 from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
 
@@ -142,6 +144,76 @@ def packaging_adjustments(entry: dict, tree: Path, config_root: Path | None = No
         applied.append({'action': 'omit-obsolete-patch', **patch})
     series_path.write_text('\n'.join(series) + '\n')
     return applied
+
+
+def write_packaging_proposal(entry: dict, baseline: Path, tree: Path, output: Path,
+                             actions: list[dict]) -> dict | None:
+    """Export temporary packaging adaptations for human review upstream.
+
+    The patch is rooted at ``debian/`` so it can be reviewed against a real
+    packaging repository.  The archive source remains the reproducible base;
+    choosing Debian or Ubuntu as the submission target is deliberately left to
+    a human reviewer.
+    """
+    if not actions:
+        return None
+    repositories = []
+    for role, key in [('ubuntu', 'packaging_repository'), ('archive', 'archive_packaging_repository')]:
+        repository = entry.get(key)
+        if repository and repository not in {item['repository'] for item in repositories}:
+            repositories.append({'role': role, 'repository': repository})
+    if not repositories:
+        raise ValueError('Packaging proposal requires a destination repository candidate')
+    branches = entry.get('packaging_branch_candidates') or []
+    if not branches:
+        raise ValueError('Packaging proposal requires destination branch candidates')
+
+    output.mkdir(parents=True, exist_ok=True)
+    patch_path = output / 'packaging-proposal.patch'
+    with tempfile.TemporaryDirectory(prefix='packagetest-proposal-') as temporary:
+        repository = Path(temporary) / 'repository'
+        repository.mkdir()
+        shutil.copytree(baseline, repository / 'debian', symlinks=True)
+        environment = {**os.environ,
+                       'GIT_AUTHOR_NAME': 'Packaging Build Agent',
+                       'GIT_AUTHOR_EMAIL': 'packaging-agent@example.invalid',
+                       'GIT_COMMITTER_NAME': 'Packaging Build Agent',
+                       'GIT_COMMITTER_EMAIL': 'packaging-agent@example.invalid',
+                       'GIT_AUTHOR_DATE': '2000-01-01T00:00:00+00:00',
+                       'GIT_COMMITTER_DATE': '2000-01-01T00:00:00+00:00'}
+        subprocess.run(['git', 'init', '--quiet'], cwd=repository, env=environment, check=True)
+        subprocess.run(['git', 'add', '--all'], cwd=repository, env=environment, check=True)
+        subprocess.run(['git', 'commit', '--quiet', '--no-gpg-sign', '-m', 'archive packaging baseline'],
+                       cwd=repository, env=environment, check=True)
+        shutil.rmtree(repository / 'debian')
+        shutil.copytree(tree / 'debian', repository / 'debian', symlinks=True)
+        subprocess.run(['git', 'add', '--all'], cwd=repository, env=environment, check=True)
+        result = subprocess.run(['git', 'diff', '--cached', '--binary', '--full-index', 'HEAD', '--', 'debian'],
+                                cwd=repository, env=environment, text=True, capture_output=True, check=True)
+        if not result.stdout:
+            return None
+        patch_path.write_text(result.stdout)
+
+    proposal = {
+        'schema_version': 1,
+        'source': entry['source'],
+        'status': 'candidate',
+        'human_review_required': True,
+        'selected_target': None,
+        'destination_candidates': repositories,
+        'branch_candidates': branches,
+        'archive_base': {
+            'version': entry['archive_version'],
+            'url': entry['archive_source']['url'],
+            'sha256': entry['archive_source']['sha256'],
+            'generic_normalization_before_diff': ['ubuntu-maintainer'],
+        },
+        'patch': {'file': patch_path.name, 'sha256': sha256(patch_path)},
+        'actions': actions,
+        'removal_condition': 'Retire after the reviewed change is accepted in the selected packaging branch.',
+    }
+    (output / 'packaging-proposal.json').write_text(json.dumps(proposal, indent=2) + '\n')
+    return proposal
 
 
 def already_applied_patches(tree: Path) -> list[dict]:
@@ -301,6 +373,8 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
             raise ValueError('Upstream snapshot unexpectedly contains Debian packaging')
         shutil.copytree(packaging_tree / 'debian', tree / 'debian', symlinks=True)
         ubuntu_maintainer(tree / 'debian' / 'control')
+        proposal_baseline = build.work / 'packaging-proposal-baseline'
+        shutil.copytree(tree / 'debian', proposal_baseline, symlinks=True)
         report['packaging_adjustments'] = packaging_adjustments(entry, tree)
         report['packaging_adjustments'].extend(already_applied_patches(tree))
         if remediation_patch is not None:
@@ -314,6 +388,17 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
                 'patch_sha256': validation['patch_sha256'],
                 'paths': validation['paths'],
             }
+            report['packaging_adjustments'].append({
+                'action': 'local-ai-remediation',
+                'patch_file': remediation_patch.name,
+                'patch_sha256': validation['patch_sha256'],
+                'paths': validation['paths'],
+            })
+        proposal = write_packaging_proposal(
+            entry, proposal_baseline, tree, build.root / 'packaging-proposal',
+            report['packaging_adjustments'])
+        if proposal:
+            report['packaging_proposal'] = proposal
         build.command('dch', '--newversion', version, '--distribution', 'resolute', '--force-distribution',
                       'Nightly OpenStack 2026.2 snapshot from pinned upstream commit ' + selected['sha'] + '.',
                       cwd=tree, env={'DEBFULLNAME': 'Packaging Build Agent', 'DEBEMAIL': 'packaging-agent@example.invalid'})

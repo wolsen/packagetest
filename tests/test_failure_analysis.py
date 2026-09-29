@@ -160,6 +160,40 @@ diff --git a/sample.txt b/sample.txt
     assert validate_source_patch(patch, tmp_path)["result"] == "APPLIES"
 
 
+def test_mechanically_refreshes_traditional_quilt_patch(tmp_path):
+    (tmp_path / "debian/patches").mkdir(parents=True)
+    (tmp_path / "debian/patches/series").write_text("entry-point.patch\n")
+    (tmp_path / "debian/patches/entry-point.patch").write_text("""Description: expose config options
+Author: Ubuntu OpenStack Team
+--- a/setup.cfg
++++ b/setup.cfg
+@@ -1,4 +1,5 @@
+ [entry_points]
+ console_scripts =
+     heat-tests = heat_tempest_plugin.cmd:main
++oslo.config.opts = heat_tempest_plugin.config:list_opts
+ tail = value
+""")
+    (tmp_path / "setup.cfg").write_text("""[entry_points]
+# Snapshot source gained this comment.
+console_scripts =
+    heat-tests = heat_tempest_plugin.cmd:main
+tail = value
+""")
+    decision = {
+        "action": "refresh_quilt_patch", "subject": "entry-point.patch",
+        "replacement": "", "evidence": "entry-point.patch Hunk #1 FAILED",
+    }
+    patch = render_source_repair(decision, tmp_path)
+    assert "automatic quilt refresh requires git-style" not in patch
+    assert " Snapshot source gained this comment." in patch
+    assert validate_source_patch(patch, tmp_path, apply=True)["result"] == "APPLIED"
+    refreshed = (tmp_path / "debian/patches/entry-point.patch").read_text()
+    assert refreshed.startswith("Description: expose config options\nAuthor: Ubuntu OpenStack Team\n")
+    assert "+++ b/setup.cfg" in refreshed
+    assert "+oslo.config.opts = heat_tempest_plugin.config:list_opts" in refreshed
+
+
 def test_quilt_refresh_keeps_needed_section_and_omits_upstream_section(tmp_path):
     (tmp_path / "debian/patches").mkdir(parents=True)
     (tmp_path / "debian/patches/series").write_text("mixed.patch\n")

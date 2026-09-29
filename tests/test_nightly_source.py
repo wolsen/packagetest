@@ -1,5 +1,6 @@
 import io
 import json
+import subprocess
 import tarfile
 
 import pytest
@@ -185,6 +186,51 @@ def test_add_packaging_tests_are_guarded_and_keep_explicit_mode(tmp_path):
     assert (tree / 'debian/tests/run').stat().st_mode & 0o777 == 0o755
     with pytest.raises(ValueError, match='already exists'):
         packaging_adjustments(entry, tree, config.parent)
+
+
+def test_packaging_proposal_is_git_patch_with_unselected_human_review_target(tmp_path):
+    from packagetest.nightly_source import write_packaging_proposal
+    baseline = tmp_path / 'baseline'
+    tree = tmp_path / 'tree'
+    (baseline / 'tests').mkdir(parents=True)
+    (tree / 'debian/tests').mkdir(parents=True)
+    (baseline / 'control').write_text('Source: demo\n\nPackage: demo\nDepends: old\n')
+    (tree / 'debian/control').write_text('Source: demo\n\nPackage: demo\nDepends: old, new\n')
+    script = tree / 'debian/tests/smoke'
+    script.write_text('#!/bin/sh\nexit 0\n')
+    script.chmod(0o755)
+    output = tmp_path / 'proposal'
+    entry = {
+        'source': 'demo',
+        'archive_version': '1.0-1',
+        'archive_source': {'url': 'https://archive.example/demo.dsc', 'sha256': 'a' * 64},
+        'packaging_repository': 'https://git.example/ubuntu/demo',
+        'archive_packaging_repository': 'https://git.example/debian/demo',
+        'packaging_branch_candidates': ['stable/2026.2', 'master'],
+    }
+    proposal = write_packaging_proposal(
+        entry, baseline, tree, output,
+        [{'action': 'replace-packaging-file', 'name': 'control', 'reason': 'new runtime dependency'}])
+
+    assert proposal['status'] == 'candidate'
+    assert proposal['human_review_required'] is True
+    assert proposal['selected_target'] is None
+    assert {item['role'] for item in proposal['destination_candidates']} == {'ubuntu', 'archive'}
+    patch = (output / 'packaging-proposal.patch').read_text()
+    assert 'diff --git a/debian/control b/debian/control' in patch
+    assert 'new file mode 100755' in patch
+    checkout = tmp_path / 'checkout'
+    (checkout / 'debian/tests').mkdir(parents=True)
+    (checkout / 'debian/control').write_text((baseline / 'control').read_text())
+    subprocess.run(['git', 'apply', '--check', str(output / 'packaging-proposal.patch')],
+                   cwd=checkout, check=True)
+
+
+def test_packaging_proposal_is_absent_without_temporary_changes(tmp_path):
+    from packagetest.nightly_source import write_packaging_proposal
+    entry = {'source': 'demo'}
+    assert write_packaging_proposal(entry, tmp_path, tmp_path, tmp_path / 'proposal', []) is None
+    assert not (tmp_path / 'proposal').exists()
 
 
 @pytest.mark.parametrize('violation', ['traversal', 'digest', 'mode', 'destination-symlink', 'replacement-symlink'])

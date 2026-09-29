@@ -76,6 +76,14 @@ runs:
           SOURCE="$SOURCE" python3 -c 'import json,os; open("test-results/result/result.json", "w").write(json.dumps({"source":os.environ["SOURCE"],"result":"BLOCKED","error":"No tested build candidate"}))'
         fi
 
+    - name: Record packaging proposal validation
+      if: always()
+      shell: bash
+      run: |
+        python3 scripts/finalize-packaging-proposal.py \
+          outputs/source-preparation/packaging-proposal/packaging-proposal.json \
+          outputs/result.json test-results/result/result.json
+
     - name: Bundle the final candidate and evidence
       if: always()
       shell: bash
@@ -116,6 +124,22 @@ runs:
         path: test-bundles/*.tar.gz
         retention-days: 14
         if-no-files-found: error
+
+    - id: upload_packaging_proposal
+      uses: actions/upload-artifact@v4
+      if: always() && hashFiles('outputs/source-preparation/packaging-proposal/packaging-proposal.json') != ''
+      with:
+        name: packaging-proposal-${{ inputs.source }}
+        path: outputs/source-preparation/packaging-proposal/
+        retention-days: 14
+        if-no-files-found: error
+    - name: Link the packaging proposal for human review
+      if: always() && steps.upload_packaging_proposal.outputs.artifact-url != ''
+      shell: bash
+      env:
+        ARTIFACT_URL: ${{ steps.upload_packaging_proposal.outputs.artifact-url }}
+        SOURCE: ${{ inputs.source }}
+      run: printf '\n[Download the packaging-repository proposal for `%s`](%s) — candidate patch; human review and target selection are required.\n' "$SOURCE" "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
 
     - id: upload_ai
       uses: actions/upload-artifact@v4

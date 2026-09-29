@@ -25,6 +25,15 @@ def snapshot_pep440_version(version: str) -> str:
     normalized = re.sub(r'~(?=(?:a|b|rc)[0-9])', '', version)
     if '~' in normalized:
         raise ValueError('Unsupported Debian prerelease marker for Python metadata')
+    if '+' in normalized:
+        public, local = normalized.split('+', 1)
+        # PEP 440 treats an all-numeric local-version component as an
+        # integer.  setuptools therefore writes ``0037426`` as ``37426`` in
+        # PKG-INFO.  Store that same canonical spelling in the snapshot lock.
+        components = re.split(r'[._-]', local)
+        local = '.'.join(str(int(component)) if component.isdigit() else component.lower()
+                         for component in components)
+        normalized = f'{public}+{local}'
     return normalized
 
 def canonical_sdist(source: Path, destination: Path, *, epoch: int, version: str, archive_format: str = "portable-v1",

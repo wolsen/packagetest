@@ -200,19 +200,29 @@ def _refresh_quilt_patch(tree: Path, name: str) -> str:
     original_patch = patch_path.read_text(errors="replace")
     starts = [match.start() for match in re.finditer(r"^diff --git ", original_patch, re.M)]
     if not starts:
-        raise ValueError("automatic quilt refresh requires git-style patch sections")
+        starts = [match.start() for match in re.finditer(
+            r"^---\s+[^\t\n ]+(?:[ \t]+[^\n]*)?\n\+\+\+\s+[^\t\n ]+(?:[ \t]+[^\n]*)?$",
+            original_patch, re.M,
+        )]
+    if not starts:
+        raise ValueError("automatic quilt refresh requires unified patch sections")
     sections = [original_patch[start:(starts[index + 1] if index + 1 < len(starts) else len(original_patch))]
                 for index, start in enumerate(starts)]
     targets = []
     parsed = []
     for section in sections:
-        matches = re.findall(r"^\+\+\+\s+(?:b/)?([^\t\n ]+)", section, re.M)
+        matches = re.findall(r"^\+\+\+\s+([^\t\n ]+)", section, re.M)
         if len(matches) != 1:
             raise ValueError("automatic quilt refresh requires one target per patch section")
-        value = matches[0]
+        patch_target = matches[0]
+        patch_path_parts = PurePosixPath(patch_target)
+        if (patch_target == "/dev/null" or patch_path_parts.is_absolute()
+                or ".." in patch_path_parts.parts or len(patch_path_parts.parts) <= strip):
+            raise ValueError(f"automatic quilt refresh does not support target: {patch_target}")
+        value = PurePosixPath(*patch_path_parts.parts[strip:]).as_posix()
         path = PurePosixPath(value)
-        if value == "/dev/null" or path.is_absolute() or ".." in path.parts or path.parts[0] == "debian":
-            raise ValueError(f"automatic quilt refresh does not support target: {value}")
+        if not path.parts or path.parts[0] == "debian":
+            raise ValueError(f"automatic quilt refresh does not support target: {patch_target}")
         targets.append(value)
         parsed.append((value, section))
     if len(set(targets)) != len(targets) or len(targets) > 8:

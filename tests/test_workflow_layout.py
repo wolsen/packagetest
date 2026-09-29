@@ -32,6 +32,8 @@ def test_local_ai_repairs_inside_each_package_job_before_publication():
     assert action.index('id: ai_cache') < action.index('id: remediation')
     assert action.index('scripts/remediate-package.py') < action.index('name: build-${{ inputs.source }}')
     assert 'name: ai-remediation-${{ inputs.source }}' in action
+    assert 'name: packaging-proposal-${{ inputs.source }}' in action
+    assert 'human review and target selection are required' in action
     assert 'scripts/final-package-verdict.py' in action
     assert 'qwen2.5-coder-7b-instruct-q4_k_m.gguf' in workflow
     assert 'Reply with READY.' in workflow
