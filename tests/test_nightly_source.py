@@ -28,6 +28,9 @@ def test_missing_pin_fails_with_persistent_evidence(tmp_path):
 def test_resolution_error_not_retried_as_master(tmp_path):
     with pytest.raises(ValueError, match='missing stable branch'):
         prepare_source({'source': 'test', 'upstream_resolution_error': 'missing stable branch'}, tmp_path / 'result')
+    with pytest.raises(ValueError, match='dependency metadata unavailable'):
+        prepare_source({'source': 'test', 'upstream_dependency_resolution_error':
+                        'dependency metadata unavailable'}, tmp_path / 'dependency-result')
 
 
 def test_archive_extraction_rejects_path_traversal(tmp_path):

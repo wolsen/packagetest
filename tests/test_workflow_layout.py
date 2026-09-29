@@ -59,7 +59,9 @@ def test_local_ai_canary_carries_required_candidate_packages_between_levels():
     workflow = Path('.github/workflows/local-ai-canary.yml').read_text()
     assert "'python-oslo.versionedobjects,ironic,heat-tempest-plugin,telemetry-tempest-plugin'" in workflow
     assert 'repair_dependency_level_1:' in workflow
-    assert 'repair_dependency_level_2:' in workflow
+    for level in range(1, 13):
+        assert f'repair_dependency_level_{level}:' in workflow
+    assert workflow.count('uses: ./.github/actions/build-test-remediate') == 12
     assert 'pattern: ${{ steps.dependencies.outputs.pattern }}' in workflow
     assert 'test "$pattern" = \'__no_dependencies__\'' not in workflow
 

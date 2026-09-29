@@ -114,3 +114,41 @@ def test_reviewed_control_adds_independent_build_dependency_to_graph(tmp_path):
     control.write_text(control.read_text() + '# changed\n')
     with pytest.raises(ValueError, match='checksum mismatch'):
         module.apply_packaging_dependencies(entries, tmp_path)
+
+
+def test_upstream_metadata_expands_requested_roots_before_planning():
+    data = {'packages': [
+        {'source': 'ironic', 'deliverable': 'ironic', 'binaries': ['python3-ironic'],
+         'build_dependencies': [], 'upstream_repository': 'https://opendev.org/openstack/ironic',
+         'upstream_ref': 'master'},
+        {'source': 'python-sushy', 'deliverable': 'sushy', 'binaries': ['python3-sushy'],
+         'build_dependencies': [], 'upstream_repository': 'https://opendev.org/openstack/sushy',
+         'upstream_ref': 'stable/2026.2'},
+        {'source': 'unrelated', 'deliverable': 'unrelated', 'binaries': ['python3-unrelated'],
+         'build_dependencies': [], 'upstream_repository': 'https://opendev.org/openstack/unrelated',
+         'upstream_ref': 'master'},
+    ]}
+
+    def freeze(entry):
+        entry['upstream_sha'] = 'a' * 40
+        return entry
+
+    def inspect(entry):
+        if entry['source'] == 'ironic':
+            return ([{'distribution': 'sushy', 'requirement': 'sushy>=5.12.0',
+                      'kind': 'runtime', 'file': 'requirements.txt', 'line': 1}],
+                    ['requirements.txt'])
+        return [], ['pyproject.toml']
+
+    enriched, selected, roots, errors = module.resolve_upstream_dependency_closure(
+        data, ['ironic'], freeze_entry=freeze, inspect_entry=inspect)
+    frozen, plan = module.plan_catalog(enriched, selected)
+    entries = {entry['source']: entry for entry in frozen['packages']}
+
+    assert roots == ['ironic']
+    assert selected == ['ironic', 'python-sushy']
+    assert errors == []
+    assert plan['waves'] == [['python-sushy'], ['ironic']]
+    assert entries['ironic']['run_dependencies'] == ['python-sushy']
+    assert entries['python-sushy']['selection_reasons'] == ['upstream dependency of ironic']
+    assert entries['ironic']['upstream_dependency_requirements'][0]['source'] == 'python-sushy'

@@ -353,8 +353,10 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
     report = {'source': entry['source'], 'status': 'PREPARING', 'catalog_entry': entry}
     report_path = build.root / 'resolution.json'
     try:
-        if entry.get('discovery_error') or entry.get('upstream_resolution_error'):
-            raise ValueError(entry.get('discovery_error') or entry['upstream_resolution_error'])
+        if (entry.get('discovery_error') or entry.get('upstream_resolution_error') or
+                entry.get('upstream_dependency_resolution_error')):
+            raise ValueError(entry.get('discovery_error') or entry.get('upstream_resolution_error') or
+                             entry['upstream_dependency_resolution_error'])
         if not re.fullmatch(r'[a-f0-9]{40}', entry.get('upstream_sha', '')):
             raise ValueError('Source preparation requires a plan-pinned upstream_sha')
         source = entry['source']

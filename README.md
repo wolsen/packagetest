@@ -33,6 +33,15 @@ Gump was tried but its workflow context handling prevented validation of uncommi
 
 Snapshot discovery is available through `packaging lock-snapshot --template ... --ref master [--at TIMESTAMP] --output ...`; see `SNAPSHOTS.md`. It creates a new checksum-pinned lock and never changes an existing reviewed lock.
 
+The 2026.2 nightly planner treats `--sources` as build roots. It freezes each
+root to a commit, reads `requirements.txt`, `test-requirements.txt`, and the
+runtime, build-system, and test groups in `pyproject.toml`, maps Python
+distribution names to Ubuntu source packages, and repeats this process until
+the candidate dependency closure is complete. The dependency levels use those
+upstream edges together with the effective Debian `Build-Depends` metadata.
+The generated `nightly-plan/summary.md` records the requested roots, every
+automatically added source, and the packages in each dependency level.
+
 ## Run the executor in a prepared builder
 
 ```bash

@@ -14,6 +14,76 @@ import subprocess
 import sys
 
 
+def resolve_upstream_dependency_closure(catalog, sources=None, candidate_dependencies=(),
+                                        freeze_entry=None, inspect_entry=None):
+    """Freeze roots and recursively add their upstream Python dependencies."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+    from packagetest.upstream_dependencies import (distribution_source_index,
+                                                   inspect_revision,
+                                                   map_requirements)
+    catalog = json.loads(json.dumps(catalog))
+    entries = {entry['source']: entry for entry in catalog['packages']}
+    requested = set(sources) if sources else set(entries)
+    if requested - entries.keys():
+        raise ValueError(f'Unknown requested sources: {sorted(requested - entries.keys())}')
+    selected = set(requested)
+    reasons = {source: {'requested'} for source in requested}
+    index = distribution_source_index(catalog['packages'])
+    freeze_entry = freeze_entry or freeze
+    inspect_entry = inspect_entry or inspect_revision
+    inspected = set()
+
+    while True:
+        for constraint in candidate_dependencies:
+            if constraint['source'] in selected and constraint['dependency'] not in selected:
+                selected.add(constraint['dependency'])
+                reasons.setdefault(constraint['dependency'], set()).add(
+                    f'mandatory candidate for {constraint["source"]}')
+        frontier = sorted(selected - inspected)
+        if not frontier:
+            break
+        with ThreadPoolExecutor(max_workers=16) as workers:
+            frozen = list(workers.map(freeze_entry, (entries[source] for source in frontier)))
+        for entry in frozen:
+            entries[entry['source']] = entry
+
+        def inspect(source):
+            entry = entries[source]
+            if entry.get('upstream_resolution_error'):
+                return source, None, [], entry['upstream_resolution_error']
+            try:
+                records, files = inspect_entry(entry)
+                return source, records, files, None
+            except Exception as exc:
+                return source, None, [], str(exc)
+
+        with ThreadPoolExecutor(max_workers=16) as workers:
+            results = list(workers.map(inspect, frontier))
+        for source, records, files, error in results:
+            entry = entries[source]
+            inspected.add(source)
+            if error:
+                entry['upstream_dependency_resolution_error'] = error
+                continue
+            mapped, dependencies = map_requirements(records, index, source)
+            entry['upstream_dependency_files'] = files
+            entry['upstream_dependency_requirements'] = mapped
+            entry['upstream_dependencies'] = dependencies
+            entry.pop('upstream_dependency_resolution_error', None)
+            entry['packaging_build_dependencies'] = list(entry.get('build_dependencies', []))
+            entry['build_dependencies'] = sorted(set(entry.get('build_dependencies', [])) | set(dependencies))
+            for dependency in dependencies:
+                reasons.setdefault(dependency, set()).add(f'upstream dependency of {source}')
+                selected.add(dependency)
+
+    for source, entry in entries.items():
+        entry['selection_reasons'] = sorted(reasons.get(source, []))
+    catalog['packages'] = [entries[source] for source in sorted(entries)]
+    errors = [{'source': source, 'error': entries[source]['upstream_dependency_resolution_error']}
+              for source in sorted(selected) if entries[source].get('upstream_dependency_resolution_error')]
+    return catalog, sorted(selected), sorted(requested), errors
+
+
 def apply_packaging_dependencies(catalog, config_root=None):
     """Plan from reviewed control replacements, including newly added edges."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
@@ -167,6 +237,24 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
         package_list = ', '.join(f'`{source}`' for source in packages)
         lines.append(f'| {index} | {len(packages)} | {package_list} |')
 
+    requested = plan.get('requested_sources', plan['sources'])
+    added = sorted(set(plan['sources']) - set(requested))
+    upstream_edges = sum(len(entries[source].get('upstream_dependencies', []))
+                         for source in plan['sources'])
+    lines.extend([
+        '',
+        '## Upstream dependency discovery',
+        '',
+        f'{len(requested)} requested roots expanded to {len(plan["sources"])} source packages. '
+        f'{upstream_edges} mapped dependency edges came from pinned `requirements.txt`, '
+        '`test-requirements.txt`, or `pyproject.toml` files.',
+        '',
+    ])
+    if added:
+        lines.append('Automatically added sources: ' + ', '.join(f'`{source}`' for source in added) + '.')
+    else:
+        lines.append('No additional sources were needed.')
+
     required = []
     for source in plan['sources']:
         for dependency, reason in sorted(entries[source].get('required_candidate_dependencies', {}).items()):
@@ -285,17 +373,33 @@ def main():
         return
     constraints = json.loads(args.candidate_dependencies.read_text())
     catalog = apply_packaging_dependencies(json.loads(args.catalog.read_text()))
-    catalog, plan = plan_catalog(catalog, [s.strip() for s in args.sources.split(',') if s.strip()] or None, args.max_waves, constraints)
+    requested = [s.strip() for s in args.sources.split(',') if s.strip()] or None
+    dependency_errors = []
     if not args.no_resolve:
-        with ThreadPoolExecutor(max_workers=16) as workers:
-            catalog['packages'] = list(workers.map(freeze, catalog['packages']))
+        catalog, selected, roots, dependency_errors = resolve_upstream_dependency_closure(
+            catalog, requested, constraints)
+    else:
+        selected = set(requested) if requested else None
+        if selected is not None:
+            while True:
+                additions = {constraint['dependency'] for constraint in constraints
+                             if constraint['source'] in selected} - selected
+                if not additions:
+                    break
+                selected.update(additions)
+            selected = sorted(selected)
+        roots = requested or [entry['source'] for entry in catalog['packages']]
+    catalog, plan = plan_catalog(catalog, selected, args.max_waves, constraints)
+    plan['requested_sources'] = sorted(roots)
     catalog['resolved_at'] = datetime.now(timezone.utc).isoformat()
     catalog['ci'] = {'run_id': os.getenv('GITHUB_RUN_ID', 'local'), 'run_attempt': os.getenv('GITHUB_RUN_ATTEMPT', '1')}
     args.output.mkdir(parents=True, exist_ok=True)
     content = json.dumps(catalog, indent=2) + '\n'
     (args.output / 'catalog.json').write_text(content)
     plan['catalog_sha256'] = hashlib.sha256(content.encode()).hexdigest()
-    plan['resolution_failures'] = [{'source': p['source'], 'error': p['upstream_resolution_error']} for p in catalog['packages'] if p.get('upstream_resolution_error')]
+    plan['resolution_failures'] = ([{'source': p['source'], 'error': p['upstream_resolution_error']}
+                                    for p in catalog['packages'] if p.get('upstream_resolution_error')]
+                                   + dependency_errors)
     (args.output / 'plan.json').write_text(json.dumps(plan, indent=2) + '\n')
     summary = render_plan_summary(plan, catalog)
     (args.output / 'summary.md').write_text(summary)
