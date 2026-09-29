@@ -169,3 +169,39 @@ def test_upstream_metadata_expands_requested_roots_before_planning():
     assert entries['python-sushy']['selection_reasons'] == ['upstream dependency of ironic']
     assert entries['ironic']['upstream_dependency_requirements'][0]['source'] == 'python-sushy'
     assert entries['ironic']['upstream_dependency_requirements'][1]['archive_decision'] == 'satisfied'
+
+
+def test_upstream_external_test_dependency_is_annotated_without_dag_node():
+    data = {
+        'archive_python_packages': [{
+            'distribution': 'wsgi-intercept', 'binary': 'python3-wsgi-intercept',
+            'source': 'python-wsgi-intercept', 'version': '1.13.1-1',
+        }],
+        'packages': [{
+            'source': 'watcher', 'deliverable': 'watcher', 'binaries': ['python3-watcher'],
+            'build_dependencies': [], 'upstream_repository': 'https://opendev.org/openstack/watcher',
+            'upstream_ref': 'master',
+        }],
+    }
+
+    def freeze(entry):
+        entry['upstream_sha'] = 'a' * 40
+        return entry
+
+    def inspect(entry):
+        return ([{'distribution': 'wsgi-intercept', 'requirement': 'wsgi-intercept>=1.7',
+                  'kind': 'test', 'file': 'test-requirements.txt', 'line': 1}],
+                ['test-requirements.txt'])
+
+    enriched, selected, _, errors = module.resolve_upstream_dependency_closure(
+        data, ['watcher'], freeze_entry=freeze, inspect_entry=inspect)
+    record = enriched['packages'][0]['upstream_dependency_requirements'][0]
+    assert selected == ['watcher']
+    assert errors == []
+    assert record['archive_binary'] == 'python3-wsgi-intercept'
+    assert record['archive_decision'] == 'satisfied'
+    assert enriched['packages'][0]['planned_archive_dependency_additions'] == [{
+        'binary': 'python3-wsgi-intercept', 'source': 'python-wsgi-intercept',
+        'archive_version': '1.13.1-1', 'kind': 'test',
+        'requirement': 'wsgi-intercept>=1.7', 'file': 'test-requirements.txt', 'line': 1,
+    }]

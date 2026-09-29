@@ -131,6 +131,29 @@ def package_record(name: str, metadata: dict, archive: dict, *, series: str, mem
     }
 
 
+def archive_python_packages(sources: dict[str, dict]) -> list[dict]:
+    """Retain Ubuntu's Python binary providers for upstream dependency checks.
+
+    The OpenStack catalog deliberately contains only release deliverables and
+    their OpenStack build closure.  Test requirements such as ``gabbi`` and
+    ``wsgi-intercept`` are supplied by unrelated Ubuntu source packages, so a
+    second lightweight index is needed to prove their availability without
+    adding them to the OpenStack build DAG.
+    """
+    records = []
+    for source, item in sorted(sources.items()):
+        for binary in sorted(x.strip() for x in item.get('Binary', '').split(',') if x.strip()):
+            if not re.fullmatch(r'python3-[a-z0-9][a-z0-9+.-]*', binary):
+                continue
+            records.append({
+                'distribution': re.sub(r'[-_.]+', '-', binary.removeprefix('python3-')).lower(),
+                'binary': binary,
+                'source': source,
+                'version': item['Version'],
+            })
+    return records
+
+
 def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2', codename='hibiscus', suite='resolute') -> dict:
     # YAML is needed only for refreshing the catalog, not for consuming it.
     import yaml
@@ -178,6 +201,8 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
     return {'schema_version': 1, 'series': series, 'codename': codename, 'suite': suite,
             'release_metadata': {'repository': 'https://opendev.org/openstack/releases', 'sha': revision},
             'archive_indexes': indexes,
+            'archive_python_indexes': indexes,
+            'archive_python_packages': archive_python_packages(sources),
             'scope': 'All cycle deliverables mapped to Ubuntu main/universe source packages, plus transitive independently released OpenStack build dependencies',
             'packages': sorted(packages.values(), key=lambda item: item['source']), 'exclusions': exclusions}
 

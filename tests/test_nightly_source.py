@@ -77,6 +77,78 @@ def test_existing_ubuntu_maintainer_is_byte_stable(tmp_path):
     assert path.read_text() == content
 
 
+def test_upstream_test_dependencies_only_change_build_dependencies(tmp_path):
+    from packagetest.nightly_source import upstream_dependency_adjustments
+    tree = tmp_path / 'watcher'
+    (tree / 'debian').mkdir(parents=True)
+    control = tree / 'debian/control'
+    control.write_text('''Source: watcher
+Build-Depends: debhelper-compat (= 13),
+Build-Depends-Indep:
+ python3-stestr,
+
+Package: python3-watcher
+Architecture: all
+Depends:
+ python3-runtime,
+ ${python3:Depends},
+Description: demo
+''')
+    entry = {'upstream_dependency_requirements': [
+        {'distribution': 'wsgi-intercept', 'requirement': 'wsgi-intercept>=1.7',
+         'kind': 'test', 'file': 'test-requirements.txt', 'line': 3,
+         'archive_binary': 'python3-wsgi-intercept',
+         'archive_source': 'python-wsgi-intercept', 'archive_version': '1.13.1-1',
+         'archive_satisfies': True},
+        {'distribution': 'gabbi', 'requirement': 'gabbi>=1.35',
+         'kind': 'test', 'file': 'test-requirements.txt', 'line': 4,
+         'archive_binary': 'python3-gabbi', 'archive_source': 'python-gabbi',
+         'archive_version': '3.0.0-1', 'archive_satisfies': True},
+    ]}
+
+    actions = upstream_dependency_adjustments(entry, tree)
+    source, binary = control.read_text().split('\n\n', 1)
+    assert 'python3-gabbi' in source and 'python3-wsgi-intercept' in source
+    assert 'python3-gabbi' not in binary and 'python3-wsgi-intercept' not in binary
+    assert {item['package'] for item in actions} == {
+        'python3-gabbi', 'python3-wsgi-intercept'}
+    assert all(item['scopes'] == ['build'] for item in actions)
+
+
+def test_upstream_runtime_dependency_is_recorded_but_not_automatically_added(tmp_path):
+    from packagetest.nightly_source import upstream_dependency_adjustments
+    tree = tmp_path / 'service'
+    (tree / 'debian').mkdir(parents=True)
+    control = tree / 'debian/control'
+    control.write_text('''Source: service
+Build-Depends: debhelper-compat (= 13),
+
+Package: python3-service
+Architecture: all
+Depends:
+ ${python3:Depends},
+Description: demo
+''')
+    entry = {'upstream_dependency_requirements': [{
+        'distribution': 'werkzeug', 'requirement': 'Werkzeug>=3', 'kind': 'runtime',
+        'file': 'requirements.txt', 'line': 2, 'archive_binary': 'python3-werkzeug',
+        'archive_source': 'python-werkzeug', 'archive_version': '3.1.5-1',
+        'archive_satisfies': True,
+    }]}
+
+    actions = upstream_dependency_adjustments(entry, tree)
+    assert control.read_text() == '''Source: service
+Build-Depends: debhelper-compat (= 13),
+
+Package: python3-service
+Architecture: all
+Depends:
+ ${python3:Depends},
+Description: demo
+'''
+    assert actions == []
+
+
 def test_ubuntu_maintainer_normalization_precedes_checksum_guarded_adjustment(tmp_path):
     import hashlib
     from packagetest.nightly_source import packaging_adjustments, ubuntu_maintainer

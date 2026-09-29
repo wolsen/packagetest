@@ -21,6 +21,7 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
 
 from .artifacts import checksum_entries, fields, sha256, verify_source
+from .catalog import dependency_names
 from .commands import CommandRunner
 from .snapshot import build_snapshot
 from .snapshot_lock import select_commit
@@ -83,6 +84,96 @@ def ubuntu_maintainer(control: Path) -> None:
         replacement += '\nXSBC-Original-Maintainer: ' + original
     source = source[:match.start()] + replacement + source[match.end():]
     control.write_text(source + separator + binaries)
+
+
+def _add_control_dependency(text: str, field: str, package: str) -> str:
+    """Insert one unversioned dependency into a multiline control field."""
+    lines = text.splitlines(keepends=True)
+    start = next((index for index, line in enumerate(lines) if line.startswith(field + ':')), None)
+    if start is None:
+        raise ValueError(f'control paragraph has no {field} field')
+    end = start + 1
+    while end < len(lines) and lines[end].startswith((' ', '\t')):
+        end += 1
+    current = ''.join(lines[start:end])
+    if re.search(rf'(?<![A-Za-z0-9+.-]){re.escape(package)}(?![A-Za-z0-9+.-])', current):
+        return text
+    insert = end
+    for index in range(start + 1, end):
+        token = lines[index].strip().split(maxsplit=1)[0].rstrip(',') if lines[index].strip() else ''
+        if token.startswith('${') or token.lower() > package:
+            insert = index
+            break
+    lines.insert(insert, f' {package},\n')
+    return ''.join(lines)
+
+
+def upstream_dependency_adjustments(entry: dict, tree: Path) -> list[dict]:
+    """Add missing, archive-proven upstream dependencies to the build candidate.
+
+    Test and build-system dependencies are confined to the source build
+    dependency field. Runtime metadata is retained in the plan for review but
+    is not copied automatically into binary Depends because Debian packaging
+    can intentionally split optional runtime features. Every mutation becomes
+    part of the downloadable packaging proposal and remains subject to the
+    normal rebuild and autopkgtest gates.
+    """
+    records = entry.get('upstream_dependency_requirements', [])
+    usable = [record for record in records
+              if record.get('kind') in {'test', 'build-system'}
+              and record.get('archive_binary') and record.get('archive_satisfies') is True]
+    if not usable:
+        return []
+    path = tree / 'debian' / 'control'
+    before = path.read_text()
+    paragraphs = re.split(r'(\n\s*\n)', before)
+    source = paragraphs[0]
+    build_field = 'Build-Depends-Indep' if 'Build-Depends-Indep:' in source else 'Build-Depends'
+    build_values = []
+    lines = source.splitlines()
+    for index, line in enumerate(lines):
+        if not re.match(r'^Build-Depends(?:-Indep|-Arch)?:', line):
+            continue
+        value = line.split(':', 1)[1]
+        cursor = index + 1
+        while cursor < len(lines) and lines[cursor].startswith((' ', '\t')):
+            value += '\n' + lines[cursor].strip()
+            cursor += 1
+        build_values.append(value)
+    build_names = dependency_names(', '.join(build_values))
+    actions = []
+    grouped: dict[str, list[dict]] = {}
+    for record in usable:
+        grouped.setdefault(record['archive_binary'], []).append(record)
+    for package, requirements in sorted(grouped.items()):
+        kinds = {record['kind'] for record in requirements}
+        scopes = []
+        if package not in build_names:
+            field = 'Build-Depends' if 'build-system' in kinds else build_field
+            source = _add_control_dependency(source, field, package)
+            build_names.add(package)
+            scopes.append('build')
+        if scopes:
+            evidence = sorted({
+                f"{record['file']}:{record['line']} {record['requirement']}"
+                for record in requirements
+            })
+            actions.append({
+                'action': 'add-upstream-dependency',
+                'package': package,
+                'source': requirements[0]['archive_source'],
+                'archive_version': requirements[0]['archive_version'],
+                'requirement_kinds': sorted(kinds),
+                'scopes': scopes,
+                'evidence': evidence,
+                'reason': ('Pinned upstream dependency is absent from Debian packaging; '
+                           'the Ubuntu archive version satisfies the declared constraint.'),
+            })
+    paragraphs[0] = source
+    revised = ''.join(paragraphs)
+    if revised != before:
+        path.write_text(revised)
+    return actions
 
 
 def packaging_adjustments(entry: dict, tree: Path, config_root: Path | None = None) -> list[dict]:
@@ -403,6 +494,7 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
         shutil.copytree(tree / 'debian', proposal_baseline, symlinks=True)
         report['packaging_adjustments'] = packaging_adjustments(entry, tree)
         report['packaging_adjustments'].extend(already_applied_patches(tree))
+        report['packaging_adjustments'].extend(upstream_dependency_adjustments(entry, tree))
         if remediation_patch is not None:
             from .failure_analysis import validate_source_patch
             patch = remediation_patch.read_text()

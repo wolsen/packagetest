@@ -1,6 +1,7 @@
 from packagetest.upstream_dependencies import (
     archive_requirement_decision,
     debian_upstream_version,
+    distribution_archive_index,
     distribution_source_index,
     map_requirements,
     parse_pyproject,
@@ -60,6 +61,39 @@ def test_distribution_mapping_uses_binary_source_and_python_names():
         'oslo-versionedobjects': 'python-oslo.versionedobjects',
         'pyyaml': 'python-yaml',
     }
+
+
+def test_external_test_requirements_are_checked_against_ubuntu_archive():
+    archive = distribution_archive_index([
+        {'distribution': 'wsgi-intercept', 'binary': 'python3-wsgi-intercept',
+         'source': 'python-wsgi-intercept', 'version': '1.13.1-1'},
+        {'distribution': 'gabbi', 'binary': 'python3-gabbi',
+         'source': 'python-gabbi', 'version': '3.0.0-1'},
+    ])
+    records = parse_requirement_file(
+        'wsgi-intercept>=1.7\ngabbi>=1.35\nnot-in-ubuntu>=1\n',
+        filename='test-requirements.txt', kind='test')
+    mapped, dependencies = map_requirements(records, {}, 'watcher', {}, archive)
+
+    assert dependencies == []
+    assert mapped[0]['archive_binary'] == 'python3-wsgi-intercept'
+    assert mapped[0]['archive_decision'] == 'satisfied'
+    assert mapped[1]['archive_binary'] == 'python3-gabbi'
+    assert mapped[2]['archive_decision'] == 'unmapped'
+
+
+def test_source_does_not_treat_its_own_binary_as_an_external_dependency():
+    records = parse_requirement_file('demo>=1\n', filename='requirements.txt', kind='runtime')
+    archive = distribution_archive_index([{
+        'distribution': 'demo', 'binary': 'python3-demo',
+        'source': 'python-demo', 'version': '2.0-1',
+    }])
+    mapped, dependencies = map_requirements(
+        records, {'demo': 'python-demo'}, 'python-demo',
+        {'python-demo': {'archive_version': '2.0-1'}}, archive)
+    assert dependencies == []
+    assert mapped[0]['source'] == 'python-demo'
+    assert 'archive_binary' not in mapped[0]
 
 
 def test_ubuntu_archive_versions_are_checked_against_pep508_constraints():

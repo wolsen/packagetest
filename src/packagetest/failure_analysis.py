@@ -369,6 +369,8 @@ def render_source_repair(decision: dict, tree: Path) -> str:
     paragraphs = re.split(r"(\n\s*\n)", before)
     paragraphs[0] = _add_control_dependency(
         paragraphs[0], "Build-Depends-Indep" if "Build-Depends-Indep:" in paragraphs[0] else "Build-Depends", package)
+    if decision.get("scope") == "build":
+        return _replace_file_patch("debian/control", before, "".join(paragraphs))
     changed_runtime = False
     for index in range(2, len(paragraphs), 2):
         paragraph = paragraphs[index]

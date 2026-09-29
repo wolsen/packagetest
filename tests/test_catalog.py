@@ -2,7 +2,8 @@ import json
 from pathlib import Path
 import subprocess
 
-from packagetest.catalog import dependency_names, make_catalog, package_record, paragraphs, source_name
+from packagetest.catalog import (archive_python_packages, dependency_names, make_catalog,
+                                package_record, paragraphs, source_name)
 
 
 def archive(name, binaries=None, depends=''):
@@ -14,6 +15,20 @@ def archive(name, binaries=None, depends=''):
 
 def test_dependency_names_retains_alternatives_and_strips_qualifiers():
     assert dependency_names('python3-a:any (>= 1) [amd64] <!nocheck>, python3-b | python3-c, debhelper-compat (= 13)') == {'python3-a', 'python3-b', 'python3-c', 'debhelper-compat'}
+
+
+def test_archive_python_index_keeps_non_openstack_binary_providers():
+    sources = {
+        'python-wsgi-intercept': archive(
+            'python-wsgi-intercept', 'python3-wsgi-intercept, python-wsgi-intercept-doc'),
+        'unrelated': archive('unrelated', 'unrelated-bin'),
+    }
+    assert archive_python_packages(sources) == [{
+        'distribution': 'wsgi-intercept',
+        'binary': 'python3-wsgi-intercept',
+        'source': 'python-wsgi-intercept',
+        'version': '1:2.0-0ubuntu1',
+    }]
 
 
 def test_alias_and_unmapped_package():

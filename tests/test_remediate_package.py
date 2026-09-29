@@ -63,6 +63,26 @@ ModuleNotFoundError: No module named 'gabbi'
     assert "binary stanza" not in context
 
 
+def test_functional_failure_context_uses_implicated_upstream_test(tmp_path):
+    module = load_script()
+    (tmp_path / "watcher/tests/functional").mkdir(parents=True)
+    test = tmp_path / "watcher/tests/functional/test_host_maintenance.py"
+    test.write_text("def test_disable_both_migrations():\n    assert len(actions) == 6\n")
+    (tmp_path / "debian").mkdir()
+    (tmp_path / "debian/control").write_text("Source: watcher\nBuild-Depends: debhelper\n")
+    evidence = '''STRUCTURED TEST FAILURE
+FAIL: watcher.tests.functional.test_host_maintenance.TestHostMaintenance.test_disable_both_migrations
+Traceback (most recent call last):
+  File "/<<PKGBUILDDIR>>/watcher/tests/functional/test_host_maintenance.py", line 399, in test_disable_both_migrations
+testtools.matchers._impl.MismatchError: 6 != 5
+'''
+    context = module.source_context(tmp_path, evidence)
+    focused = module.failure_focus(evidence)
+    assert "assert len(actions) == 6" in context
+    assert "debian/control" not in context
+    assert "6 != 5" in focused
+
+
 def test_missing_import_focus_omits_unrelated_build_log(tmp_path):
     module = load_script()
     evidence = """thousands of irrelevant build lines

@@ -14,6 +14,10 @@ from packaging.version import InvalidVersion, Version
 
 DEPENDENCY_FILES = ('requirements.txt', 'test-requirements.txt', 'pyproject.toml')
 TEST_GROUP_NAMES = {'test', 'tests', 'testing'}
+ARCHIVE_DISTRIBUTION_ALIASES = {
+    'pyyaml': 'yaml',
+    'python-dateutil': 'dateutil',
+}
 
 
 class MetadataFetchError(RuntimeError):
@@ -193,11 +197,27 @@ def distribution_source_index(packages: list[dict]) -> dict[str, str]:
     return {name: next(iter(sources)) for name, sources in candidates.items() if len(sources) == 1}
 
 
+def distribution_archive_index(records: list[dict]) -> dict[str, dict]:
+    """Return unambiguous Python distribution providers from Ubuntu indexes."""
+    candidates: dict[str, list[dict]] = {}
+    for original in records:
+        record = dict(original)
+        distribution = normalize_distribution(record['distribution'])
+        candidates.setdefault(distribution, []).append(record)
+    for alias, distribution in ARCHIVE_DISTRIBUTION_ALIASES.items():
+        if distribution in candidates:
+            candidates.setdefault(alias, []).extend(candidates[distribution])
+    return {name: values[0] for name, values in candidates.items()
+            if len({(value['binary'], value['source']) for value in values}) == 1}
+
+
 def map_requirements(records: list[dict], index: dict[str, str], consumer: str,
-                     packages: dict[str, dict] | None = None) -> tuple[list[dict], list[str]]:
+                     packages: dict[str, dict] | None = None,
+                     archive_index: dict[str, dict] | None = None) -> tuple[list[dict], list[str]]:
     mapped = []
     dependencies = set()
     packages = packages or {}
+    archive_index = archive_index or {}
     for original in records:
         record = dict(original)
         source = index.get(record['distribution']) if record.get('distribution') else None
@@ -215,5 +235,23 @@ def map_requirements(records: list[dict], index: dict[str, str], consumer: str,
             record['archive_decision_reason'] = reason
             if not satisfied:
                 dependencies.add(source)
+        elif source == consumer:
+            record['source'] = source
+            record['archive_decision_reason'] = 'Requirement is provided by the source being built'
+        elif record.get('distribution') in archive_index:
+            provider = archive_index[record['distribution']]
+            record.update(archive_binary=provider['binary'],
+                          archive_source=provider['source'],
+                          archive_version=provider['version'])
+            satisfied, reason = archive_requirement_decision(
+                record['requirement'], provider['version'])
+            record['archive_satisfies'] = satisfied
+            record['archive_decision'] = ('satisfied' if satisfied is True else
+                                          'insufficient' if satisfied is False else 'unknown')
+            record['archive_decision_reason'] = reason
+        elif record.get('distribution'):
+            record['archive_decision'] = 'unmapped'
+            record['archive_decision_reason'] = (
+                'No unambiguous Ubuntu python3 binary provider was found')
         mapped.append(record)
     return mapped, sorted(dependencies)

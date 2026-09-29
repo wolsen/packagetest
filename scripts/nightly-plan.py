@@ -19,8 +19,10 @@ def resolve_upstream_dependency_closure(catalog, sources=None, candidate_depende
     """Freeze roots and recursively add their upstream Python dependencies."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
     from packagetest.upstream_dependencies import (distribution_source_index,
+                                                   distribution_archive_index,
                                                    inspect_revision,
                                                    map_requirements)
+    from packagetest.catalog import dependency_names
     catalog = json.loads(json.dumps(catalog))
     entries = {entry['source']: entry for entry in catalog['packages']}
     requested = set(sources) if sources else set(entries)
@@ -29,6 +31,7 @@ def resolve_upstream_dependency_closure(catalog, sources=None, candidate_depende
     selected = set(requested)
     reasons = {source: {'requested'} for source in requested}
     index = distribution_source_index(catalog['packages'])
+    archive_index = distribution_archive_index(catalog.get('archive_python_packages', []))
     freeze_entry = freeze_entry or freeze
     inspect_entry = inspect_entry or inspect_revision
     inspected = set()
@@ -65,13 +68,32 @@ def resolve_upstream_dependency_closure(catalog, sources=None, candidate_depende
             if error:
                 entry['upstream_dependency_resolution_error'] = error
                 continue
-            mapped, dependencies = map_requirements(records, index, source, entries)
+            mapped, dependencies = map_requirements(
+                records, index, source, entries, archive_index)
             entry['upstream_dependency_files'] = files
             entry['upstream_dependency_requirements'] = mapped
             entry['upstream_dependencies'] = dependencies
+            packaged = dependency_names(entry.get('build_depends', ''))
+            entry['planned_archive_dependency_additions'] = [
+                {
+                    'binary': record['archive_binary'],
+                    'source': record['archive_source'],
+                    'archive_version': record['archive_version'],
+                    'kind': record['kind'],
+                    'requirement': record['requirement'],
+                    'file': record['file'],
+                    'line': record['line'],
+                }
+                for record in mapped
+                if record.get('kind') in {'test', 'build-system'}
+                and record.get('archive_binary')
+                and record['archive_binary'] not in packaged
+                and record.get('archive_satisfies') is True
+            ]
             entry['archive_satisfied_upstream_dependencies'] = sorted({
                 record['source'] for record in mapped
-                if record.get('archive_satisfies') is True and record.get('source') not in dependencies})
+                if record.get('source') and record.get('archive_satisfies') is True
+                and record.get('source') not in dependencies})
             entry.pop('upstream_dependency_resolution_error', None)
             entry['packaging_build_dependencies'] = list(entry.get('build_dependencies', []))
             entry['build_dependencies'] = sorted(set(entry.get('build_dependencies', [])) | set(dependencies))
@@ -250,7 +272,7 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
     decisions = Counter(record.get('archive_decision')
                         for source in plan['sources']
                         for record in entries[source].get('upstream_dependency_requirements', [])
-                        if record.get('source'))
+                        if record.get('archive_decision'))
     lines.extend([
         '',
         '## Upstream dependency discovery',
@@ -260,14 +282,39 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
         '`test-requirements.txt`, or `pyproject.toml` files.',
         '',
         f'Ubuntu archive checks: {decisions["satisfied"]} satisfied requirements, '
-        f'{decisions["insufficient"]} insufficient versions, and {decisions["unknown"]} '
-        'requirements requiring a conservative candidate build.',
+        f'{decisions["insufficient"]} insufficient versions, {decisions["unknown"]} unknown versions, '
+        f'and {decisions["unmapped"]} Python requirements with no unambiguous Ubuntu provider. '
+        'OpenStack providers that are not satisfied become same-run candidate edges; external results remain '
+        'explicit packaging evidence.',
         '',
     ])
     if added:
         lines.append('Automatically added sources: ' + ', '.join(f'`{source}`' for source in added) + '.')
     else:
         lines.append('No additional sources were needed.')
+
+    packaging_additions = [
+        (source, record)
+        for source in plan['sources']
+        for record in entries[source].get('planned_archive_dependency_additions', [])
+    ]
+    lines.extend([
+        '',
+        '### Planned Ubuntu test/build dependency additions',
+        '',
+        f'{len(packaging_additions)} archive-proven dependencies are absent from the selected Ubuntu packaging '
+        'and will be added to the candidate source build dependencies for validation.',
+        '',
+    ])
+    if packaging_additions:
+        lines.extend(['| Consumer | Binary package | Kind | Upstream requirement |',
+                      '|---|---|---|---|'])
+        for source, record in packaging_additions:
+            requirement = record['requirement'].replace('|', '\\|')
+            lines.append(
+                f"| `{source}` | `{record['binary']}` | {record['kind']} | `{requirement}` |")
+    else:
+        lines.append('None.')
 
     required = []
     for source in plan['sources']:

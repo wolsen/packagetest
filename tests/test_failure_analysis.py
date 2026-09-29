@@ -118,6 +118,24 @@ Depends:
     assert validate_source_patch(argument, tmp_path)["result"] == "APPLIES"
 
 
+def test_build_only_dependency_repair_does_not_add_runtime_dependency(tmp_path):
+    (tmp_path / "debian").mkdir()
+    (tmp_path / "debian/control").write_text("""Source: demo
+Build-Depends-Indep:
+ python3-stestr,
+
+Package: python3-demo
+Depends:
+ ${python3:Depends},
+Description: demo
+""")
+    patch = render_source_repair({
+        "action": "add_dependency", "subject": "python3-gabbi", "replacement": "",
+        "evidence": "ModuleNotFoundError: No module named 'gabbi'", "scope": "build",
+    }, tmp_path)
+    assert patch.count("+ python3-gabbi,") == 1
+
+
 def test_renders_failed_quilt_patch_as_reviewed_drop_candidate(tmp_path):
     (tmp_path / "debian/patches").mkdir(parents=True)
     (tmp_path / "debian/patches/series").write_text("embedded-xstatic.patch\nkeep.patch -p1\n")
