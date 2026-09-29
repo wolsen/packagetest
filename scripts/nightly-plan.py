@@ -303,6 +303,13 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
     return '\n'.join(lines) + '\n'
 
 
+def dependency_level_matrix(waves: list[list[str]]) -> dict:
+    """Return only real dependency levels for a dynamic workflow matrix."""
+    return {'include': [{'level': index,
+                         'packages': json.dumps(packages, separators=(',', ':'))}
+                        for index, packages in enumerate(waves, 1) if packages]}
+
+
 def freeze(entry):
     ref = entry['upstream_ref']
     repository = entry['upstream_repository']
@@ -334,7 +341,7 @@ def main():
     parser.add_argument('--output', type=Path, default=Path('nightly-plan'))
     parser.add_argument('--sources', default='', help='Comma-separated pilot sources; omitted selects entire catalog')
     parser.add_argument('--no-resolve', action='store_true', help='Offline graph inspection only; not a buildable frozen catalog')
-    parser.add_argument('--max-waves', type=int, default=12)
+    parser.add_argument('--max-waves', type=int, default=256)
     parser.add_argument('--candidate-dependencies', type=Path,
                         default=Path(__file__).resolve().parents[1] / 'config/hibiscus-candidate-dependencies.json')
     parser.add_argument('--dependency-pattern', help='Emit artifact download pattern for one frozen catalog source')
@@ -424,11 +431,8 @@ def main():
     if os.getenv('GITHUB_OUTPUT'):
         with open(os.environ['GITHUB_OUTPUT'], 'a') as handle:
             handle.write('sources=' + json.dumps({'source': plan['sources']}, separators=(',', ':')) + '\n')
-            for index in range(args.max_waves):
-                wave = plan['waves'][index] if index < len(plan['waves']) else []
-                level = index + 1
-                handle.write(f'build_dependency_level_{level}=' + json.dumps({'source': wave or ['__empty__']}, separators=(',', ':')) + '\n')
-                handle.write(f'dependency_level_{level}_enabled=' + ('true' if wave else 'false') + '\n')
+            levels = dependency_level_matrix(plan['waves'])
+            handle.write('dependency_levels=' + json.dumps(levels, separators=(',', ':')) + '\n')
     print(json.dumps({'packages': len(plan['sources']), 'waves': [len(w) for w in plan['waves']],
                       'archive_bootstrap_edges': len(plan['archive_bootstrap_edges']), 'resolution_failures': len(plan['resolution_failures'])}))
 

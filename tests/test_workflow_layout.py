@@ -6,26 +6,30 @@ import subprocess
 
 def test_each_build_matrix_runs_its_own_autopkgtest():
     workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    reusable = Path('.github/workflows/build-dependency-level.yml').read_text()
     action = 'uses: ./.github/actions/build-test-remediate'
 
-    assert workflow.count(action) == 12
+    assert workflow.count('uses: ./.github/workflows/build-dependency-level.yml') == 1
+    assert reusable.count(action) == 1
     assert 'autopkgtest_dependency_level_' not in workflow
     assert 'hibiscus-autopkgtest.yml' not in workflow
-    for level in range(1, 13):
-        assert f'build_dependency_level_{level}:' in workflow
+    assert 'build_dependency_level_' not in workflow
+    assert 'matrix: ${{ fromJSON(needs.plan.outputs.dependency_levels) }}' in workflow
+    assert 'max-parallel: 1' in workflow
 
 
 def test_child_jobs_keep_direct_package_build_names():
-    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
-    assert workflow.count('name: Build ${{ matrix.source }}') == 12
+    reusable = Path('.github/workflows/build-dependency-level.yml').read_text()
+    assert reusable.count('name: Build ${{ matrix.source }}') == 1
 
 
 def test_local_ai_repairs_inside_each_package_job_before_publication():
     workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    reusable = Path('.github/workflows/build-dependency-level.yml').read_text()
     action = Path('.github/actions/build-test-remediate/action.yml').read_text()
     assert 'failure_analysis_plan:' not in workflow
     assert 'analyze_failure:' not in workflow
-    assert workflow.count('uses: ./.github/actions/build-test-remediate') == 12
+    assert reusable.count('uses: ./.github/actions/build-test-remediate') == 1
     assert 'needs: [plan, prepare_autopkgtest_image, prepare_local_ai]' in workflow
     assert 'scripts/remediate-package.py' in action
     assert action.index('id: initial_test') < action.index('id: ai_cache')
@@ -57,13 +61,13 @@ def test_feature_push_exercises_heat_candidate_closure():
 
 def test_local_ai_canary_carries_required_candidate_packages_between_levels():
     workflow = Path('.github/workflows/local-ai-canary.yml').read_text()
+    reusable = Path('.github/workflows/build-dependency-level.yml').read_text()
     assert "'python-oslo.versionedobjects,ironic,heat-tempest-plugin,telemetry-tempest-plugin'" in workflow
-    assert 'repair_dependency_level_1:' in workflow
-    for level in range(1, 13):
-        assert f'repair_dependency_level_{level}:' in workflow
-    assert workflow.count('uses: ./.github/actions/build-test-remediate') == 12
-    assert 'pattern: ${{ steps.dependencies.outputs.pattern }}' in workflow
-    assert 'test "$pattern" = \'__no_dependencies__\'' not in workflow
+    assert 'repair_dependency_level_' not in workflow
+    assert 'repair_dependency_levels:' in workflow
+    assert 'matrix: ${{ fromJSON(needs.plan.outputs.dependency_levels) }}' in workflow
+    assert 'pattern: ${{ steps.dependencies.outputs.pattern }}' in reusable
+    assert 'test "$pattern" = \'__no_dependencies__\'' not in reusable
 
 
 def test_workflows_restore_one_checksum_keyed_autopkgtest_image_per_package():
@@ -72,7 +76,7 @@ def test_workflows_restore_one_checksum_keyed_autopkgtest_image_per_package():
         workflow = Path('.github/workflows', filename).read_text()
         assert workflow.count('prepare_autopkgtest_image:') == 1
         assert workflow.count('scripts/autopkgtest-cache-key.sh resolute amd64') == 1
-        assert workflow.count('autopkgtest-cache-key: ${{ needs.prepare_autopkgtest_image.outputs.cache_key }}') == 12
+        assert workflow.count('autopkgtest-cache-key: ${{ needs.prepare_autopkgtest_image.outputs.cache_key }}') == 1
         assert workflow.count('uses: actions/cache@v4') >= 1
     assert 'uses: actions/cache/restore@v4' in action
     assert 'fail-on-cache-miss: true' in action

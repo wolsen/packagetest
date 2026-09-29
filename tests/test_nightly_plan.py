@@ -92,6 +92,15 @@ def test_plan_summary_lists_every_dependency_level_and_candidate_rule():
     assert 'All selected source references resolved to immutable commit SHAs.' in summary
 
 
+def test_dynamic_matrix_contains_only_real_dependency_levels():
+    matrix = module.dependency_level_matrix([['a', 'b'], ['c'], []])
+    assert matrix == {'include': [
+        {'level': 1, 'packages': '["a","b"]'},
+        {'level': 2, 'packages': '["c"]'},
+    ]}
+    assert '__empty__' not in json.dumps(matrix)
+
+
 def test_reviewed_control_adds_independent_build_dependency_to_graph(tmp_path):
     entries = {'packages': [
         {'source': 'client', 'binaries': ['python3-client'], 'build_depends': 'debhelper',

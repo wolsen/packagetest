@@ -1,0 +1,84 @@
+name: Build one dependency level
+
+on:
+  workflow_call:
+    inputs:
+      packages:
+        description: JSON array of source packages in this dependency level
+        required: true
+        type: string
+      plan-artifact:
+        description: Artifact containing the frozen catalog and plan
+        required: true
+        type: string
+      autopkgtest-cache-key:
+        description: Immutable cache key for the prepared Resolute QEMU image
+        required: true
+        type: string
+      max-parallel:
+        description: Maximum package jobs in this dependency level
+        required: true
+        type: number
+      timeout-minutes:
+        description: Timeout for each package build and test job
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  packages:
+    name: Build ${{ matrix.source }}
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ inputs.max-parallel }}
+      matrix:
+        source: ${{ fromJSON(inputs.packages) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.plan-artifact }}
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
+      - uses: actions/download-artifact@v4
+        if: steps.dependencies.outputs.needed == 'true'
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack same-run producers
+        run: |
+          mkdir -p inputs outputs
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            directory="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$directory"
+            tar -xzf "$bundle" -C "$directory" --no-same-owner
+          done
+      - name: Check producers before provisioning builder
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          PYTHONPATH=src python3 scripts/nightly-build.py --check-dependencies-only \
+            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Prepare Resolute builder
+        run: |
+          set -o pipefail
+          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+      - name: Build, test, and repair the snapshot
+        if: always()
+        uses: ./.github/actions/build-test-remediate
+        with:
+          source: ${{ matrix.source }}
+          autopkgtest-cache-key: ${{ inputs.autopkgtest-cache-key }}
