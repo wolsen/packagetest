@@ -40,18 +40,19 @@ jobs:
           persist-credentials: false
       - name: Restrict the canary to reviewed cases
         env:
-          SOURCES: ${{ inputs.sources || 'aetos' }}
+          SOURCES: ${{ inputs.sources || 'ironic,heat-tempest-plugin,telemetry-tempest-plugin' }}
         run: |
           python3 - <<'PY'
           import os
-          allowed = {"aetos", "watcher", "python-glance-store", "networking-generic-switch"}
+          allowed = {"aetos", "watcher", "python-glance-store", "networking-generic-switch",
+                     "ironic", "heat-tempest-plugin", "telemetry-tempest-plugin"}
           requested = {item.strip() for item in os.environ["SOURCES"].split(",") if item.strip()}
           if not requested or requested - allowed:
               raise SystemExit(f"Choose one or more of {sorted(allowed)}; got {sorted(requested)}")
           PY
       - id: plan
         env:
-          SOURCES: ${{ inputs.sources || 'aetos' }}
+          SOURCES: ${{ inputs.sources || 'ironic,heat-tempest-plugin,telemetry-tempest-plugin' }}
         run: python3 scripts/nightly-plan.py --sources "$SOURCES"
       - uses: actions/upload-artifact@v4
         with:
