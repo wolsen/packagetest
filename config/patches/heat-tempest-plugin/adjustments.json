@@ -5,8 +5,8 @@
       "name": "patches/add-oslo.config-entry-point.patch",
       "sha256": "a96608d9e0938e1ce2abdd8083a5899ed872beee743169b4d199f42a007b8f06",
       "replacement": "add-oslo.config-entry-point.patch",
-      "replacement_sha256": "0c9e32a1c0ef61bdd4a3bc64c2f776f421b895a53caf3be4af1cc427609bb258",
-      "reason": "Refresh patch against snapshot sdist while preserving its packaging behavior and all tests."
+      "replacement_sha256": "cb527f038b090760597a0f74da8383d9631ae8b33928c4244908a4c6aa1c375d",
+      "reason": "Adapt the archive patch to the generated snapshot sdist and restore both Tempest and oslo.config entry points in an explicit [entry_points] section."
     }
   ]
 }

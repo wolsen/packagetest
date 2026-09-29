@@ -1,13 +1,16 @@
 Description: Preserve Debian packaging integration against the snapshot sdist.
 Forwarded: not-needed
-Last-Update: 2026-09-20
+Last-Update: 2026-09-29
 
 --- a/setup.cfg
 +++ b/setup.cfg
-@@ -30,6 +30,9 @@
- tempest.test_plugins = 
- 	heat = heat_tempest_plugin.plugin:HeatTempestPlugin
+@@ -1,6 +1,12 @@
+ [metadata]
+ name = heat-tempest-plugin
  
++[entry_points]
++tempest.test_plugins =
++	heat = heat_tempest_plugin.plugin:HeatTempestPlugin
 +oslo.config.opts =
 +	heat-tempest-plugin = heat_tempest_plugin.config:list_opts
 +

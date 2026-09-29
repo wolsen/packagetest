@@ -19,8 +19,8 @@
       "name": "0003-security-directory-transversal-ISO9660-support.patch",
       "sha256": "c6353bb61a6efbaad9e519f76087b8ccd7ddf5c8a7266736ea34e8060df075b7",
       "upstream_file": "ironic/common/exception.py",
-      "upstream_file_sha256": "6f21345a90b490a04c3fbd8761f9dfd576f0df93d290f988b1111f46e527d39f",
-      "reason": "Security fix already present in pinned upstream history: b78ada41d24833f3fffb754fb173baa947452141 security: directory transversal ISO9660 support. Retain upstream protection and tests without reapplying archive backport."
+      "upstream_file_sha256": "0e90e8fcec84ab8f2c906f558dba29a4350522536edac568e13c38b1ac82f50d",
+      "reason": "Security fix already present in pinned upstream history: b78ada41d24833f3fffb754fb173baa947452141 security: directory transversal ISO9660 support. Retain upstream protection and tests without reapplying archive backport. The current upstream exception module also contains InvalidContent; unrelated surrounding changes altered the file checksum."
     },
     {
       "name": "fix-pysnmp-7x-compat.patch",

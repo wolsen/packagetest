@@ -94,7 +94,7 @@ def packaging_adjustments(entry: dict, tree: Path, config_root: Path | None = No
     spec = json.loads(path.read_text())
     if spec['archive_dsc_sha256'] != entry['archive_source']['sha256']:
         raise ValueError('Packaging adaptation requires review for changed archive source')
-    applied = []
+    failures = []
     for item in spec.get('replace_files', []):
         name = Path(item['name'])
         replacement = Path(item['replacement'])
@@ -102,10 +102,12 @@ def packaging_adjustments(entry: dict, tree: Path, config_root: Path | None = No
             raise ValueError('Unsafe packaging adaptation path')
         original = tree / 'debian' / name
         revised = path.parent / replacement
-        if sha256(original) != item['sha256'] or sha256(revised) != item['replacement_sha256']:
-            raise ValueError('Packaging adaptation checksum guard failed: ' + str(name))
-        shutil.copyfile(revised, original)
-        applied.append({'action': 'replace-packaging-file', **item})
+        original_digest = sha256(original)
+        replacement_digest = sha256(revised)
+        if original_digest != item['sha256']:
+            failures.append(f'{name} source expected {item["sha256"]}, got {original_digest}')
+        if replacement_digest != item['replacement_sha256']:
+            failures.append(f'{name} replacement expected {item["replacement_sha256"]}, got {replacement_digest}')
     for item in spec.get('add_files', []):
         name, replacement = Path(item['name']), Path(item['replacement'])
         if (not name.parts or not replacement.parts or name.is_absolute() or replacement.is_absolute()
@@ -121,8 +123,38 @@ def packaging_adjustments(entry: dict, tree: Path, config_root: Path | None = No
             raise ValueError('Packaging addition destination already exists: ' + str(name))
         if item.get('mode') not in {'0644', '0755'}:
             raise ValueError('Packaging addition requires explicit mode 0644 or 0755')
-        if sha256(revised) != item['replacement_sha256']:
-            raise ValueError('Packaging addition checksum guard failed: ' + str(name))
+        replacement_digest = sha256(revised)
+        if replacement_digest != item['replacement_sha256']:
+            failures.append(f'{name} addition expected {item["replacement_sha256"]}, got {replacement_digest}')
+    series = []
+    series_path = tree / 'debian' / 'patches' / 'series'
+    if spec.get('drop_patches'):
+        series = series_path.read_text().splitlines()
+    for patch in spec.get('drop_patches', []):
+        original = tree / 'debian' / 'patches' / patch['name']
+        upstream = tree / patch['upstream_file']
+        patch_digest = sha256(original)
+        upstream_digest = sha256(upstream)
+        if patch_digest != patch['sha256']:
+            failures.append(f'{patch["name"]} patch expected {patch["sha256"]}, got {patch_digest}')
+        if upstream_digest != patch['upstream_file_sha256']:
+            failures.append(f'{patch["name"]} upstream {patch["upstream_file"]} expected '
+                            f'{patch["upstream_file_sha256"]}, got {upstream_digest}')
+        matching = [index for index, line in enumerate(series) if line.split() and line.split()[0] == patch['name']]
+        if len(matching) != 1:
+            failures.append(f'{patch["name"]} expected one active series entry, got {len(matching)}')
+    if failures:
+        raise ValueError('Packaging adaptation checksum guard failed:\n- ' + '\n- '.join(failures))
+
+    applied = []
+    for item in spec.get('replace_files', []):
+        name = Path(item['name'])
+        shutil.copyfile(path.parent / item['replacement'], tree / 'debian' / name)
+        applied.append({'action': 'replace-packaging-file', **item})
+    for item in spec.get('add_files', []):
+        name, replacement = Path(item['name']), Path(item['replacement'])
+        destination = tree / 'debian' / name
+        revised = path.parent / replacement
         destination.parent.mkdir(parents=True, exist_ok=True)
         with destination.open('xb') as handle:
             handle.write(revised.read_bytes())
@@ -130,16 +162,8 @@ def packaging_adjustments(entry: dict, tree: Path, config_root: Path | None = No
         applied.append({'action': 'add-packaging-file', **item})
     if not spec.get('drop_patches'):
         return applied
-    series_path = tree / 'debian' / 'patches' / 'series'
-    series = series_path.read_text().splitlines()
     for patch in spec.get('drop_patches', []):
-        original = tree / 'debian' / 'patches' / patch['name']
-        upstream = tree / patch['upstream_file']
-        if sha256(original) != patch['sha256'] or sha256(upstream) != patch['upstream_file_sha256']:
-            raise ValueError('Packaging adaptation checksum guard failed: ' + patch['name'])
         matching = [index for index, line in enumerate(series) if line.split() and line.split()[0] == patch['name']]
-        if len(matching) != 1:
-            raise ValueError('Packaging adaptation requires one matching series entry')
         series[matching[0]] = '# Superseded upstream: ' + patch['name']
         applied.append({'action': 'omit-obsolete-patch', **patch})
     series_path.write_text('\n'.join(series) + '\n')

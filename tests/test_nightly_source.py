@@ -1,5 +1,6 @@
 import io
 import json
+from pathlib import Path
 import subprocess
 import tarfile
 
@@ -164,6 +165,54 @@ def test_replacement_packaging_requires_both_checksums(tmp_path):
     assert original.read_text() == 'new rules\n'
     with pytest.raises(ValueError, match='checksum guard'):
         packaging_adjustments(entry, tree, cfg.parent)
+
+
+def test_packaging_adjustments_report_all_guard_failures_before_mutating(tmp_path):
+    from packagetest.nightly_source import packaging_adjustments
+    from packagetest.artifacts import sha256
+    tree = tmp_path / 'tree'
+    (tree / 'debian').mkdir(parents=True)
+    (tree / 'debian/control').write_text('current control\n')
+    (tree / 'debian/rules').write_text('current rules\n')
+    cfg = tmp_path / 'config/demo'
+    cfg.mkdir(parents=True)
+    (cfg / 'control').write_text('new control\n')
+    (cfg / 'rules').write_text('new rules\n')
+    spec = {'archive_dsc_sha256': 'a' * 64, 'replace_files': [
+        {'name': 'control', 'sha256': '1' * 64, 'replacement': 'control',
+         'replacement_sha256': sha256(cfg / 'control')},
+        {'name': 'rules', 'sha256': '2' * 64, 'replacement': 'rules',
+         'replacement_sha256': sha256(cfg / 'rules')},
+    ]}
+    (cfg / 'adjustments.json').write_text(json.dumps(spec))
+
+    with pytest.raises(ValueError) as raised:
+        packaging_adjustments(
+            {'source': 'demo', 'archive_source': {'sha256': 'a' * 64}}, tree, cfg.parent)
+
+    assert 'control source expected' in str(raised.value)
+    assert 'rules source expected' in str(raised.value)
+    assert (tree / 'debian/control').read_text() == 'current control\n'
+    assert (tree / 'debian/rules').read_text() == 'current rules\n'
+
+
+def test_heat_tempest_snapshot_patch_restores_both_entry_point_groups(tmp_path):
+    import configparser
+    import subprocess
+    tree = tmp_path / 'source'
+    tree.mkdir()
+    setup = tree / 'setup.cfg'
+    setup.write_text('[metadata]\nname = heat-tempest-plugin\n\n[egg_info]\ntag_build = \ntag_date = 0\n')
+    patch = Path('config/patches/heat-tempest-plugin/add-oslo.config-entry-point.patch').resolve()
+
+    subprocess.run(['patch', '--batch', '--fuzz=0', '-p1', '-i', str(patch)], cwd=tree, check=True)
+
+    parsed = configparser.ConfigParser(interpolation=None)
+    parsed.read(setup)
+    assert parsed.get('entry_points', 'tempest.test_plugins').strip() == (
+        'heat = heat_tempest_plugin.plugin:HeatTempestPlugin')
+    assert parsed.get('entry_points', 'oslo.config.opts').strip() == (
+        'heat-tempest-plugin = heat_tempest_plugin.config:list_opts')
 
 
 def test_add_packaging_tests_are_guarded_and_keep_explicit_mode(tmp_path):
