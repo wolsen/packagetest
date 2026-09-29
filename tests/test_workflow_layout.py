@@ -26,7 +26,7 @@ def test_local_ai_repairs_inside_each_package_job_before_publication():
     assert 'failure_analysis_plan:' not in workflow
     assert 'analyze_failure:' not in workflow
     assert workflow.count('uses: ./.github/actions/build-test-remediate') == 12
-    assert 'needs: [plan, prepare_local_ai]' in workflow
+    assert 'needs: [plan, prepare_autopkgtest_image, prepare_local_ai]' in workflow
     assert 'scripts/remediate-package.py' in action
     assert action.index('id: initial_test') < action.index('id: ai_cache')
     assert action.index('id: ai_cache') < action.index('id: remediation')
@@ -64,6 +64,20 @@ def test_local_ai_canary_carries_required_candidate_packages_between_levels():
     assert workflow.count('uses: ./.github/actions/build-test-remediate') == 12
     assert 'pattern: ${{ steps.dependencies.outputs.pattern }}' in workflow
     assert 'test "$pattern" = \'__no_dependencies__\'' not in workflow
+
+
+def test_workflows_restore_one_checksum_keyed_autopkgtest_image_per_package():
+    action = Path('.github/actions/build-test-remediate/action.yml').read_text()
+    for filename in ('hibiscus-snapshots.yml', 'local-ai-canary.yml'):
+        workflow = Path('.github/workflows', filename).read_text()
+        assert workflow.count('prepare_autopkgtest_image:') == 1
+        assert workflow.count('scripts/autopkgtest-cache-key.sh resolute amd64') == 1
+        assert workflow.count('autopkgtest-cache-key: ${{ needs.prepare_autopkgtest_image.outputs.cache_key }}') == 12
+        assert workflow.count('uses: actions/cache@v4') >= 1
+    assert 'uses: actions/cache/restore@v4' in action
+    assert 'fail-on-cache-miss: true' in action
+    assert 'AUTOPKGTEST_IMAGE_CACHE=' in action
+    assert 'upload-artifact' not in action[:action.index('- id: initial_build')]
 
 
 def test_integrated_test_step_records_blocked_build_and_evidence(tmp_path):
