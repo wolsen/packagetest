@@ -51,6 +51,17 @@ def test_feature_push_exercises_heat_candidate_closure():
                for edge in policy)
     assert any(edge['source'] == 'heat' and edge['dependency'] == 'python-oslo.versionedobjects'
                for edge in policy)
+    assert any(edge['source'] == 'ironic' and edge['dependency'] == 'python-oslo.versionedobjects'
+               for edge in policy)
+
+
+def test_local_ai_canary_carries_required_candidate_packages_between_levels():
+    workflow = Path('.github/workflows/local-ai-canary.yml').read_text()
+    assert "'python-oslo.versionedobjects,ironic,heat-tempest-plugin,telemetry-tempest-plugin'" in workflow
+    assert 'repair_dependency_level_1:' in workflow
+    assert 'repair_dependency_level_2:' in workflow
+    assert 'pattern: ${{ steps.dependencies.outputs.pattern }}' in workflow
+    assert 'test "$pattern" = \'__no_dependencies__\'' not in workflow
 
 
 def test_integrated_test_step_records_blocked_build_and_evidence(tmp_path):

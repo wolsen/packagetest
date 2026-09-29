@@ -35,25 +35,30 @@ jobs:
     timeout-minutes: 15
     outputs:
       sources: ${{ steps.plan.outputs.sources }}
+      build_dependency_level_1: ${{ steps.plan.outputs.build_dependency_level_1 }}
+      dependency_level_1_enabled: ${{ steps.plan.outputs.dependency_level_1_enabled }}
+      build_dependency_level_2: ${{ steps.plan.outputs.build_dependency_level_2 }}
+      dependency_level_2_enabled: ${{ steps.plan.outputs.dependency_level_2_enabled }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Restrict the canary to reviewed cases
         env:
-          SOURCES: ${{ inputs.sources || 'ironic,heat-tempest-plugin,telemetry-tempest-plugin' }}
+          SOURCES: ${{ inputs.sources || 'python-oslo.versionedobjects,ironic,heat-tempest-plugin,telemetry-tempest-plugin' }}
         run: |
           python3 - <<'PY'
           import os
           allowed = {"aetos", "watcher", "python-glance-store", "networking-generic-switch",
-                     "ironic", "heat-tempest-plugin", "telemetry-tempest-plugin"}
+                     "python-oslo.versionedobjects", "ironic", "heat-tempest-plugin",
+                     "telemetry-tempest-plugin"}
           requested = {item.strip() for item in os.environ["SOURCES"].split(",") if item.strip()}
           if not requested or requested - allowed:
               raise SystemExit(f"Choose one or more of {sorted(allowed)}; got {sorted(requested)}")
           PY
       - id: plan
         env:
-          SOURCES: ${{ inputs.sources || 'ironic,heat-tempest-plugin,telemetry-tempest-plugin' }}
+          SOURCES: ${{ inputs.sources || 'python-oslo.versionedobjects,ironic,heat-tempest-plugin,telemetry-tempest-plugin' }}
         run: python3 scripts/nightly-plan.py --sources "$SOURCES"
       - uses: actions/upload-artifact@v4
         with:
@@ -153,13 +158,14 @@ jobs:
           CONTRACT_OUTCOME: ${{ steps.contract.outcome }}
         run: test "$CONTRACT_OUTCOME" = success
 
-  repair:
-    name: Repair ${{ matrix.source }}
+  repair_dependency_level_1:
+    name: Build ${{ matrix.source }}
     needs: [plan, prepare_model]
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.prepare_model.result == 'success' && needs.plan.outputs.dependency_level_1_enabled == 'true' }}
     strategy:
       fail-fast: false
       max-parallel: 3
-      matrix: ${{ fromJSON(needs.plan.outputs.sources) }}
+      matrix: ${{ fromJSON(needs.plan.outputs.build_dependency_level_1) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -170,13 +176,82 @@ jobs:
         with:
           name: ai-canary-plan
           path: nightly-plan
-      - name: Verify no same-run producers are required
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
+      - uses: actions/download-artifact@v4
+        if: steps.dependencies.outputs.needed == 'true'
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack same-run producers
+        run: |
+          mkdir -p inputs outputs
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            directory="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$directory"
+            tar -xzf "$bundle" -C "$directory" --no-same-owner
+          done
+      - name: Check producers before provisioning builder
         env:
           SOURCE: ${{ matrix.source }}
         run: |
+          PYTHONPATH=src python3 scripts/nightly-build.py --check-dependencies-only \
+            --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Prepare Resolute builder
+        run: |
+          set -o pipefail
+          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+      - name: Build, test, and attempt up to three local repairs
+        uses: ./.github/actions/build-test-remediate
+        with:
+          source: ${{ matrix.source }}
+
+  repair_dependency_level_2:
+    name: Build ${{ matrix.source }}
+    needs: [plan, prepare_model, repair_dependency_level_1]
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.prepare_model.result == 'success' && needs.plan.outputs.dependency_level_2_enabled == 'true' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.plan.outputs.build_dependency_level_2) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ai-canary-plan
+          path: nightly-plan
+      - id: dependencies
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
+      - uses: actions/download-artifact@v4
+        if: steps.dependencies.outputs.needed == 'true'
+        with:
+          pattern: ${{ steps.dependencies.outputs.pattern }}
+          path: downloads
+          merge-multiple: true
+      - name: Unpack same-run producers
+        run: |
           mkdir -p inputs outputs
-          pattern="$(python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE")"
-          test "$pattern" = '__no_dependencies__'
+          for bundle in downloads/*.tar.gz; do
+            [ -f "$bundle" ] || continue
+            directory="inputs/$(basename "$bundle" .tar.gz)"
+            mkdir -p "$directory"
+            tar -xzf "$bundle" -C "$directory" --no-same-owner
+          done
+      - name: Check producers before provisioning builder
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
           PYTHONPATH=src python3 scripts/nightly-build.py --check-dependencies-only \
             --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
             --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
