@@ -8,6 +8,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.version import InvalidVersion, Version
+
 
 DEPENDENCY_FILES = ('requirements.txt', 'test-requirements.txt', 'pyproject.toml')
 TEST_GROUP_NAMES = {'test', 'tests', 'testing'}
@@ -20,6 +23,42 @@ class MetadataFetchError(RuntimeError):
 def normalize_distribution(name: str) -> str:
     """Use the same spelling equivalence as Python package indexes."""
     return re.sub(r'[-_.]+', '-', name).lower()
+
+
+def debian_upstream_version(version: str) -> str:
+    """Extract and normalize the upstream portion of a Debian version."""
+    value = version.split(':', 1)[-1]
+    if '-' in value:
+        value = value.rsplit('-', 1)[0]
+    # Debian sorts '~' before the empty string; Python expresses the common
+    # OpenStack prereleases without that separator (1.0.0rc1).
+    return value.replace('~', '')
+
+
+def archive_requirement_decision(requirement: str, archive_version: str) -> tuple[bool | None, str]:
+    """Prove whether an Ubuntu source version satisfies one Python requirement.
+
+    ``None`` is intentionally conservative: an unrepresentable Debian or PEP
+    440 version causes a same-run candidate build instead of an archive guess.
+    Environment markers are preserved as evidence but are not evaluated using
+    the planner host, whose Python version can differ from Ubuntu 26.04.
+    """
+    value = re.split(r'\s+#', requirement.strip(), maxsplit=1)[0].strip()
+    try:
+        parsed = Requirement(value)
+    except InvalidRequirement as exc:
+        return None, f'requirement is not valid PEP 508: {exc}'
+    if parsed.url:
+        return None, 'direct URL requirements cannot be satisfied from an Ubuntu version'
+    if not parsed.specifier:
+        return True, 'Ubuntu provides the mapped distribution; no version constraint was declared'
+    upstream = debian_upstream_version(archive_version)
+    try:
+        satisfied = parsed.specifier.contains(Version(upstream), prereleases=True)
+    except InvalidVersion as exc:
+        return None, f'Ubuntu upstream version {upstream!r} is not valid PEP 440: {exc}'
+    relation = 'satisfies' if satisfied else 'does not satisfy'
+    return satisfied, f'Ubuntu {archive_version} ({upstream}) {relation} {parsed.specifier}'
 
 
 def requirement_name(requirement: str) -> str | None:
@@ -154,14 +193,27 @@ def distribution_source_index(packages: list[dict]) -> dict[str, str]:
     return {name: next(iter(sources)) for name, sources in candidates.items() if len(sources) == 1}
 
 
-def map_requirements(records: list[dict], index: dict[str, str], consumer: str) -> tuple[list[dict], list[str]]:
+def map_requirements(records: list[dict], index: dict[str, str], consumer: str,
+                     packages: dict[str, dict] | None = None) -> tuple[list[dict], list[str]]:
     mapped = []
     dependencies = set()
+    packages = packages or {}
     for original in records:
         record = dict(original)
         source = index.get(record['distribution']) if record.get('distribution') else None
         if source and source != consumer:
             record['source'] = source
-            dependencies.add(source)
+            archive_version = packages.get(source, {}).get('archive_version')
+            record['archive_version'] = archive_version
+            if archive_version:
+                satisfied, reason = archive_requirement_decision(record['requirement'], archive_version)
+            else:
+                satisfied, reason = None, 'mapped Ubuntu source has no archive version evidence'
+            record['archive_satisfies'] = satisfied
+            record['archive_decision'] = ('satisfied' if satisfied is True else
+                                          'insufficient' if satisfied is False else 'unknown')
+            record['archive_decision_reason'] = reason
+            if not satisfied:
+                dependencies.add(source)
         mapped.append(record)
     return mapped, sorted(dependencies)

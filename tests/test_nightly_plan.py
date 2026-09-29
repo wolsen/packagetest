@@ -122,8 +122,13 @@ def test_upstream_metadata_expands_requested_roots_before_planning():
          'build_dependencies': [], 'upstream_repository': 'https://opendev.org/openstack/ironic',
          'upstream_ref': 'master'},
         {'source': 'python-sushy', 'deliverable': 'sushy', 'binaries': ['python3-sushy'],
-         'build_dependencies': [], 'upstream_repository': 'https://opendev.org/openstack/sushy',
+         'archive_version': '5.9.0-0ubuntu1', 'build_dependencies': [],
+         'upstream_repository': 'https://opendev.org/openstack/sushy',
          'upstream_ref': 'stable/2026.2'},
+        {'source': 'python-pbr', 'deliverable': 'pbr', 'binaries': ['python3-pbr'],
+         'archive_version': '7.0.3-2', 'build_dependencies': [],
+         'upstream_repository': 'https://opendev.org/openstack/pbr',
+         'upstream_ref': 'master'},
         {'source': 'unrelated', 'deliverable': 'unrelated', 'binaries': ['python3-unrelated'],
          'build_dependencies': [], 'upstream_repository': 'https://opendev.org/openstack/unrelated',
          'upstream_ref': 'master'},
@@ -136,7 +141,9 @@ def test_upstream_metadata_expands_requested_roots_before_planning():
     def inspect(entry):
         if entry['source'] == 'ironic':
             return ([{'distribution': 'sushy', 'requirement': 'sushy>=5.12.0',
-                      'kind': 'runtime', 'file': 'requirements.txt', 'line': 1}],
+                      'kind': 'runtime', 'file': 'requirements.txt', 'line': 1},
+                     {'distribution': 'pbr', 'requirement': 'pbr>=6.0.0',
+                      'kind': 'runtime', 'file': 'requirements.txt', 'line': 2}],
                     ['requirements.txt'])
         return [], ['pyproject.toml']
 
@@ -152,3 +159,4 @@ def test_upstream_metadata_expands_requested_roots_before_planning():
     assert entries['ironic']['run_dependencies'] == ['python-sushy']
     assert entries['python-sushy']['selection_reasons'] == ['upstream dependency of ironic']
     assert entries['ironic']['upstream_dependency_requirements'][0]['source'] == 'python-sushy'
+    assert entries['ironic']['upstream_dependency_requirements'][1]['archive_decision'] == 'satisfied'

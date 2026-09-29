@@ -1,4 +1,6 @@
 from packagetest.upstream_dependencies import (
+    archive_requirement_decision,
+    debian_upstream_version,
     distribution_source_index,
     map_requirements,
     parse_pyproject,
@@ -58,6 +60,32 @@ def test_distribution_mapping_uses_binary_source_and_python_names():
         'oslo-versionedobjects': 'python-oslo.versionedobjects',
         'pyyaml': 'python-yaml',
     }
+
+
+def test_ubuntu_archive_versions_are_checked_against_pep508_constraints():
+    assert debian_upstream_version('2:7.0.3-0ubuntu1') == '7.0.3'
+    assert debian_upstream_version('5.12.0~rc1-0ubuntu1') == '5.12.0rc1'
+    assert archive_requirement_decision('pbr>=6.0.0', '2:7.0.3-0ubuntu1')[0] is True
+    assert archive_requirement_decision('sushy>=5.12.0', '5.9.0-0ubuntu1')[0] is False
+    assert archive_requirement_decision('sample!=2.0,>=1.0', '2.0-0ubuntu1')[0] is False
+    assert archive_requirement_decision('sample~=2.1', '2.4.0-0ubuntu1')[0] is True
+
+
+def test_only_unsatisfied_or_unknown_requirements_become_candidate_dependencies():
+    records = parse_requirement_file('pbr>=6\nsushy>=5.12\nunknown @ https://example.invalid/a.whl\n',
+                                     filename='requirements.txt', kind='runtime')
+    packages = {
+        'python-pbr': {'archive_version': '7.0.3-0ubuntu1'},
+        'python-sushy': {'archive_version': '5.9.0-0ubuntu1'},
+        'python-unknown': {'archive_version': '1.0-0ubuntu1'},
+    }
+    index = {'pbr': 'python-pbr', 'sushy': 'python-sushy', 'unknown': 'python-unknown'}
+    mapped, dependencies = map_requirements(records, index, 'ironic', packages)
+
+    assert dependencies == ['python-sushy', 'python-unknown']
+    decisions = {item['distribution']: item['archive_decision'] for item in mapped}
+    assert decisions == {'pbr': 'satisfied', 'sushy': 'insufficient',
+                         'unknown': 'unknown'}
 
 
 def test_raw_urls_are_bound_to_the_frozen_commit():

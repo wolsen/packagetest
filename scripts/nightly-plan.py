@@ -65,10 +65,13 @@ def resolve_upstream_dependency_closure(catalog, sources=None, candidate_depende
             if error:
                 entry['upstream_dependency_resolution_error'] = error
                 continue
-            mapped, dependencies = map_requirements(records, index, source)
+            mapped, dependencies = map_requirements(records, index, source, entries)
             entry['upstream_dependency_files'] = files
             entry['upstream_dependency_requirements'] = mapped
             entry['upstream_dependencies'] = dependencies
+            entry['archive_satisfied_upstream_dependencies'] = sorted({
+                record['source'] for record in mapped
+                if record.get('archive_satisfies') is True and record.get('source') not in dependencies})
             entry.pop('upstream_dependency_resolution_error', None)
             entry['packaging_build_dependencies'] = list(entry.get('build_dependencies', []))
             entry['build_dependencies'] = sorted(set(entry.get('build_dependencies', [])) | set(dependencies))
@@ -166,7 +169,10 @@ def plan_catalog(catalog, sources=None, max_waves=12, candidate_dependencies=())
     for source in sorted(graph):
         outside = set(entries[source]['build_dependencies']) - selected
         for dependency in sorted(outside):
-            bootstrap.append({'source': source, 'dependency': dependency, 'reason': 'outside explicitly selected pilot'})
+            satisfied = dependency in entries[source].get('archive_satisfied_upstream_dependencies', [])
+            bootstrap.append({'source': source, 'dependency': dependency,
+                              'reason': ('Ubuntu archive satisfies upstream requirement' if satisfied
+                                         else 'outside explicitly selected pilot')})
     for group in groups:
         if len(group) > 1 or group[0] in graph[group[0]]:
             members = set(group)
@@ -241,13 +247,21 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
     added = sorted(set(plan['sources']) - set(requested))
     upstream_edges = sum(len(entries[source].get('upstream_dependencies', []))
                          for source in plan['sources'])
+    decisions = Counter(record.get('archive_decision')
+                        for source in plan['sources']
+                        for record in entries[source].get('upstream_dependency_requirements', [])
+                        if record.get('source'))
     lines.extend([
         '',
         '## Upstream dependency discovery',
         '',
         f'{len(requested)} requested roots expanded to {len(plan["sources"])} source packages. '
-        f'{upstream_edges} mapped dependency edges came from pinned `requirements.txt`, '
+        f'{upstream_edges} same-run candidate dependency edges came from pinned `requirements.txt`, '
         '`test-requirements.txt`, or `pyproject.toml` files.',
+        '',
+        f'Ubuntu archive checks: {decisions["satisfied"]} satisfied requirements, '
+        f'{decisions["insufficient"]} insufficient versions, and {decisions["unknown"]} '
+        'requirements requiring a conservative candidate build.',
         '',
     ])
     if added:
@@ -264,7 +278,8 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
         '## Dependency policy',
         '',
         f"{len(plan['archive_bootstrap_edges'])} dependency edges use Ubuntu archive packages on this first pass "
-        'to break dependency cycles or satisfy dependencies outside an explicit pilot.',
+        'because the archive satisfies the upstream requirement, to break dependency cycles, or to satisfy '
+        'dependencies outside an explicit pilot.',
         '',
         f'{len(required)} reviewed edges require same-run candidate packages:',
         '',

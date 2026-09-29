@@ -37,8 +37,11 @@ The 2026.2 nightly planner treats `--sources` as build roots. It freezes each
 root to a commit, reads `requirements.txt`, `test-requirements.txt`, and the
 runtime, build-system, and test groups in `pyproject.toml`, maps Python
 distribution names to Ubuntu source packages, and repeats this process until
-the candidate dependency closure is complete. The dependency levels use those
-upstream edges together with the effective Debian `Build-Depends` metadata.
+the candidate dependency closure is complete. Before expanding the closure it
+compares each PEP 508 version constraint with the Ubuntu source's Debian
+version. Satisfied requirements continue to use the archive; insufficient or
+unrepresentable versions request a same-run candidate. The dependency levels
+use those candidate edges together with the effective Debian `Build-Depends` metadata.
 The generated `nightly-plan/summary.md` records the requested roots, every
 automatically added source, and the packages in each dependency level.
 
