@@ -26,9 +26,9 @@ jobs:
         with:
           persist-credentials: false
       - run: |
-          python3 -m venv .venv
-          .venv/bin/pip install --no-build-isolation -e . pytest
-          .venv/bin/pytest -q
+          python3 -m venv --system-site-packages .venv
+          .venv/bin/pip install --no-build-isolation -e .
+          .venv/bin/python -m pytest -q
 
   build:
     name: Packaging regression ${{ matrix.build_case }}
