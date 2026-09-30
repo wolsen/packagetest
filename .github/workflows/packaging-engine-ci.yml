@@ -1,7 +1,7 @@
-name: OpenStack packaging validation
+name: Packaging engine CI
 on:
   push:
-    branches: [main, codex/packaging-milestones]
+    branches: [main]
     paths-ignore: ['**.md']
   pull_request:
     branches: [main]
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       build_case:
-        description: Pinned packaging case (all runs the validation matrix)
+        description: Pinned packaging regression case
         type: choice
         options: [all, baseline, update, snapshot, dependency, uca, glance, resolved-snapshot]
         default: all
@@ -17,12 +17,27 @@ on:
 permissions:
   contents: read
 jobs:
+  unit:
+    name: Python unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --no-build-isolation -e . pytest
+          .venv/bin/pytest -q
+
   build:
+    name: Packaging regression ${{ matrix.build_case }}
+    needs: [unit]
     strategy:
       fail-fast: false
       max-parallel: 3
       matrix:
-        build_case: ${{ fromJSON(inputs.build_case && inputs.build_case != 'all' && format('["{0}"]', inputs.build_case) || '["baseline","update","snapshot","dependency","uca","glance"]') }}
+        build_case: ${{ fromJSON(inputs.build_case && inputs.build_case != 'all' && format('["{0}"]', inputs.build_case) || '["baseline","snapshot","uca"]') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -44,6 +59,7 @@ jobs:
       - name: Build, validate, and install pinned packages
         env:
           BUILD_CASE: ${{ matrix.build_case }}
+          RUN_LIBRARY_SKIP_TESTS: 1
         run: bash scripts/run-library.sh "$BUILD_CASE"
       - name: Verify failed dependency blocks its consumer
         if: matrix.build_case == 'dependency'

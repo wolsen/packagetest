@@ -18,7 +18,9 @@ mkdir -p artifacts
     python3 -m venv --system-site-packages .venv
     .venv/bin/pip install --no-build-isolation -e .
 ) 9>artifacts/environment.lock
-.venv/bin/python -m pytest -q
+if [[ ${RUN_LIBRARY_SKIP_TESTS:-0} != 1 ]]; then
+    .venv/bin/python -m pytest -q
+fi
 if [[ "$build_case" == resolved-snapshot ]]; then
     .venv/bin/packaging lock-snapshot --template config/locks/oslo-i18n-stonking-snapshot.json --output "$lock"
 fi

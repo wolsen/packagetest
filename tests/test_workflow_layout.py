@@ -44,13 +44,14 @@ def test_local_ai_repairs_inside_each_package_job_before_publication():
     assert 'local-ai-llama-b10964-qwen25-coder-7b-q4km-v1' in workflow
 
 
-def test_feature_push_exercises_heat_candidate_closure():
+def test_main_push_exercises_heat_candidate_closure():
     workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
     policy = json.loads(Path('config/hibiscus-candidate-dependencies.json').read_text())
+    assert 'branches: [main]' in workflow
     assert ("github.event_name == 'push' && "
-            "!contains(github.event.head_commit.message, '[full-snapshot]') && "
             "'python-neutron-lib,python-oslo.versionedobjects,heat,watcher'") in workflow
-    assert "or empty manual dispatch selects the full catalog" in workflow
+    assert '[full-snapshot]' not in workflow
+    assert "and an empty manual dispatch select the complete catalog" in workflow
     assert any(edge['source'] == 'heat' and edge['dependency'] == 'python-neutron-lib'
                for edge in policy)
     assert any(edge['source'] == 'heat' and edge['dependency'] == 'python-oslo.versionedobjects'
@@ -59,25 +60,26 @@ def test_feature_push_exercises_heat_candidate_closure():
                for edge in policy)
 
 
-def test_local_ai_canary_carries_required_candidate_packages_between_levels():
-    workflow = Path('.github/workflows/local-ai-canary.yml').read_text()
+def test_model_contract_is_focused_and_does_not_duplicate_snapshot_orchestration():
+    workflow = Path('.github/workflows/model-contract.yml').read_text()
     reusable = Path('.github/workflows/build-dependency-level.yml').read_text()
-    assert "'python-oslo.versionedobjects,ironic,heat-tempest-plugin,telemetry-tempest-plugin'" in workflow
-    assert 'repair_dependency_level_' not in workflow
-    assert 'repair_dependency_levels:' in workflow
-    assert 'matrix: ${{ fromJSON(needs.plan.outputs.dependency_levels) }}' in workflow
+    assert 'scripts/model-contract-test.py' in workflow
+    assert 'local-ai-llama-b10964-qwen25-coder-7b-q4km-v1' in workflow
+    assert 'nightly-plan.py' not in workflow
+    assert 'build-dependency-level.yml' not in workflow
+    assert 'prepare_autopkgtest_image:' not in workflow
+    assert 'prepare_sbuild_rootfs:' not in workflow
     assert 'pattern: ${{ steps.dependencies.outputs.pattern }}' in reusable
     assert 'test "$pattern" = \'__no_dependencies__\'' not in reusable
 
 
 def test_workflows_restore_one_checksum_keyed_autopkgtest_image_per_package():
     action = Path('.github/actions/build-test-remediate/action.yml').read_text()
-    for filename in ('hibiscus-snapshots.yml', 'local-ai-canary.yml'):
-        workflow = Path('.github/workflows', filename).read_text()
-        assert workflow.count('prepare_autopkgtest_image:') == 1
-        assert workflow.count('scripts/autopkgtest-cache-key.sh resolute amd64') == 1
-        assert workflow.count('autopkgtest-cache-key: ${{ needs.prepare_autopkgtest_image.outputs.cache_key }}') == 1
-        assert workflow.count('uses: actions/cache@v4') >= 1
+    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    assert workflow.count('prepare_autopkgtest_image:') == 1
+    assert workflow.count('scripts/autopkgtest-cache-key.sh resolute amd64') == 1
+    assert workflow.count('autopkgtest-cache-key: ${{ needs.prepare_autopkgtest_image.outputs.cache_key }}') == 1
+    assert workflow.count('uses: actions/cache@v4') >= 1
     assert 'uses: actions/cache/restore@v4' in action
     assert 'fail-on-cache-miss: true' in action
     assert 'AUTOPKGTEST_IMAGE_CACHE=' in action
@@ -87,16 +89,26 @@ def test_workflows_restore_one_checksum_keyed_autopkgtest_image_per_package():
 def test_workflows_restore_one_daily_updated_sbuild_rootfs_per_package():
     reusable = Path('.github/workflows/build-dependency-level.yml').read_text()
     builder = Path('scripts/prepare-builder.sh').read_text()
-    for filename in ('hibiscus-snapshots.yml', 'local-ai-canary.yml'):
-        workflow = Path('.github/workflows', filename).read_text()
-        assert workflow.count('prepare_sbuild_rootfs:') == 1
-        assert workflow.count('scripts/sbuild-cache-key.sh resolute amd64') == 1
-        assert workflow.count('sbuild-cache-key: ${{ needs.prepare_sbuild_rootfs.outputs.cache_key }}') == 1
+    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    assert workflow.count('prepare_sbuild_rootfs:') == 1
+    assert workflow.count('scripts/sbuild-cache-key.sh resolute amd64') == 1
+    assert workflow.count('sbuild-cache-key: ${{ needs.prepare_sbuild_rootfs.outputs.cache_key }}') == 1
     assert 'uses: actions/cache/restore@v4' in reusable
     assert 'SBUILD_ROOTFS_CACHE:' in reusable
     assert 'fail-on-cache-miss: true' in reusable
     assert 'sudo sbuild-update -udcar "$chroot_name"' in builder
     assert builder.index('sudo sbuild-update -udcar') < builder.index('cp --reflink=auto')
+
+
+def test_packaging_engine_ci_runs_unit_tests_once_and_a_small_regression_matrix():
+    workflow = Path('.github/workflows/packaging-engine-ci.yml').read_text()
+    library = Path('scripts/run-library.sh').read_text()
+    assert 'name: Packaging engine CI' in workflow
+    assert 'name: Python unit tests' in workflow
+    assert '["baseline","snapshot","uca"]' in workflow
+    assert 'RUN_LIBRARY_SKIP_TESTS: 1' in workflow
+    assert 'RUN_LIBRARY_SKIP_TESTS' in library
+    assert not Path('.github/actions/test-built-snapshot/action.yml').exists()
 
 
 def test_integrated_test_step_records_blocked_build_and_evidence(tmp_path):

@@ -87,7 +87,7 @@ After the executor fixes, a candidate diagnostic invocation is:
 
 ```bash
 act workflow_dispatch \
-  -W .github/workflows/vertical-slice.yml \
+  -W .github/workflows/packaging-engine-ci.yml \
   -j build-pbr \
   -P ubuntu-latest=-self-hosted \
   --input openstack_target=2026.1 \
@@ -111,7 +111,7 @@ After those fixes and image provisioning, a candidate full-workflow invocation i
 
 ```bash
 /home/wolsen/work/playground/gump/.venv/bin/gump run \
-  /home/wolsen/work/playground/packagetest/.github/workflows/vertical-slice.yml \
+  /home/wolsen/work/playground/packagetest/.github/workflows/packaging-engine-ci.yml \
   --worktree /home/wolsen/work/playground/packagetest \
   --provider lxd-vm --name packagetest-smoke \
   --event workflow_dispatch \

@@ -1,6 +1,6 @@
 # Packaging milestones 2–5
 
-Implementation and validation on 2026-09-20. Tasks 2–5 are complete. Work is on `codex/packaging-milestones`; the executor runs directly in an Ubuntu VM and in GitHub-hosted Actions. Gump remains deferred.
+Implementation and validation began on 2026-09-20. Tasks 2–5 are complete and integrated on `main`; the executor runs directly in an Ubuntu VM and in GitHub-hosted Actions. Gump remains deferred.
 
 ## 2. Snapshot lock creation
 
