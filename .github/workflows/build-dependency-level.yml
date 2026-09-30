@@ -15,6 +15,10 @@ on:
         description: Immutable cache key for the prepared Resolute QEMU image
         required: true
         type: string
+      sbuild-cache-key:
+        description: Immutable cache key for the updated Resolute sbuild rootfs
+        required: true
+        type: string
       max-parallel:
         description: Maximum package jobs in this dependency level
         required: true
@@ -46,6 +50,13 @@ jobs:
         with:
           name: ${{ inputs.plan-artifact }}
           path: nightly-plan
+      - id: sbuild_rootfs
+        name: Restore updated Resolute sbuild rootfs
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/.cache/sbuild/resolute-amd64
+          key: ${{ inputs.sbuild-cache-key }}
+          fail-on-cache-miss: true
       - id: dependencies
         env:
           SOURCE: ${{ matrix.source }}
@@ -73,8 +84,11 @@ jobs:
             --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
             --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
       - name: Prepare Resolute builder
+        env:
+          SBUILD_ROOTFS_CACHE: ${{ github.workspace }}/.cache/sbuild/resolute-amd64
         run: |
           set -o pipefail
+          test "${{ steps.sbuild_rootfs.outputs.cache-hit }}" = true
           bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
       - name: Build, test, and repair the snapshot
         if: always()

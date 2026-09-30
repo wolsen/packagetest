@@ -79,10 +79,40 @@ jobs:
           cd "$AUTOPKGTEST_IMAGE_CACHE"
           sha256sum --check autopkgtest-resolute-amd64.img.sha256
 
+  prepare_sbuild_rootfs:
+    name: Prepare cached updated Resolute sbuild rootfs
+    needs: [plan]
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      cache_key: ${{ steps.identity.outputs.key }}
+    env:
+      SBUILD_ROOTFS_CACHE: ${{ github.workspace }}/.cache/sbuild/resolute-amd64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: identity
+        name: Resolve sbuild rootfs identity
+        run: scripts/sbuild-cache-key.sh resolute amd64
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SBUILD_ROOTFS_CACHE }}
+          key: ${{ steps.identity.outputs.key }}
+      - name: Bootstrap, fully update, and cache the source chroot
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: bash scripts/prepare-builder.sh resolute
+      - name: Verify cached rootfs checksum
+        run: |
+          cd "$SBUILD_ROOTFS_CACHE"
+          sha256sum --check resolute-amd64-sbuild.tar.gz.sha256
+
   build_dependency_levels:
     name: Dependency level ${{ matrix.level }}
-    needs: [plan, prepare_autopkgtest_image, prepare_local_ai]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.prepare_autopkgtest_image.result == 'success' }}
+    needs: [plan, prepare_autopkgtest_image, prepare_sbuild_rootfs, prepare_local_ai]
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.prepare_autopkgtest_image.result == 'success' && needs.prepare_sbuild_rootfs.result == 'success' }}
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -92,6 +122,7 @@ jobs:
       packages: ${{ matrix.packages }}
       plan-artifact: nightly-plan
       autopkgtest-cache-key: ${{ needs.prepare_autopkgtest_image.outputs.cache_key }}
+      sbuild-cache-key: ${{ needs.prepare_sbuild_rootfs.outputs.cache_key }}
       max-parallel: 20
       timeout-minutes: 360
 

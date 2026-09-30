@@ -30,7 +30,7 @@ def test_local_ai_repairs_inside_each_package_job_before_publication():
     assert 'failure_analysis_plan:' not in workflow
     assert 'analyze_failure:' not in workflow
     assert reusable.count('uses: ./.github/actions/build-test-remediate') == 1
-    assert 'needs: [plan, prepare_autopkgtest_image, prepare_local_ai]' in workflow
+    assert 'needs: [plan, prepare_autopkgtest_image, prepare_sbuild_rootfs, prepare_local_ai]' in workflow
     assert 'scripts/remediate-package.py' in action
     assert action.index('id: initial_test') < action.index('id: ai_cache')
     assert action.index('id: ai_cache') < action.index('id: remediation')
@@ -82,6 +82,21 @@ def test_workflows_restore_one_checksum_keyed_autopkgtest_image_per_package():
     assert 'fail-on-cache-miss: true' in action
     assert 'AUTOPKGTEST_IMAGE_CACHE=' in action
     assert 'upload-artifact' not in action[:action.index('- id: initial_build')]
+
+
+def test_workflows_restore_one_daily_updated_sbuild_rootfs_per_package():
+    reusable = Path('.github/workflows/build-dependency-level.yml').read_text()
+    builder = Path('scripts/prepare-builder.sh').read_text()
+    for filename in ('hibiscus-snapshots.yml', 'local-ai-canary.yml'):
+        workflow = Path('.github/workflows', filename).read_text()
+        assert workflow.count('prepare_sbuild_rootfs:') == 1
+        assert workflow.count('scripts/sbuild-cache-key.sh resolute amd64') == 1
+        assert workflow.count('sbuild-cache-key: ${{ needs.prepare_sbuild_rootfs.outputs.cache_key }}') == 1
+    assert 'uses: actions/cache/restore@v4' in reusable
+    assert 'SBUILD_ROOTFS_CACHE:' in reusable
+    assert 'fail-on-cache-miss: true' in reusable
+    assert 'sudo sbuild-update -udcar "$chroot_name"' in builder
+    assert builder.index('sudo sbuild-update -udcar') < builder.index('cp --reflink=auto')
 
 
 def test_integrated_test_step_records_blocked_build_and_evidence(tmp_path):
