@@ -31,6 +31,11 @@ def bundle(tmp_path):
     path = root / 'generation-manifest.json'
     path.write_text(json.dumps(manifest))
     stamp_generation(path, run_id='123', run_attempt='1')
+    (root / 'producer-readiness.json').write_text(json.dumps({
+        'schema_version': 1, 'source': 'sample', 'result': 'READY',
+        'build_result': 'SUCCEEDED', 'autopkgtest_result': 'PASS',
+        'ci': {'run_id': '123', 'run_attempt': '1'},
+    }))
     return root, lock, deb
 
 
@@ -64,6 +69,51 @@ def test_rejects_wrong_producer(tmp_path, change):
     if change == 'corrupt': deb.write_bytes(b'corrupt')
     path.write_text(json.dumps(manifest))
     with pytest.raises(ValueError):
+        collect(root, lock)
+
+
+def test_failed_producer_and_target_mismatch_are_distinguished(tmp_path):
+    root, lock, _ = bundle(tmp_path)
+    path = root / 'generation-manifest.json'
+    manifest = json.loads(path.read_text())
+    manifest['result'] = 'FAILED'
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match=r"Producer build failed for \['sample'\]"):
+        collect(root, lock)
+
+    manifest['result'] = 'SUCCEEDED'
+    manifest['target']['suite'] = 'noble'
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match=r"Producer target mismatch for \['sample'\]"):
+        collect(root, lock)
+
+
+def test_rejects_producer_whose_autopkgtest_failed(tmp_path):
+    root, lock, _ = bundle(tmp_path)
+    readiness = json.loads((root / 'producer-readiness.json').read_text())
+    readiness.update(result='FAILED', autopkgtest_result='FAIL')
+    (root / 'producer-readiness.json').write_text(json.dumps(readiness))
+
+    with pytest.raises(
+            ValueError,
+            match=r"Producer validation failed for \['sample'\]: build=SUCCEEDED, autopkgtest=FAIL"):
+        collect(root, lock)
+
+
+@pytest.mark.parametrize('change', ['missing', 'run', 'source'])
+def test_rejects_invalid_producer_readiness(tmp_path, change):
+    root, lock, _ = bundle(tmp_path)
+    path = root / 'producer-readiness.json'
+    readiness = json.loads(path.read_text())
+    if change == 'missing':
+        path.unlink()
+    elif change == 'run':
+        readiness['ci']['run_id'] = '122'
+        path.write_text(json.dumps(readiness))
+    else:
+        readiness['source'] = 'other'
+        path.write_text(json.dumps(readiness))
+    with pytest.raises(ValueError, match='producer .*readiness|readiness source mismatch'):
         collect(root, lock)
 
 

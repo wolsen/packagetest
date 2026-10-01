@@ -205,6 +205,50 @@ def test_patch_adaptation_requires_exact_source_and_patch_checksums(tmp_path):
     assert (tree / 'debian' / 'patches' / 'series').read_text() == '# Superseded upstream: fix.patch\n'
 
 
+def test_patch_omission_preserves_replacement_series_entries(tmp_path):
+    from packagetest.nightly_source import packaging_adjustments
+    from packagetest.artifacts import sha256
+    tree = tmp_path / 'tree'
+    patches = tree / 'debian' / 'patches'
+    patches.mkdir(parents=True)
+    series = patches / 'series'
+    series.write_text('obsolete.patch\narchive.patch\n')
+    (patches / 'obsolete.patch').write_text('old patch\n')
+    (tree / 'code.py').write_text('upstream fix\n')
+
+    config = tmp_path / 'config' / 'sample'
+    config.mkdir(parents=True)
+    replacement = config / 'series'
+    replacement.write_text('obsolete.patch\narchive.patch\nnightly.patch\n')
+    (config / 'adjustments.json').write_text(json.dumps({
+        'archive_dsc_sha256': 'a' * 64,
+        'replace_files': [{
+            'name': 'patches/series',
+            'sha256': sha256(series),
+            'replacement': 'series',
+            'replacement_sha256': sha256(replacement),
+        }],
+        'drop_patches': [{
+            'name': 'obsolete.patch',
+            'sha256': sha256(patches / 'obsolete.patch'),
+            'upstream_file': 'code.py',
+            'upstream_file_sha256': sha256(tree / 'code.py'),
+            'reason': 'upstream has fix',
+        }],
+    }))
+
+    actions = packaging_adjustments(
+        {'source': 'sample', 'archive_source': {'sha256': 'a' * 64}},
+        tree,
+        config.parent,
+    )
+
+    assert [action['action'] for action in actions] == [
+        'replace-packaging-file', 'omit-obsolete-patch']
+    assert series.read_text() == (
+        '# Superseded upstream: obsolete.patch\narchive.patch\nnightly.patch\n')
+
+
 def test_only_complete_already_applied_patch_is_omitted(tmp_path):
     from packagetest.nightly_source import already_applied_patches
     patches = tmp_path / 'debian/patches'

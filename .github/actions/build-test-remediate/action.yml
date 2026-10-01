@@ -101,6 +101,17 @@ runs:
           outputs/source-preparation/packaging-proposal/packaging-proposal.json \
           outputs/result.json test-results/result/result.json
 
+    - name: Record producer build-and-test readiness
+      if: always()
+      shell: bash
+      env:
+        SOURCE: ${{ inputs.source }}
+      run: |
+        python3 scripts/package-readiness.py \
+          --source "$SOURCE" --outputs outputs \
+          --build outputs/result.json --autopkgtest test-results/result/result.json \
+          --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+
     - name: Bundle the final candidate and evidence
       if: always()
       shell: bash

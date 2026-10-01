@@ -217,10 +217,10 @@ def packaging_adjustments(entry: dict, tree: Path, config_root: Path | None = No
         replacement_digest = sha256(revised)
         if replacement_digest != item['replacement_sha256']:
             failures.append(f'{name} addition expected {item["replacement_sha256"]}, got {replacement_digest}')
-    series = []
+    original_series = []
     series_path = tree / 'debian' / 'patches' / 'series'
     if spec.get('drop_patches'):
-        series = series_path.read_text().splitlines()
+        original_series = series_path.read_text().splitlines()
     for patch in spec.get('drop_patches', []):
         original = tree / 'debian' / 'patches' / patch['name']
         upstream = tree / patch['upstream_file']
@@ -231,7 +231,8 @@ def packaging_adjustments(entry: dict, tree: Path, config_root: Path | None = No
         if upstream_digest != patch['upstream_file_sha256']:
             failures.append(f'{patch["name"]} upstream {patch["upstream_file"]} expected '
                             f'{patch["upstream_file_sha256"]}, got {upstream_digest}')
-        matching = [index for index, line in enumerate(series) if line.split() and line.split()[0] == patch['name']]
+        matching = [index for index, line in enumerate(original_series)
+                    if line.split() and line.split()[0] == patch['name']]
         if len(matching) != 1:
             failures.append(f'{patch["name"]} expected one active series entry, got {len(matching)}')
     if failures:
@@ -253,6 +254,10 @@ def packaging_adjustments(entry: dict, tree: Path, config_root: Path | None = No
         applied.append({'action': 'add-packaging-file', **item})
     if not spec.get('drop_patches'):
         return applied
+    # A reviewed replacement may deliberately add entries to patches/series.
+    # Apply obsolete-patch omissions to the post-replacement file so that those
+    # entries are not lost by writing the archive's original series back out.
+    series = series_path.read_text().splitlines()
     for patch in spec.get('drop_patches', []):
         matching = [index for index, line in enumerate(series) if line.split() and line.split()[0] == patch['name']]
         series[matching[0]] = '# Superseded upstream: ' + patch['name']
