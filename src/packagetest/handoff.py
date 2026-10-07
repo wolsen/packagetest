@@ -47,7 +47,8 @@ def stamp_generation(manifest_path: Path, *, run_id: str, run_attempt: str) -> d
 
 
 def collect_producers(download_root: Path, expected_locks: dict[str, dict], *,
-                      run_id: str, run_attempt: str, target: dict) -> dict[str, list[dict]]:
+                      run_id: str, run_attempt: str, target: dict,
+                      require_readiness: bool = True) -> dict[str, list[dict]]:
     """Validate downloaded producer bundles against independently supplied locks.
 
     Uploaded directory layout must preserve generation-manifest.json alongside
@@ -71,26 +72,27 @@ def collect_producers(download_root: Path, expected_locks: dict[str, dict], *,
             raise ValueError(
                 f'Producer target mismatch for {sorted(relevant)}: '
                 f'expected {target}, got {manifest.get("target")}: {manifest_path}')
-        readiness_path = manifest_path.parent / 'producer-readiness.json'
-        if not readiness_path.is_file():
-            raise ValueError(
-                f'Missing producer build-and-test readiness for {sorted(relevant)}: '
-                f'{readiness_path}')
-        readiness = json.loads(readiness_path.read_text())
-        if readiness.get('ci') != identity:
-            raise ValueError(
-                f'Stale or wrong-run producer readiness for {sorted(relevant)}: '
-                f'{readiness_path}')
-        if readiness.get('source') not in relevant:
-            raise ValueError(
-                f'Producer readiness source mismatch for {sorted(relevant)}: '
-                f'{readiness_path}')
-        if readiness.get('result') != 'READY':
-            raise ValueError(
-                f'Producer validation failed for {sorted(relevant)}: '
-                f'build={readiness.get("build_result")}, '
-                f'autopkgtest={readiness.get("autopkgtest_result")}: '
-                f'{readiness_path}')
+        if require_readiness:
+            readiness_path = manifest_path.parent / 'producer-readiness.json'
+            if not readiness_path.is_file():
+                raise ValueError(
+                    f'Missing producer build-and-test readiness for {sorted(relevant)}: '
+                    f'{readiness_path}')
+            readiness = json.loads(readiness_path.read_text())
+            if readiness.get('ci') != identity:
+                raise ValueError(
+                    f'Stale or wrong-run producer readiness for {sorted(relevant)}: '
+                    f'{readiness_path}')
+            if readiness.get('source') not in relevant:
+                raise ValueError(
+                    f'Producer readiness source mismatch for {sorted(relevant)}: '
+                    f'{readiness_path}')
+            if readiness.get('result') != 'READY':
+                raise ValueError(
+                    f'Producer validation failed for {sorted(relevant)}: '
+                    f'build={readiness.get("build_result")}, '
+                    f'autopkgtest={readiness.get("autopkgtest_result")}: '
+                    f'{readiness_path}')
         saved_lock = json.loads((manifest_path.parent / 'build-lock.json').read_text())
         for source in relevant:
             if source in found:

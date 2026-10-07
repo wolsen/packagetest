@@ -41,7 +41,8 @@ if [[ "$build_ready" == true ]]; then
   if [[ $prepare_rc -eq 0 ]]; then
     set +e
     env PYTHONPATH=src python3 scripts/nightly-autopkgtest.py \
-      --catalog nightly-plan/catalog.json --source "$source_name" --inputs . \
+      --catalog nightly-plan/catalog.json --source "$source_name" \
+      --inputs inputs --candidate-input outputs \
       --output "$result_root" --run-id "$GITHUB_RUN_ID" \
       --run-attempt "$GITHUB_RUN_ATTEMPT" --image "$test_image" \
       2>&1 | tee test-results/autopkgtest.log

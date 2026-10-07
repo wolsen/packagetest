@@ -117,6 +117,26 @@ def test_rejects_invalid_producer_readiness(tmp_path, change):
         collect(root, lock)
 
 
+def test_candidate_can_be_tested_before_readiness_then_used_downstream(tmp_path):
+    root, lock, _ = bundle(tmp_path)
+    readiness = root / 'producer-readiness.json'
+    readiness.unlink()
+
+    # The package under test has no test verdict yet, but its complete build
+    # manifest and artifacts still receive all other handoff validation.
+    candidate = collect(root, lock, require_readiness=False)
+    assert set(candidate) == {'sample'}
+    with pytest.raises(ValueError, match='Missing producer build-and-test readiness'):
+        collect(root, lock)
+
+    readiness.write_text(json.dumps({
+        'schema_version': 1, 'source': 'sample', 'result': 'READY',
+        'build_result': 'SUCCEEDED', 'autopkgtest_result': 'PASS',
+        'ci': {'run_id': '123', 'run_attempt': '1'},
+    }))
+    assert set(collect(root, lock)) == {'sample'}
+
+
 def test_rejects_changed_bytes_between_collect_and_repo(tmp_path):
     root, lock, deb = bundle(tmp_path)
     producers = collect(root, lock)

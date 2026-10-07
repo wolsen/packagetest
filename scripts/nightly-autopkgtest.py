@@ -60,8 +60,12 @@ try:
             expected = {name: lock for name, lock in locks.items()
                         if source_roots[name] == root}
             if expected:
+                is_candidate = args.candidate_input is not None and root == args.candidate_input
+                if is_candidate and set(expected) != {args.source}:
+                    raise ValueError('Candidate input must contain only the requested source')
                 producers.update(collect_producers(root, expected, run_id=args.run_id,
-                                                   run_attempt=args.run_attempt, target=target))
+                                                   run_attempt=args.run_attempt, target=target,
+                                                   require_readiness=not is_candidate))
         repository = args.output / 'repository'
         build_repository(producers, repository)
         report.update(run(paths[args.source], args.source, args.output / 'autopkgtest',

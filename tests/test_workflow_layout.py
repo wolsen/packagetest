@@ -18,6 +18,11 @@ def test_each_build_matrix_runs_its_own_autopkgtest():
     assert 'max-parallel: 1' in workflow
 
 
+def test_integrated_autopkgtest_separates_untested_candidate_from_ready_dependencies():
+    script = Path('scripts/test-built-snapshot.sh').read_text()
+    assert '--inputs inputs --candidate-input outputs' in script
+
+
 def test_child_jobs_keep_direct_package_build_names():
     reusable = Path('.github/workflows/build-dependency-level.yml').read_text()
     assert reusable.count('name: Build ${{ matrix.source }}') == 1
