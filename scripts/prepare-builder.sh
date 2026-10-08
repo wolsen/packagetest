@@ -38,21 +38,20 @@ apt_options=(
 host_manifest="$host_cache/packages.sha256"
 if [[ -n "$host_cache" && -f "$host_manifest" ]]; then
     (cd "$host_cache" && sha256sum --check packages.sha256)
-    # apt-get still resolves dependencies when every requested package is a
-    # local .deb.  Restore the exact signed package indexes used to create the
-    # archive set so a fresh runner cannot select an uncached candidate from
-    # its older baked-in indexes.
+    # Restore both halves of apt's offline state: the signed indexes used for
+    # resolution and the archives directory where apt expects every selected
+    # package. Passing all .debs as local arguments is insufficient: apt can
+    # still schedule their dependencies as archive downloads and --no-download
+    # then fails even though matching files exist elsewhere in the workspace.
     sudo rm -rf /var/lib/apt/lists/*
     sudo tar -xzf "$host_cache/apt-lists.tar.gz" -C /var/lib/apt/lists
-    shopt -s nullglob
-    host_debs=("$host_cache"/*.deb)
-    shopt -u nullglob
-    ((${#host_debs[@]} > 0))
+    sudo rm -f /var/cache/apt/archives/*.deb
+    sudo cp "$host_cache"/*.deb /var/cache/apt/archives/
     # The cache preparation job resolved this complete tool set against the
     # same GitHub runner image. Do not contact an archive from package jobs.
     sudo timeout --signal=TERM --kill-after=30s 15m \
         env DEBIAN_FRONTEND=noninteractive apt-get --no-download \
-        -o DPkg::Lock::Timeout=300 install -y "${host_debs[@]}"
+        -o DPkg::Lock::Timeout=300 install -y "${host_packages[@]}"
 else
     # Only the cache preparation job reaches this branch. Hosted-runner mirrors
     # and package locks still receive their own bounds.
@@ -68,13 +67,12 @@ else
         sudo tar -czf "$host_cache/apt-lists.tar.gz" -C /var/lib/apt/lists .
         sudo chown -R "$USER:$USER" "$host_cache"
         (cd "$host_cache" && sha256sum ./*.deb apt-lists.tar.gz > packages.sha256)
-        shopt -s nullglob
-        host_debs=("$host_cache"/*.deb)
-        shopt -u nullglob
-        ((${#host_debs[@]} > 0))
+        # The downloaded archives are already in apt's normal cache here.
+        # Install by package name so this path exercises the same operation
+        # that restored package jobs perform.
         sudo timeout --signal=TERM --kill-after=30s 15m \
             env DEBIAN_FRONTEND=noninteractive apt-get --no-download \
-            -o DPkg::Lock::Timeout=300 install -y "${host_debs[@]}"
+            -o DPkg::Lock::Timeout=300 install -y "${host_packages[@]}"
     else
         sudo timeout --signal=TERM --kill-after=30s 15m \
             env DEBIAN_FRONTEND=noninteractive apt-get "${apt_options[@]}" \

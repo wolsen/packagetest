@@ -125,6 +125,9 @@ def test_workflows_restore_one_daily_updated_sbuild_rootfs_per_package():
     assert 'sha256sum --check packages.sha256' in builder
     assert 'apt-lists.tar.gz' in builder
     assert 'tar -xzf "$host_cache/apt-lists.tar.gz" -C /var/lib/apt/lists' in builder
+    assert 'cp "$host_cache"/*.deb /var/cache/apt/archives/' in builder
+    assert 'install -y "${host_packages[@]}"' in builder
+    assert 'install -y "${host_debs[@]}"' not in builder
     assert '${{ env.SBUILD_HOST_APT_CACHE }}' in reusable
     assert '${{ env.SBUILD_HOST_APT_CACHE }}' in workflow
     assert 'test -f "$SBUILD_HOST_APT_CACHE/packages.sha256"' in reusable
