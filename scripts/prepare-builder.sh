@@ -38,6 +38,12 @@ apt_options=(
 host_manifest="$host_cache/packages.sha256"
 if [[ -n "$host_cache" && -f "$host_manifest" ]]; then
     (cd "$host_cache" && sha256sum --check packages.sha256)
+    # apt-get still resolves dependencies when every requested package is a
+    # local .deb.  Restore the exact signed package indexes used to create the
+    # archive set so a fresh runner cannot select an uncached candidate from
+    # its older baked-in indexes.
+    sudo rm -rf /var/lib/apt/lists/*
+    sudo tar -xzf "$host_cache/apt-lists.tar.gz" -C /var/lib/apt/lists
     shopt -s nullglob
     host_debs=("$host_cache"/*.deb)
     shopt -u nullglob
@@ -57,10 +63,11 @@ else
         env DEBIAN_FRONTEND=noninteractive apt-get "${apt_options[@]}" \
         --download-only install -y "${host_packages[@]}"
     if [[ -n "$host_cache" ]]; then
-        rm -f "$host_cache"/*.deb "$host_manifest"
+        rm -f "$host_cache"/*.deb "$host_cache/apt-lists.tar.gz" "$host_manifest"
         sudo cp /var/cache/apt/archives/*.deb "$host_cache/"
+        sudo tar -czf "$host_cache/apt-lists.tar.gz" -C /var/lib/apt/lists .
         sudo chown -R "$USER:$USER" "$host_cache"
-        (cd "$host_cache" && sha256sum ./*.deb > packages.sha256)
+        (cd "$host_cache" && sha256sum ./*.deb apt-lists.tar.gz > packages.sha256)
         shopt -s nullglob
         host_debs=("$host_cache"/*.deb)
         shopt -u nullglob

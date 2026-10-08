@@ -19,13 +19,13 @@ def main() -> None:
     args = parser.parse_args()
 
     manifests = list(args.outputs.glob('gen-*/generation-manifest.json'))
-    if len(manifests) != 1:
-        raise ValueError(f'Expected one generation manifest, found {len(manifests)}')
+    if len(manifests) > 1:
+        raise ValueError(f'Expected at most one generation manifest, found {len(manifests)}')
     build = json.loads(args.build.read_text())
     test = json.loads(args.autopkgtest.read_text())
     build_result = build.get('result')
     test_result = test.get('result')
-    ready = build_result == 'SUCCEEDED' and test_result in ACCEPTED_TESTS
+    ready = len(manifests) == 1 and build_result == 'SUCCEEDED' and test_result in ACCEPTED_TESTS
     report = {
         'schema_version': 1,
         'source': args.source,
@@ -34,7 +34,9 @@ def main() -> None:
         'autopkgtest_result': test_result,
         'ci': {'run_id': str(args.run_id), 'run_attempt': str(args.run_attempt)},
     }
-    output = manifests[0].parent / 'producer-readiness.json'
+    if not manifests:
+        report['error'] = 'No generation manifest was produced'
+    output = (manifests[0].parent if manifests else args.outputs) / 'producer-readiness.json'
     output.write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, sort_keys=True))
 
