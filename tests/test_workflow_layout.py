@@ -18,6 +18,17 @@ def test_each_build_matrix_runs_its_own_autopkgtest():
     assert 'max-parallel: 1' in workflow
 
 
+def test_summary_artifact_contains_browsable_results_and_packaging_proposals():
+    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    assert 'pattern: packaging-proposal-*' in workflow
+    assert 'python3 scripts/render-pipeline-report.py' in workflow
+    assert '--plan nightly-plan/plan.json' in workflow
+    assert '--results summary/results.json' in workflow
+    assert '--proposals proposals' in workflow
+    assert 'name: pipeline-summary' in workflow
+    assert 'open `index.html`' in workflow
+
+
 def test_integrated_autopkgtest_separates_untested_candidate_from_ready_dependencies():
     script = Path('scripts/test-built-snapshot.sh').read_text()
     assert '--inputs inputs --candidate-input outputs' in script
@@ -94,15 +105,31 @@ def test_workflows_restore_one_checksum_keyed_autopkgtest_image_per_package():
 def test_workflows_restore_one_daily_updated_sbuild_rootfs_per_package():
     reusable = Path('.github/workflows/build-dependency-level.yml').read_text()
     builder = Path('scripts/prepare-builder.sh').read_text()
+    action = Path('.github/actions/build-test-remediate/action.yml').read_text()
     workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
     assert workflow.count('prepare_sbuild_rootfs:') == 1
     assert workflow.count('scripts/sbuild-cache-key.sh resolute amd64') == 1
     assert workflow.count('sbuild-cache-key: ${{ needs.prepare_sbuild_rootfs.outputs.cache_key }}') == 1
     assert 'uses: actions/cache/restore@v4' in reusable
     assert 'SBUILD_ROOTFS_CACHE:' in reusable
+    assert 'SBUILD_HOST_APT_CACHE:' in reusable
+    assert 'SBUILD_HOST_APT_CACHE:' in workflow
     assert 'fail-on-cache-miss: true' in reusable
     assert 'sudo sbuild-update -udcar "$chroot_name"' in builder
     assert builder.index('sudo sbuild-update -udcar') < builder.index('cp --reflink=auto')
+    assert 'Acquire::Retries=3' in builder
+    assert 'Acquire::http::Timeout=30' in builder
+    assert 'timeout --signal=TERM --kill-after=30s 10m' in builder
+    assert 'timeout --signal=TERM --kill-after=30s 15m' in builder
+    assert 'apt-get --no-download' in builder
+    assert 'sha256sum --check packages.sha256' in builder
+    assert '${{ env.SBUILD_HOST_APT_CACHE }}' in reusable
+    assert '${{ env.SBUILD_HOST_APT_CACHE }}' in workflow
+    assert 'test -f "$SBUILD_HOST_APT_CACHE/packages.sha256"' in reusable
+    assert 'timeout --signal=TERM --kill-after=30s 25m' in reusable
+    assert "builder-ready: ${{ steps.builder.outcome == 'success' }}" in reusable
+    assert "if: inputs.builder-ready == 'true'" in action
+    assert "inputs.builder-ready == 'true' && (steps.initial_build.outcome == 'failure'" in action
 
 
 def test_packaging_engine_ci_runs_unit_tests_once_and_a_small_regression_matrix():

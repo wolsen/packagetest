@@ -11,6 +11,7 @@ case "$profile" in noble|resolute|stonking|noble-uca-epoxy) ;; *) echo 'Supporte
 if [[ "$profile" == noble-uca-epoxy ]]; then suite=noble; fi
 chroot_name="$profile-amd64-sbuild"
 cache=${SBUILD_ROOTFS_CACHE:-}
+host_cache=${SBUILD_HOST_APT_CACHE:-}
 cache_tarball=""
 cache_checksum=""
 if [[ -n "$cache" ]]; then
@@ -19,11 +20,63 @@ if [[ -n "$cache" ]]; then
     cache_tarball="$cache/$chroot_name.tar.gz"
     cache_checksum="$cache/$chroot_name.tar.gz.sha256"
 fi
-sudo apt-get update
-sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y \
-    git git-buildpackage pristine-tar devscripts dpkg-dev debhelper dh-python \
-    openstack-pkg-tools sbuild schroot debootstrap ubuntu-keyring ubuntu-cloud-keyring lintian \
+if [[ -n "$host_cache" ]]; then
+    mkdir -p "$host_cache"
+    host_cache=$(realpath "$host_cache")
+fi
+host_packages=(
+    git git-buildpackage pristine-tar devscripts dpkg-dev debhelper dh-python
+    openstack-pkg-tools sbuild schroot debootstrap ubuntu-keyring ubuntu-cloud-keyring lintian
     python3-venv python3-pip python3-pytest python3-setuptools python3-wheel
+)
+apt_options=(
+    -o Acquire::Retries=3
+    -o Acquire::http::Timeout=30
+    -o Acquire::https::Timeout=30
+    -o DPkg::Lock::Timeout=300
+)
+host_manifest="$host_cache/packages.sha256"
+if [[ -n "$host_cache" && -f "$host_manifest" ]]; then
+    (cd "$host_cache" && sha256sum --check packages.sha256)
+    shopt -s nullglob
+    host_debs=("$host_cache"/*.deb)
+    shopt -u nullglob
+    ((${#host_debs[@]} > 0))
+    # The cache preparation job resolved this complete tool set against the
+    # same GitHub runner image. Do not contact an archive from package jobs.
+    sudo timeout --signal=TERM --kill-after=30s 15m \
+        env DEBIAN_FRONTEND=noninteractive apt-get --no-download \
+        -o DPkg::Lock::Timeout=300 install -y "${host_debs[@]}"
+else
+    # Only the cache preparation job reaches this branch. Hosted-runner mirrors
+    # and package locks still receive their own bounds.
+    sudo timeout --signal=TERM --kill-after=30s 10m \
+        apt-get "${apt_options[@]}" update
+    sudo rm -f /var/cache/apt/archives/*.deb
+    sudo timeout --signal=TERM --kill-after=30s 15m \
+        env DEBIAN_FRONTEND=noninteractive apt-get "${apt_options[@]}" \
+        --download-only install -y "${host_packages[@]}"
+    if [[ -n "$host_cache" ]]; then
+        rm -f "$host_cache"/*.deb "$host_manifest"
+        sudo cp /var/cache/apt/archives/*.deb "$host_cache/"
+        sudo chown -R "$USER:$USER" "$host_cache"
+        (cd "$host_cache" && sha256sum ./*.deb > packages.sha256)
+        shopt -s nullglob
+        host_debs=("$host_cache"/*.deb)
+        shopt -u nullglob
+        ((${#host_debs[@]} > 0))
+        sudo timeout --signal=TERM --kill-after=30s 15m \
+            env DEBIAN_FRONTEND=noninteractive apt-get --no-download \
+            -o DPkg::Lock::Timeout=300 install -y "${host_debs[@]}"
+    else
+        sudo timeout --signal=TERM --kill-after=30s 15m \
+            env DEBIAN_FRONTEND=noninteractive apt-get "${apt_options[@]}" \
+            install -y "${host_packages[@]}"
+    fi
+fi
+for package in "${host_packages[@]}"; do
+    dpkg-query -W -f='${db:Status-Abbrev}\n' "$package" | grep -qx 'ii '
+done
 sudo sbuild-adduser "$USER"
 # File-based schroot creates a new extracted build environment for every session.
 # Refuse stale partial bootstrap state rather than silently reusing it.

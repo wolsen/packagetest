@@ -45,6 +45,28 @@ use those candidate edges together with the effective Debian `Build-Depends` met
 The generated `nightly-plan/summary.md` records the requested roots, every
 automatically added source, and the packages in each dependency level.
 
+One daily preparation job updates the target schroot and resolves the Ubuntu
+24.04 host tools needed to operate it. The resulting cache contains the updated
+schroot tarball and checksum-pinned host-tool `.deb` files. Package jobs install
+those host tools with APT `--no-download`, register the cached schroot, and do
+not refresh package indexes during builder preparation.
+
+At the end of the workflow, the `pipeline-summary` artifact contains a
+self-contained `index.html`, its machine-readable `report.json`, and every
+checksum-verified proposed patch under `patches/`. The page filters packages by
+build result, autopkgtest result, dependency level, and whether packaging was
+changed. Each package expands to show its candidate dependencies, failure
+detail, patch rationale, validation state, and an inline diff. Extract the
+artifact before opening the page so its patch download links work.
+
+The report identifies its build target as either an Ubuntu development release
+or an Ubuntu Cloud Archive target, including the Ubuntu base, archive suite,
+OpenStack series, and architecture. The current workflow emits the Resolute
+development target. This target record is the boundary for adding the LTS/UCA
+build axis later. The report also reserves a structured functional-test result
+for the final `regress-stack` gate; it is explicitly `NOT_RUN` until that phase
+is connected.
+
 ## Run the executor in a prepared builder
 
 ```bash

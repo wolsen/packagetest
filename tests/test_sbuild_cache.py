@@ -17,7 +17,7 @@ def test_cache_key_binds_daily_update_policy_and_builder_script(tmp_path):
     )
 
     script_digest = hashlib.sha256((ROOT / 'scripts/prepare-builder.sh').read_bytes()).hexdigest()
-    expected = f'sbuild-rootfs-v1-ubuntu-24.04-resolute-amd64-2026-09-29-{script_digest}'
+    expected = f'sbuild-rootfs-host-tools-v2-ubuntu-24.04-resolute-amd64-2026-09-29-{script_digest}'
     assert completed.stdout.strip() == expected
     assert output.read_text() == f'key={expected}\n'
 

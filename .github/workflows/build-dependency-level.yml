@@ -42,6 +42,9 @@ jobs:
         source: ${{ fromJSON(inputs.packages) }}
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ inputs.timeout-minutes }}
+    env:
+      SBUILD_ROOTFS_CACHE: ${{ github.workspace }}/.cache/sbuild/resolute-amd64
+      SBUILD_HOST_APT_CACHE: ${{ github.workspace }}/.cache/sbuild/ubuntu-24.04-host-tools
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,7 +57,9 @@ jobs:
         name: Restore updated Resolute sbuild rootfs
         uses: actions/cache/restore@v4
         with:
-          path: ${{ github.workspace }}/.cache/sbuild/resolute-amd64
+          path: |
+            ${{ env.SBUILD_ROOTFS_CACHE }}
+            ${{ env.SBUILD_HOST_APT_CACHE }}
           key: ${{ inputs.sbuild-cache-key }}
           fail-on-cache-miss: true
       - id: dependencies
@@ -83,16 +88,18 @@ jobs:
           PYTHONPATH=src python3 scripts/nightly-build.py --check-dependencies-only \
             --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
             --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
-      - name: Prepare Resolute builder
-        env:
-          SBUILD_ROOTFS_CACHE: ${{ github.workspace }}/.cache/sbuild/resolute-amd64
+      - id: builder
+        name: Prepare Resolute builder
         run: |
           set -o pipefail
           test "${{ steps.sbuild_rootfs.outputs.cache-hit }}" = true
-          bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
+          test -f "$SBUILD_HOST_APT_CACHE/packages.sha256"
+          timeout --signal=TERM --kill-after=30s 25m \
+            bash scripts/prepare-builder.sh resolute 2>&1 | tee outputs/prepare-builder.log
       - name: Build, test, and repair the snapshot
         if: always()
         uses: ./.github/actions/build-test-remediate
         with:
           source: ${{ matrix.source }}
           autopkgtest-cache-key: ${{ inputs.autopkgtest-cache-key }}
+          builder-ready: ${{ steps.builder.outcome == 'success' }}

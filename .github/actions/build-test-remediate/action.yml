@@ -7,11 +7,16 @@ inputs:
   autopkgtest-cache-key:
     description: Immutable Actions cache key for the prepared Resolute QEMU image
     required: true
+  builder-ready:
+    description: Whether host provisioning and cached chroot registration succeeded
+    required: false
+    default: 'true'
 runs:
   using: composite
   steps:
     - id: autopkgtest_image
       name: Restore prepared Resolute autopkgtest image
+      if: inputs.builder-ready == 'true'
       uses: actions/cache/restore@v4
       with:
         path: ${{ github.workspace }}/.cache/autopkgtest/resolute-amd64
@@ -19,6 +24,7 @@ runs:
         fail-on-cache-miss: true
 
     - name: Select cached autopkgtest image
+      if: inputs.builder-ready == 'true'
       shell: bash
       run: |
         test "${{ steps.autopkgtest_image.outputs.cache-hit }}" = true
@@ -26,6 +32,7 @@ runs:
 
     - id: initial_build
       name: Build snapshot against this run's producers
+      if: inputs.builder-ready == 'true'
       continue-on-error: true
       shell: bash
       env:
@@ -38,14 +45,14 @@ runs:
 
     - id: initial_test
       name: Run installed-package tests
-      if: always()
+      if: inputs.builder-ready == 'true'
       continue-on-error: true
       shell: bash
       run: bash scripts/test-built-snapshot.sh "${{ inputs.source }}"
 
     - id: ai_cache
       name: Restore local AI only for a failed package
-      if: steps.initial_build.outcome == 'failure' || steps.initial_test.outcome == 'failure'
+      if: inputs.builder-ready == 'true' && (steps.initial_build.outcome == 'failure' || steps.initial_test.outcome == 'failure')
       uses: actions/cache/restore@v4
       with:
         path: ${{ github.workspace }}/.cache/packagetest-ai
@@ -54,7 +61,7 @@ runs:
 
     - id: remediation
       name: Make up to three local AI repair, rebuild, and retest attempts
-      if: steps.initial_build.outcome == 'failure' || steps.initial_test.outcome == 'failure'
+      if: inputs.builder-ready == 'true' && (steps.initial_build.outcome == 'failure' || steps.initial_test.outcome == 'failure')
       continue-on-error: true
       shell: bash
       env:
@@ -171,7 +178,7 @@ runs:
 
     - id: upload_ai
       uses: actions/upload-artifact@v4
-      if: always() && (steps.initial_build.outcome == 'failure' || steps.initial_test.outcome == 'failure')
+      if: always() && inputs.builder-ready == 'true' && (steps.initial_build.outcome == 'failure' || steps.initial_test.outcome == 'failure')
       with:
         name: ai-remediation-${{ inputs.source }}
         path: ai-remediation/${{ inputs.source }}/

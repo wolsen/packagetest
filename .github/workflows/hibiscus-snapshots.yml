@@ -86,7 +86,7 @@ jobs:
           sha256sum --check autopkgtest-resolute-amd64.img.sha256
 
   prepare_sbuild_rootfs:
-    name: Prepare cached updated Resolute sbuild rootfs
+    name: Prepare cached Resolute builder inputs
     needs: [plan]
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' }}
     runs-on: ubuntu-24.04
@@ -95,6 +95,7 @@ jobs:
       cache_key: ${{ steps.identity.outputs.key }}
     env:
       SBUILD_ROOTFS_CACHE: ${{ github.workspace }}/.cache/sbuild/resolute-amd64
+      SBUILD_HOST_APT_CACHE: ${{ github.workspace }}/.cache/sbuild/ubuntu-24.04-host-tools
     steps:
       - uses: actions/checkout@v4
         with:
@@ -105,15 +106,19 @@ jobs:
       - id: cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.SBUILD_ROOTFS_CACHE }}
+          path: |
+            ${{ env.SBUILD_ROOTFS_CACHE }}
+            ${{ env.SBUILD_HOST_APT_CACHE }}
           key: ${{ steps.identity.outputs.key }}
-      - name: Bootstrap, fully update, and cache the source chroot
+      - name: Cache updated source chroot and Noble host tools
         if: steps.cache.outputs.cache-hit != 'true'
         run: bash scripts/prepare-builder.sh resolute
-      - name: Verify cached rootfs checksum
+      - name: Verify cached builder inputs
         run: |
           cd "$SBUILD_ROOTFS_CACHE"
           sha256sum --check resolute-amd64-sbuild.tar.gz.sha256
+          cd "$SBUILD_HOST_APT_CACHE"
+          sha256sum --check packages.sha256
 
   build_dependency_levels:
     name: Dependency level ${{ matrix.level }}
@@ -149,15 +154,42 @@ jobs:
         with:
           pattern: status-*
           path: statuses
+      - name: Download proposed packaging changes
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: packaging-proposal-*
+          path: proposals
       - name: Aggregate every requested source without hiding missing jobs
         run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --summary-inputs statuses --output summary
-      - uses: actions/upload-artifact@v4
+      - name: Render static pipeline report
+        run: |
+          python3 scripts/render-pipeline-report.py \
+            --catalog nightly-plan/catalog.json \
+            --plan nightly-plan/plan.json \
+            --results summary/results.json \
+            --proposals proposals \
+            --output summary \
+            --target-id ubuntu-resolute-development \
+            --target-kind development \
+            --base-series resolute \
+            --suite resolute \
+            --architecture amd64
+      - id: pipeline_summary
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: pipeline-summary
           path: summary/
           retention-days: 14
           if-no-files-found: error
+      - name: Link the browsable report
+        if: ${{ always() && steps.pipeline_summary.outputs.artifact-url != '' }}
+        env:
+          REPORT_URL: ${{ steps.pipeline_summary.outputs.artifact-url }}
+        run: |
+          echo "## Browsable pipeline report" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Download [pipeline-summary](%s), extract it, and open `index.html`.\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
 
   prepare_local_ai:
     name: Prepare pinned local AI runtime

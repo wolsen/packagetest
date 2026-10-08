@@ -9,7 +9,7 @@ case "$arch" in amd64) ;; *) echo "Unsupported architecture: $arch" >&2; exit 2;
 
 script_digest=$(sha256sum scripts/prepare-builder.sh | cut -d' ' -f1)
 cache_date=${SBUILD_CACHE_DATE:-$(date -u +%Y-%m-%d)}
-key="sbuild-rootfs-v1-ubuntu-24.04-$suite-$arch-$cache_date-$script_digest"
+key="sbuild-rootfs-host-tools-v2-ubuntu-24.04-$suite-$arch-$cache_date-$script_digest"
 if [[ -n ${GITHUB_OUTPUT:-} ]]; then
     printf 'key=%s\n' "$key" >> "$GITHUB_OUTPUT"
 fi
