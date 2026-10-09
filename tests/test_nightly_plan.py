@@ -11,7 +11,8 @@ spec.loader.exec_module(module)
 
 
 def catalog():
-    return {'packages': [{'source': 'a', 'build_dependencies': ['b']},
+    return {'series': '2026.2',
+            'packages': [{'source': 'a', 'build_dependencies': ['b']},
                          {'source': 'b', 'build_dependencies': ['a']},
                          {'source': 'c', 'build_dependencies': ['a']},
                          {'source': 'd', 'build_dependencies': []}]}
@@ -166,14 +167,17 @@ def test_dynamic_matrix_contains_only_real_dependency_levels():
 
 
 def test_discovery_summary_defers_dependency_levels_until_preparation():
-    data = {'packages': [
+    data = {'series': '2027.1', 'series_status': 'development', 'packages': [
         {'source': 'a', 'selection_reasons': ['requested'], 'upstream_sha': '1' * 40,
+         'upstream_ref': 'master', 'branch_policy': 'release-metadata-development-branch',
          'packaging_sha': '2' * 40},
     ]}
     summary = module.render_discovery_summary(data, ['a'], ['a'])
+    assert '# OpenStack 2027.1 snapshot source discovery' in summary
+    assert 'Series status: `development`' in summary
     assert 'selected and pinned for parallel source preparation' in summary
     assert 'Dependency levels will be computed after' in summary
-    assert '| `a` | requested |' in summary
+    assert '| `a` | requested | `master` (release-metadata-development-branch) |' in summary
 
 
 def test_upstream_metadata_expands_requested_roots_before_planning():

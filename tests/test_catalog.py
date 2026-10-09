@@ -75,6 +75,51 @@ def test_branch_selection_uses_release_metadata():
     assert record['archive_version'].startswith('1:')
 
 
+def test_maintained_series_without_branch_uses_latest_series_release_commit():
+    metadata = {
+        'repository-settings': {'openstack/tempest-plugin': {}},
+        'releases': [
+            {'version': '1.0.0', 'projects': [
+                {'repo': 'openstack/tempest-plugin', 'hash': 'a' * 40}]},
+            {'version': '1.1.0', 'projects': [
+                {'repo': 'openstack/tempest-plugin', 'hash': 'b' * 40}]},
+        ],
+    }
+    record = package_record(
+        'tempest-plugin', metadata, archive('tempest-plugin'), series='2026.2',
+        membership='cycle', series_status='maintained')
+    assert record['upstream_ref'] == 'b' * 40
+    assert record['upstream_release'] == '1.1.0'
+    assert record['branch_policy'] == 'release-metadata-series-release'
+
+
+def test_development_series_without_stable_branch_tracks_master():
+    metadata = {
+        'repository-settings': {'openstack/service': {}},
+        'releases': [{'version': '1.0.0', 'projects': [
+            {'repo': 'openstack/service', 'hash': 'a' * 40}]}],
+    }
+    record = package_record(
+        'service', metadata, archive('service'), series='2027.1',
+        membership='cycle', series_status='development', codename='indri')
+    assert record['upstream_ref'] == 'master'
+    assert record['branch_policy'] == 'release-metadata-development-branch'
+    assert record['packaging_upstream_branch_candidates'][0] == 'upstream-indri'
+
+
+def test_independent_release_history_is_not_mistaken_for_target_series():
+    metadata = {
+        'repository-settings': {'openstack/helper': {}},
+        'releases': [{'version': '99.0.0', 'projects': [
+            {'repo': 'openstack/helper', 'hash': 'a' * 40}]}],
+    }
+    record = package_record(
+        'helper', metadata, archive('helper'), series='2026.2',
+        membership='independent-build-dependency', series_status='maintained')
+    assert record['upstream_ref'] == 'master'
+    assert record['branch_policy'] == 'release-metadata-no-series-ref'
+
+
 def test_multirepo_deliverable_is_not_silently_guessed():
     record = package_record('roles', {'repository-settings': {'openstack/role-a': {}, 'openstack/role-b': {}}}, archive('roles'), series='2026.2', membership='cycle')
     assert record['upstream_repository'] is None

@@ -214,7 +214,7 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
     """Render the complete dependency-level plan for GitHub and artifacts."""
     entries = {entry['source']: entry for entry in catalog['packages']}
     lines = [
-        '# OpenStack 2026.2 snapshot build plan',
+        f"# OpenStack {catalog.get('series', 'unknown')} snapshot build plan",
         '',
         f"{len(plan['sources'])} source packages across {len(plan['waves'])} dependency levels. "
         'Levels run in order; packages within one level are eligible to run in parallel. '
@@ -337,15 +337,20 @@ def dependency_level_matrix(waves: list[list[str]]) -> dict:
 
 def render_discovery_summary(catalog: dict, sources: list[str], roots: list[str]) -> str:
     entries = {entry['source']: entry for entry in catalog['packages']}
-    lines = ['# OpenStack 2026.2 snapshot source discovery', '',
+    lines = [f"# OpenStack {catalog.get('series', 'unknown')} snapshot source discovery", '',
              f'{len(sources)} source packages were selected and pinned for parallel source preparation.', '',
+             f"Series status: `{catalog.get('series_status', 'unknown')}`", '',
              f"Requested roots: {', '.join(f'`{source}`' for source in roots)}", '',
-             '| Source | Selection reason | Upstream SHA | Packaging SHA |',
-             '|---|---|---|---|']
+             '| Source | Selection reason | Upstream selection | Upstream SHA | Packaging SHA |',
+             '|---|---|---|---|---|']
     for source in sources:
         entry = entries[source]
         reasons = ', '.join(entry.get('selection_reasons', [])) or 'catalog selection'
-        lines.append(f"| `{source}` | {reasons} | `{entry.get('upstream_sha', 'unresolved')}` | "
+        selection = f"`{entry.get('upstream_ref', 'unknown')}` ({entry.get('branch_policy', 'unknown')})"
+        if entry.get('upstream_release'):
+            selection += f"; release `{entry['upstream_release']}`"
+        lines.append(f"| `{source}` | {reasons} | {selection} | "
+                     f"`{entry.get('upstream_sha', 'unresolved')}` | "
                      f"`{entry.get('packaging_sha', 'archive fallback')}` |")
     lines.extend(['', 'Dependency levels will be computed after these exact sources produce their `.dsc` metadata.'])
     return '\n'.join(lines) + '\n'

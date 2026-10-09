@@ -191,14 +191,39 @@ def repository_names(metadata: dict) -> list[str]:
     return sorted(names)
 
 
-def package_record(name: str, metadata: dict, archive: dict, *, series: str, membership: str) -> dict:
+def _upstream_selection(metadata: dict, repository: str | None, *, series: str,
+                        membership: str, status: str) -> tuple[str, str, str | None]:
+    """Select the live series branch or the best series-scoped immutable ref."""
+    stable = f'stable/{series}'
+    branches = {branch['name'] for branch in metadata.get('branches', [])}
+    if stable in branches:
+        return stable, 'release-metadata-stable', None
+    if status == 'development':
+        return 'master', 'release-metadata-development-branch', None
+    # Cycle deliverable files contain only releases assigned to this series.
+    # Independent deliverables span many series and need upper-constraints
+    # selection before one of their release hashes can safely be chosen.
+    if membership == 'cycle' and repository:
+        for release in reversed(metadata.get('releases', [])):
+            for project in release.get('projects', []):
+                revision = project.get('hash')
+                if (project.get('repo') == repository
+                        and isinstance(revision, str)
+                        and re.fullmatch(r'[0-9a-f]{40}', revision)):
+                    return revision, 'release-metadata-series-release', release.get('version')
+    return 'master', 'release-metadata-no-series-ref', None
+
+
+def package_record(name: str, metadata: dict, archive: dict, *, series: str,
+                   membership: str, series_status: str = 'unknown',
+                   codename: str | None = None) -> dict:
     repos = repository_names(metadata)
     # Multi-repository deliverables need an explicit mapping; never guess that
     # a deliverable filename is necessarily the source repository name.
     exact = [repo for repo in repos if repo.rsplit('/', 1)[-1] == name]
     repo = exact[0] if len(exact) == 1 else repos[0] if len(repos) == 1 else None
-    branches = {branch['name'] for branch in metadata.get('branches', [])}
-    branch = f'stable/{series}' if f'stable/{series}' in branches else 'master'
+    upstream_ref, branch_policy, upstream_release = _upstream_selection(
+        metadata, repo, series=series, membership=membership, status=series_status)
     checksums = [line.split() for line in archive['Checksums-Sha256'].splitlines() if line.strip()]
     base_url = 'https://archive.ubuntu.com/ubuntu/' + archive['Directory'] + '/'
     archive_files = [{'name': row[2], 'url': base_url + row[2],
@@ -213,8 +238,10 @@ def package_record(name: str, metadata: dict, archive: dict, *, series: str, mem
         'deliverable': name, 'source': archive['Package'], 'membership': membership,
         'release_type': metadata.get('type', 'other'), 'team': metadata.get('team'),
         'upstream_repository': 'https://opendev.org/' + repo if repo else None,
-        'upstream_ref': branch,
-        'branch_policy': 'release-metadata-stable' if branch != 'master' else 'release-metadata-no-stable-branch',
+        'upstream_ref': upstream_ref,
+        'branch_policy': branch_policy,
+        'upstream_release': upstream_release,
+        'series_status': series_status,
         'all_upstream_repositories': repos,
         'archive_version': archive['Version'],
         'archive_identity_evidence': identity_evidence(archive),
@@ -225,7 +252,7 @@ def package_record(name: str, metadata: dict, archive: dict, *, series: str, mem
         'archive_packaging_branch': archive_packaging_branch,
         'packaging_repository': f'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/{archive["Package"]}',
         'packaging_branch_candidates': [f'stable/{series}', 'master'],
-        'packaging_upstream_branch_candidates': [f'upstream-{series_name(series)}', 'upstream'],
+        'packaging_upstream_branch_candidates': [f'upstream-{codename or series_name(series)}', 'upstream'],
         'packaging_pristine_tar_branch': 'pristine-tar',
         'archive_source': {'url': dsc['url'], 'sha256': dsc['sha256'],
                            'files': archive_files},
@@ -238,7 +265,7 @@ def series_name(series: str) -> str:
     """Map the active numeric OpenStack series to its release codename."""
     # Keep this explicit: guessing a future codename would select the wrong
     # packaging upstream branch while still producing a syntactically valid ref.
-    names = {'2026.2': 'hibiscus'}
+    names = {'2026.2': 'hibiscus', '2027.1': 'indri'}
     if series not in names:
         raise ValueError(f'No packaging upstream branch mapping for OpenStack {series}')
     return names[series]
@@ -281,6 +308,12 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
                 previous = sources.get(source['Package'])
                 if previous is None or subprocess.run(['dpkg', '--compare-versions', source['Version'], 'gt', previous['Version']]).returncode == 0:
                     sources[source['Package']] = source
+    status_path = releases / 'data' / 'series_status.yaml'
+    statuses = yaml.safe_load(status_path.read_text()) if status_path.is_file() else []
+    status_record = next((item for item in statuses
+                          if item.get('name') == codename
+                          or str(item.get('release-id')) == str(series)), {})
+    target_status = status_record.get('status', 'unknown')
     cycle = {path.stem: yaml.safe_load(path.read_text()) for path in sorted((releases / 'deliverables' / codename).glob('*.yaml'))}
     if not cycle:
         raise ValueError(f'No deliverables for {codename}')
@@ -290,7 +323,9 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
     for name, metadata in cycle.items():
         source = source_name(name, sources)
         if source:
-            packages[source] = package_record(name, metadata, sources[source], series=series, membership='cycle')
+            packages[source] = package_record(
+                name, metadata, sources[source], series=series, membership='cycle',
+                series_status=target_status, codename=codename)
         else:
             exclusions.append({'deliverable': name, 'release_type': metadata.get('type'),
                                'repositories': repository_names(metadata),
@@ -299,7 +334,10 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
     for name, metadata in independent.items():
         source = source_name(name, sources)
         if source and source not in packages:
-            candidates[source] = package_record(name, metadata, sources[source], series=series, membership='independent-build-dependency')
+            candidates[source] = package_record(
+                name, metadata, sources[source], series=series,
+                membership='independent-build-dependency',
+                series_status=target_status, codename=codename)
     binary_sources = {binary: source for source, item in {**candidates, **packages}.items() for binary in item['binaries']}
     while True:
         required = {binary_sources[binary] for item in packages.values() for binary in dependency_names(item['build_depends']) if binary in binary_sources}
@@ -311,7 +349,8 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
         item.update(UPSTREAM_OVERRIDES.get(source, {}))
         item['build_dependencies'] = sorted({binary_sources[binary] for binary in dependency_names(item['build_depends']) if binary in binary_sources and binary_sources[binary] in packages} - {source})
     revision = subprocess.check_output(['git', '-C', str(releases), 'rev-parse', 'HEAD'], text=True).strip()
-    return {'schema_version': 1, 'series': series, 'codename': codename, 'suite': suite,
+    return {'schema_version': 1, 'series': series, 'codename': codename,
+            'series_status': target_status, 'suite': suite,
             'release_metadata': {'repository': 'https://opendev.org/openstack/releases', 'sha': revision},
             'archive_indexes': indexes,
             'archive_python_indexes': indexes,
