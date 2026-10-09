@@ -606,7 +606,7 @@ def _tail(text: str, limit: int) -> str:
 
 
 def repository_context(repository: Path, source: str, evidence: str = "", *, limit: int = 10_000) -> str:
-    """Include the failed source and producers implicated by missing imports."""
+    """Include frozen catalog metadata for the failed source and implicated producers."""
     sources = [source]
     missing_modules = {item.split(".")[0] for item in re.findall(r"No module named ['\"]([^'\"]+)", evidence)}
     catalog_path = repository / "nightly-plan" / "catalog.json"
@@ -622,15 +622,15 @@ def repository_context(repository: Path, source: str, evidence: str = "", *, lim
             sources = list(dict.fromkeys([*implicated, source]))
         except (KeyError, TypeError, ValueError):
             pass
-    chunks = []
-    for candidate in sources:
-        root = repository / "config" / "patches" / candidate
-        if root.is_dir():
-            for path in sorted(root.rglob("*")):
-                if path.is_file() and not path.is_symlink() and path.stat().st_size <= 256 * 1024:
-                    chunks.append(f"\n--- {path.relative_to(repository)} ---\n{path.read_text(errors='replace')}\n")
-    text = "".join(chunks)
-    return text[:limit] if text else "\nNo existing repository adaptation exists for this source.\n"
+    if not catalog_path.is_file():
+        return "\nNo frozen catalog metadata is available for this source.\n"
+    try:
+        packages = json.loads(catalog_path.read_text())["packages"]
+        selected = [package for package in packages if package.get("source") in sources]
+    except (KeyError, TypeError, ValueError):
+        return "\nFrozen catalog metadata could not be read.\n"
+    text = json.dumps(selected, indent=2, sort_keys=True)
+    return text[:limit]
 
 
 def write_json(path: Path, value: object) -> None:

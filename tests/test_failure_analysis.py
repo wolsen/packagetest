@@ -438,17 +438,16 @@ def test_evidence_reader_ignores_tar_traversal_and_prioritizes_result(tmp_path):
     assert "ignore" not in text
 
 
-def test_missing_import_adds_relevant_candidate_producer_context(tmp_path):
-    (tmp_path / "config/patches/consumer").mkdir(parents=True)
-    (tmp_path / "config/patches/python-client").mkdir(parents=True)
-    (tmp_path / "config/patches/consumer/adjustments.json").write_text('{"consumer": true}\n')
-    (tmp_path / "config/patches/python-client/adjustments.json").write_text('{"producer": true}\n')
+def test_missing_import_adds_relevant_candidate_producer_catalog_context(tmp_path):
     (tmp_path / "nightly-plan").mkdir()
-    (tmp_path / "nightly-plan/catalog.json").write_text(json.dumps({"packages": [{
-        "source": "python-client", "binaries": ["python3-client"]}]}))
+    (tmp_path / "nightly-plan/catalog.json").write_text(json.dumps({"packages": [
+        {"source": "consumer", "binaries": ["python3-consumer"], "packaging_sha": "1" * 40},
+        {"source": "python-client", "binaries": ["python3-client"], "packaging_sha": "2" * 40},
+    ]}))
     context = repository_context(tmp_path, "consumer", "ModuleNotFoundError: No module named 'client.v1'")
-    assert '"consumer": true' in context
-    assert '"producer": true' in context
+    assert '"source": "consumer"' in context
+    assert '"source": "python-client"' in context
+    assert '"packaging_sha": "2222222222222222222222222222222222222222"' in context
 
 
 def test_two_attempt_harness_keeps_raw_outputs_and_selects_applicable_patch(tmp_path):

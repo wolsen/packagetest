@@ -109,51 +109,6 @@ def resolve_upstream_dependency_closure(catalog, sources=None, candidate_depende
     return catalog, sorted(selected), sorted(requested), errors
 
 
-def apply_packaging_dependencies(catalog, config_root=None):
-    """Plan from reviewed control replacements, including newly added edges."""
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-    from packagetest.artifacts import fields, sha256
-    from packagetest.catalog import dependency_names
-    config_root = config_root or Path(__file__).resolve().parents[1] / 'config/patches'
-    catalog = json.loads(json.dumps(catalog))
-    binaries = {binary: entry['source'] for entry in catalog['packages'] for binary in entry['binaries']}
-    for entry in catalog['packages']:
-        path = config_root / entry['source'] / 'adjustments.json'
-        if not path.exists():
-            continue
-        spec = json.loads(path.read_text())
-        controls = [item for item in spec.get('replace_files', []) if item['name'] == 'control']
-        if not controls:
-            continue
-        if len(controls) != 1:
-            raise ValueError(f'Unreviewed packaging control for {entry["source"]}')
-        if spec['archive_dsc_sha256'] != entry['archive_source']['sha256']:
-            entry['packaging_dependency_error'] = (
-                'Reviewed control replacement targets archive source '
-                f'{spec["archive_dsc_sha256"]}, but this run resolved '
-                f'{entry["archive_source"]["sha256"]}; retaining current archive Build-Depends')
-            continue
-        item = controls[0]
-        name = Path(item['replacement'])
-        if name.is_absolute() or '..' in name.parts:
-            raise ValueError('Unsafe packaging control path')
-        control = path.parent / name
-        if sha256(control) != item['replacement_sha256']:
-            raise ValueError(f'Packaging control checksum mismatch for {entry["source"]}')
-        source_fields = fields(control)
-        if source_fields['Source'] != entry['source']:
-            raise ValueError('Packaging control source mismatch')
-        entry['archive_build_depends'] = entry['build_depends']
-        entry['build_depends'] = ', '.join(source_fields.get(key, '') for key in
-                                          ('Build-Depends', 'Build-Depends-Indep', 'Build-Depends-Arch'))
-        entry['packaging_control_sha256'] = item['replacement_sha256']
-        entry.pop('packaging_dependency_error', None)
-    for entry in catalog['packages']:
-        entry['build_dependencies'] = sorted({binaries[name] for name in dependency_names(entry['build_depends'])
-                                              if name in binaries} - {entry['source']})
-    return catalog
-
-
 def components(graph):
     """Tarjan strongly connected components, deterministic for audit output."""
     index, stack, active, indices, low, result = 0, [], set(), {}, {}, []
@@ -354,17 +309,6 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
             lines.append(f"- `{failure['source']}`: {failure['error']}")
     else:
         lines.append('All selected source references resolved to immutable commit SHAs.')
-    drifts = plan.get('packaging_baseline_drifts', [])
-    lines.extend(['', '## Packaging baseline drift', ''])
-    if drifts:
-        lines.append(
-            f'{len(drifts)} selected packages have reviewed control replacements for an older Ubuntu baseline. '
-            'Planning retained the current archive dependencies; the package job must revalidate the adaptation:')
-        lines.append('')
-        for drift in drifts:
-            lines.append(f"- `{drift['source']}`: {drift['error']}")
-    else:
-        lines.append('Every selected reviewed control replacement matches its resolved Ubuntu baseline.')
     fallbacks = plan.get('packaging_source_fallbacks', [])
     ubuntu_git = sum(1 for source in plan['sources']
                      if entries[source].get('packaging_source_role') == 'ubuntu-openstack')
@@ -540,7 +484,7 @@ def main():
         print(pattern)
         return
     constraints = json.loads(args.candidate_dependencies.read_text())
-    catalog = apply_packaging_dependencies(json.loads(args.catalog.read_text()))
+    catalog = json.loads(args.catalog.read_text())
     requested = [s.strip() for s in args.sources.split(',') if s.strip()] or None
     dependency_errors = []
     if not args.no_resolve:
@@ -568,9 +512,6 @@ def main():
     plan['resolution_failures'] = ([{'source': p['source'], 'error': p['upstream_resolution_error']}
                                     for p in catalog['packages'] if p.get('upstream_resolution_error')]
                                    + dependency_errors)
-    plan['packaging_baseline_drifts'] = [
-        {'source': p['source'], 'error': p['packaging_dependency_error']}
-        for p in catalog['packages'] if p.get('packaging_dependency_error')]
     plan['packaging_source_fallbacks'] = [
         {'source': p['source'], 'error': p['packaging_resolution_error']}
         for p in catalog['packages'] if p.get('packaging_source_kind') == 'archive']

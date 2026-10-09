@@ -1,5 +1,4 @@
 import importlib.util
-import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -164,54 +163,6 @@ def test_dynamic_matrix_contains_only_real_dependency_levels():
         {'level': 2, 'packages': '["c"]'},
     ]}
     assert '__empty__' not in json.dumps(matrix)
-
-
-def test_reviewed_control_adds_independent_build_dependency_to_graph(tmp_path):
-    entries = {'packages': [
-        {'source': 'client', 'binaries': ['python3-client'], 'build_depends': 'debhelper',
-         'build_dependencies': [], 'archive_source': {'sha256': 'archive-digest'}},
-        {'source': 'library', 'binaries': ['python3-library'], 'build_depends': 'debhelper',
-         'build_dependencies': []}]}
-    root = tmp_path / 'client'
-    root.mkdir()
-    control = root / 'control'
-    control.write_text('Source: client\nBuild-Depends: debhelper\n'
-                       'Build-Depends-Indep: python3-library (>= 2.0)\n')
-    (root / 'adjustments.json').write_text(json.dumps({
-        'archive_dsc_sha256': 'archive-digest', 'replace_files': [{
-            'name': 'control', 'replacement': 'control',
-            'replacement_sha256': hashlib.sha256(control.read_bytes()).hexdigest()}]}))
-    effective = module.apply_packaging_dependencies(entries, tmp_path)
-    assert effective['packages'][0]['build_dependencies'] == ['library']
-    assert effective['packages'][0]['archive_build_depends'] == 'debhelper'
-    assert module.plan_catalog(effective)[1]['waves'] == [['library'], ['client']]
-    control.write_text(control.read_text() + '# changed\n')
-    with pytest.raises(ValueError, match='checksum mismatch'):
-        module.apply_packaging_dependencies(entries, tmp_path)
-
-
-def test_stale_reviewed_control_is_scoped_to_its_package(tmp_path):
-    entries = {'packages': [
-        {'source': 'client', 'binaries': ['python3-client'], 'build_depends': 'debhelper',
-         'build_dependencies': [], 'archive_source': {'sha256': 'new-archive-digest'}},
-        {'source': 'unrelated', 'binaries': ['python3-unrelated'], 'build_depends': 'debhelper',
-         'build_dependencies': [], 'archive_source': {'sha256': 'other-digest'}},
-    ]}
-    root = tmp_path / 'client'
-    root.mkdir()
-    (root / 'control').write_text('Source: client\nBuild-Depends: python3-unrelated\n')
-    (root / 'adjustments.json').write_text(json.dumps({
-        'archive_dsc_sha256': 'old-archive-digest',
-        'replace_files': [{'name': 'control', 'replacement': 'control',
-                           'replacement_sha256': hashlib.sha256((root / 'control').read_bytes()).hexdigest()}],
-    }))
-
-    effective = module.apply_packaging_dependencies(entries, tmp_path)
-
-    client = effective['packages'][0]
-    assert client['build_depends'] == 'debhelper'
-    assert client['build_dependencies'] == []
-    assert 'retaining current archive Build-Depends' in client['packaging_dependency_error']
 
 
 def test_upstream_metadata_expands_requested_roots_before_planning():

@@ -1,3 +1,0 @@
-fix-py314-resource-annotations.patch
-skip-if-root.patch
-allow-newer-service-type-catalog.patch
