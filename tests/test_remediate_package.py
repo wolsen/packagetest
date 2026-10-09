@@ -31,10 +31,40 @@ def test_source_context_exposes_failed_patch_target_and_moved_path(tmp_path):
     evidence = ("feature.patch subprocess returned exit status 1; "
                 "aodh/cmd/aodh-config-generator.conf was not found")
     context = module.source_context(tmp_path, evidence)
-    assert "current upstream sample/module.py" in context
+    assert "focused current upstream sample/module.py" in context
     assert "final upstream implementation" in context
     assert "upstream candidates for missing aodh/cmd/aodh-config-generator.conf" in context
     assert "etc/aodh/aodh-config-generator.conf" in context
+
+
+def test_patch_context_focuses_on_late_hunk_in_large_upstream_file(tmp_path):
+    module = load_script()
+    (tmp_path / "debian/patches").mkdir(parents=True)
+    (tmp_path / "debian/control").write_text("Source: glance\n")
+    (tmp_path / "debian/rules").write_text("#!/usr/bin/make -f\n")
+    (tmp_path / "debian/patches/series").write_text("offline.patch\n")
+    (tmp_path / "debian/patches/offline.patch").write_text('''--- a/glance/test_store.py
++++ b/glance/test_store.py
+@@ -1323,2 +1323,4 @@
+-    def test_new_image_with_location(self):
++    @mock.patch("utils.socket.getaddrinfo")
++    def test_new_image_with_location(self, mocked):
+''')
+    target = tmp_path / "glance/test_store.py"
+    target.parent.mkdir()
+    target.write_text("\n".join(
+        [f"irrelevant_{index} = None" for index in range(1320)] +
+        ['@mock.patch("utils.socket.getaddrinfo")',
+         'def test_new_image_with_location(self, mocked):',
+         '    # upstream equivalent avoids DNS',
+         '    pass']) + "\n")
+
+    context = module.source_context(
+        tmp_path, "offline.patch Hunk #1 FAILED; subprocess returned exit status 1")
+
+    assert "upstream equivalent avoids DNS" in context
+    assert "irrelevant_0" not in context
+    assert len(context) < 6000
 
 
 def test_missing_import_context_contains_only_source_build_dependencies(tmp_path):

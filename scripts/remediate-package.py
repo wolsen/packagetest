@@ -98,6 +98,14 @@ def prepared_tree(outputs: Path) -> Path:
 
 def source_context(tree: Path, evidence: str, limit: int = 12_000) -> str:
     patch_names = set(re.findall(r"([A-Za-z0-9][A-Za-z0-9_.+~-]*\.patch)", evidence))
+    failed_patch_names = set(re.findall(
+        r"(?:patch\s+['\"]|applying\s+)([A-Za-z0-9][A-Za-z0-9_.+~-]*\.patch)",
+        evidence, re.I))
+    explicit = set(re.findall(r"if patch ['\"]([^'\"]+\.patch)['\"]", evidence, re.I))
+    if explicit:
+        patch_names = explicit
+    elif failed_patch_names:
+        patch_names &= failed_patch_names
     if "ModuleNotFoundError" in evidence:
         control_path = tree / "debian/control"
         if not control_path.is_file() or control_path.is_symlink():
@@ -127,8 +135,11 @@ def source_context(tree: Path, evidence: str, limit: int = 12_000) -> str:
             value += "\n".join(dict.fromkeys(candidates)) + "\n"
         return value[:limit]
     elif patch_names:
-        relative = ["debian/patches/series", *(f"debian/patches/{name}" for name in sorted(patch_names)),
-                    "debian/rules", "debian/control"]
+        # Quilt failures need the series entry, failed patch, and focused
+        # upstream targets. Large control files crowd the decisive hunk out of
+        # small local-model contexts and do not help classify refresh vs drop.
+        relative = ["debian/patches/series",
+                    *(f"debian/patches/{name}" for name in sorted(patch_names))]
     elif re.search(r"(?m)^FAIL: ", evidence):
         relative = []
         for value in re.findall(r'File "(?:/<<PKGBUILDDIR>>/)?([^"\n]+\.py)"', evidence):
@@ -157,12 +168,38 @@ def source_context(tree: Path, evidence: str, limit: int = 12_000) -> str:
         patch = tree / "debian/patches" / name
         if not patch.is_file():
             continue
-        targets = re.findall(r"^\+\+\+ (?:b/)?([^\t\n ]+)", patch.read_text(errors="replace"), re.M)
+        patch_text = patch.read_text(errors="replace")
+        targets = re.findall(r"^\+\+\+ (?:b/)?([^\t\n ]+)", patch_text, re.M)
         for target in targets[:4]:
             path = tree / target
             if not path.is_file() or path.is_symlink() or path.stat().st_size > 256 * 1024:
                 continue
-            block = f"\n--- current upstream {target} ---\n{path.read_text(errors='replace')}\n"
+            source_lines = path.read_text(errors='replace').splitlines()
+            centers = {max(0, int(line) - 1) for line in re.findall(
+                r"^@@\s+-\d+(?:,\d+)?\s+\+(\d+)", patch_text, re.M)}
+            # Hunk line numbers can drift. Named Python definitions and longer
+            # identifiers from changed lines find the corresponding new code
+            # without sending an entire large source file to the model.
+            changed = '\n'.join(line[1:] for line in patch_text.splitlines()
+                                if line.startswith(('+', '-'))
+                                and not line.startswith(('+++', '---')))
+            tokens = set(re.findall(r"\b(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)", changed))
+            for index, line in enumerate(source_lines):
+                if any(token in line for token in tokens):
+                    centers.add(index)
+            ranges = []
+            for center in sorted(centers)[:8]:
+                start, end = max(0, center - 18), min(len(source_lines), center + 19)
+                if ranges and start <= ranges[-1][1]:
+                    ranges[-1] = (ranges[-1][0], max(ranges[-1][1], end))
+                else:
+                    ranges.append((start, end))
+            excerpts = []
+            for start, end in ranges[:4]:
+                excerpts.append('\n'.join(
+                    f'{index + 1:>6}: {source_lines[index]}' for index in range(start, end)))
+            body = '\n...\n'.join(excerpts) if excerpts else '\n'.join(source_lines[:80])
+            block = f"\n--- focused current upstream {target} ---\n{body}\n"
             block = block[:remaining]
             blocks.append(block)
             remaining -= len(block)
