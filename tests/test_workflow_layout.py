@@ -68,7 +68,7 @@ def test_main_push_exercises_heat_candidate_closure():
     policy = json.loads(Path('config/hibiscus-candidate-dependencies.json').read_text())
     assert 'branches: [main]' in workflow
     assert ("github.event_name == 'push' && "
-            "'python-neutron-lib,python-oslo.versionedobjects,heat,watcher'") in workflow
+            "'python-neutron-lib,python-oslo.versionedobjects,heat,watcher,glance'") in workflow
     assert '[full-snapshot]' not in workflow
     assert "and an empty manual dispatch select the complete catalog" in workflow
     assert any(edge['source'] == 'heat' and edge['dependency'] == 'python-neutron-lib'
@@ -87,6 +87,15 @@ def test_snapshot_plan_generates_fresh_catalog_instead_of_using_committed_output
     assert '--output "$RUNNER_TEMP/catalog-input.json"' in workflow
     assert '--catalog "$RUNNER_TEMP/catalog-input.json"' in workflow
     assert not Path('config/hibiscus-catalog.json').exists()
+
+
+def test_source_preparation_can_remediate_quilt_drift_before_planning():
+    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    assert 'id: initial_source' in workflow
+    assert 'scripts/remediate-source-preparation.py' in workflow
+    assert workflow.index('id: initial_source') < workflow.index(
+        'scripts/remediate-source-preparation.py')
+    assert 'test -f prepared-source/prepared-source.json' in workflow
 
 
 def test_model_contract_is_focused_and_does_not_duplicate_snapshot_orchestration():

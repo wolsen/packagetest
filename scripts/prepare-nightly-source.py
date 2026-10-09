@@ -109,6 +109,7 @@ def main() -> int:
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--run-attempt', required=True)
+    parser.add_argument('--remediation-patch', type=Path)
     args = parser.parse_args()
     catalog = json.loads(args.catalog.read_text())
     identity = {'run_id': str(args.run_id), 'run_attempt': str(args.run_attempt)}
@@ -118,7 +119,8 @@ def main() -> int:
     if args.source not in entries:
         raise ValueError(f'Unknown frozen source: {args.source}')
     try:
-        prepared = prepare_source(entries[args.source], args.work)
+        prepared = prepare_source(entries[args.source], args.work,
+                                  remediation_patch=args.remediation_patch)
         manifest = export_prepared(prepared, entries[args.source], catalog, args.output)
         print(json.dumps({'result': 'PREPARED', 'source': args.source,
                           'version': manifest['version'], 'binaries': manifest['binaries']}))
