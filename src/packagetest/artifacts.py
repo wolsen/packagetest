@@ -95,8 +95,9 @@ def verify_binaries(directory: Path, *, source: str, version: str, expected: lis
             raise ValueError(f"Binary metadata mismatch: {name}")
         binaries.append({"file": name, "package": control["Package"], "version": control["Version"],
                          "architecture": control["Architecture"], "sha256": sha256(path)})
-    if not binaries or not set(expected).issubset({b["package"] for b in binaries}):
-        raise ValueError(f"Expected binaries not produced: {expected}")
+    missing = sorted(set(expected) - {binary["package"] for binary in binaries})
+    if not binaries or missing:
+        raise ValueError(f"Expected binaries not produced: {missing or expected}")
     buildinfos = [directory / name for _, _, name in entries if name.endswith(".buildinfo")]
     if len(buildinfos) != 1:
         raise ValueError("Expected a checksummed .buildinfo file")

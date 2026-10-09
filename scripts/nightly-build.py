@@ -35,6 +35,15 @@ def required_versions(source_fields, producers):
             for binary in binaries if binary['package'] in names}
 
 
+def declared_binaries(source_fields):
+    """Use the prepared source package, rather than archive-era metadata."""
+    binaries = sorted(name.strip() for name in source_fields.get('Binary', '').split(',')
+                      if name.strip())
+    if not binaries:
+        raise ValueError('Prepared source .dsc declares no binary packages')
+    return binaries
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--catalog', type=Path, required=True)
@@ -45,6 +54,8 @@ def main():
     parser.add_argument('--run-attempt', required=True)
     parser.add_argument('--check-dependencies-only', action='store_true')
     parser.add_argument('--remediation-patch', type=Path)
+    parser.add_argument('--prepared-source', type=Path,
+                        help='Previously prepared immutable source artifact')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     state = {'source': args.source, 'result': 'PREPARING', 'stage': 'dependency-handoff'}
@@ -77,15 +88,39 @@ def main():
         if producers:
             build_repository(producers, args.output / 'dependency-repository')
         state['stage'] = 'snapshot-source'
-        prepared = prepare_source(entry, args.output / 'source-preparation',
-                                  remediation_patch=args.remediation_patch)
-        dsc = Path(prepared['dsc'])
+        if args.prepared_source:
+            if args.remediation_patch:
+                raise ValueError('A remediation patch requires fresh source preparation')
+            prepared_manifest = json.loads(
+                (args.prepared_source / 'prepared-source.json').read_text())
+            if (prepared_manifest.get('source') != args.source
+                    or prepared_manifest.get('ci') != identity):
+                raise ValueError('Prepared source identity differs from this build')
+            expected = entry.get('prepared_source', {})
+            if (prepared_manifest.get('dsc_sha256') != expected.get('dsc_sha256')
+                    or prepared_manifest.get('catalog_entry_sha256') !=
+                    expected.get('catalog_entry_sha256')):
+                raise ValueError('Prepared source differs from the final dependency plan')
+            dsc = args.prepared_source / 'source' / prepared_manifest['dsc']
+            if not dsc.is_file() or sha256(dsc) != prepared_manifest['dsc_sha256']:
+                raise ValueError('Prepared source .dsc is missing or changed')
+            resolution = args.prepared_source / 'resolution.json'
+            prepared = {'dsc': str(dsc),
+                        'metadata': json.loads(resolution.read_text()) if resolution.is_file() else {}}
+        else:
+            prepared = prepare_source(entry, args.output / 'source-preparation',
+                                      remediation_patch=args.remediation_patch)
+            dsc = Path(prepared['dsc'])
         source_fields = fields(dsc)
         version = source_fields['Version']
+        if args.prepared_source and version != entry.get('prepared_version'):
+            raise ValueError('Prepared source version differs from the final dependency plan')
         # Reviewed packaging adaptations can add or tighten dependencies. Pin
         # the dependencies of the source we actually build, not its baseline.
         versions = required_versions(source_fields, producers)
-        package = {'source': args.source, 'version': version, 'expected_binaries': entry['binaries'],
+        expected_binaries = declared_binaries(source_fields)
+        package = {'source': args.source, 'version': version,
+                   'expected_binaries': expected_binaries,
                    'external_dependencies': sorted(producers), 'required_build_versions': versions,
                    'input': {'kind': 'prepared-snapshot', 'dsc_sha256': sha256(dsc),
                              'upstream_sha': entry['upstream_sha']}}

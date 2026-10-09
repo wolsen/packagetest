@@ -33,6 +33,7 @@ def test_select_branch_and_cutoff(tmp_path):
     latest = select_commit(resolver, repo, 'master', None)
     earlier = select_commit(resolver, repo, 'master', '2026-01-03T00:00:00Z')
     assert latest['sha'] == tip and latest['commits_since_tag'] == 2
+    assert [item['subject'] for item in latest['commits']] == ['first', 'second']
     assert earlier['sha'] == first and earlier['commits_since_tag'] == 1
     assert earlier['resolved_branch_tip'] == tip
     assert earlier['upstream_version'].startswith('1.0.0+git20260102.1.')
@@ -42,6 +43,7 @@ def test_select_branch_and_cutoff(tmp_path):
         select_commit(resolver, repo, 'master', '2025-01-03T00:00:00Z')
     at_tag = select_commit(resolver, repo, 'master', '2026-01-01T23:00:00Z')
     assert at_tag['commits_since_tag'] == 0
+    assert at_tag['commits'] == []
     assert '+git20260101.0.' in at_tag['upstream_version']
 
 

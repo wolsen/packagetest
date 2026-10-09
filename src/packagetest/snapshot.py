@@ -78,9 +78,16 @@ def build_snapshot(build, package: dict, destination: Path) -> dict:
         raise ValueError('Snapshot Git pins differ from checkout')
     build.command('git', 'merge-base', '--is-ancestor', base_sha, actual_sha, cwd=upstream)
     count = int(build.command('git', 'rev-list', '--count', f'{base_sha}..{actual_sha}', cwd=upstream))
+    history = build.command('git', 'log', '--reverse', '--format=%H%x00%ct%x00%an%x00%s',
+                            f'{base_sha}..{actual_sha}', cwd=upstream)
+    commits = [{'sha': fields[0], 'timestamp': int(fields[1]), 'author': fields[2],
+                'subject': fields[3]}
+               for line in history.splitlines() for fields in [line.split('\0', 3)]]
     epoch = int(build.command('git', 'show', '-s', '--format=%ct', actual_sha, cwd=upstream))
     version = snapshot_version(spec['base_tag'], epoch, count, actual_sha)
-    if count != spec['commits_since_tag'] or epoch != int(spec['commit_timestamp']) or version != package['input']['upstream_version']:
+    if (count != spec['commits_since_tag'] or commits != spec.get('commits', commits)
+            or epoch != int(spec['commit_timestamp'])
+            or version != package['input']['upstream_version']):
         raise ValueError('Snapshot date/count/version differs from lock')
     if spec['pep440_version'] != snapshot_pep440_version(version):
         raise ValueError('Snapshot PEP 440 version differs from Debian upstream version')

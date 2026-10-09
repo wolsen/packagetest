@@ -335,6 +335,22 @@ def dependency_level_matrix(waves: list[list[str]]) -> dict:
                         for index, packages in enumerate(waves, 1) if packages]}
 
 
+def render_discovery_summary(catalog: dict, sources: list[str], roots: list[str]) -> str:
+    entries = {entry['source']: entry for entry in catalog['packages']}
+    lines = ['# OpenStack 2026.2 snapshot source discovery', '',
+             f'{len(sources)} source packages were selected and pinned for parallel source preparation.', '',
+             f"Requested roots: {', '.join(f'`{source}`' for source in roots)}", '',
+             '| Source | Selection reason | Upstream SHA | Packaging SHA |',
+             '|---|---|---|---|']
+    for source in sources:
+        entry = entries[source]
+        reasons = ', '.join(entry.get('selection_reasons', [])) or 'catalog selection'
+        lines.append(f"| `{source}` | {reasons} | `{entry.get('upstream_sha', 'unresolved')}` | "
+                     f"`{entry.get('packaging_sha', 'archive fallback')}` |")
+    lines.extend(['', 'Dependency levels will be computed after these exact sources produce their `.dsc` metadata.'])
+    return '\n'.join(lines) + '\n'
+
+
 def freeze_packaging(entry):
     """Prefer Ubuntu OpenStack Git, then archive VCS, then published source."""
     ubuntu_repository = entry.get('packaging_repository')
@@ -431,6 +447,8 @@ def main():
     parser.add_argument('--output', type=Path, default=Path('nightly-plan'))
     parser.add_argument('--sources', default='', help='Comma-separated pilot sources; omitted selects entire catalog')
     parser.add_argument('--no-resolve', action='store_true', help='Offline graph inspection only; not a buildable frozen catalog')
+    parser.add_argument('--discovery-only', action='store_true',
+                        help='Freeze and select sources; defer dependency levels until source preparation')
     parser.add_argument('--max-waves', type=int, default=256)
     parser.add_argument('--candidate-dependencies', type=Path,
                         default=Path(__file__).resolve().parents[1] / 'config/hibiscus-candidate-dependencies.json')
@@ -501,8 +519,16 @@ def main():
                 selected.update(additions)
             selected = sorted(selected)
         roots = requested or [entry['source'] for entry in catalog['packages']]
-    catalog, plan = plan_catalog(catalog, selected, args.max_waves, constraints)
+    if args.discovery_only:
+        entries = {entry['source']: entry for entry in catalog['packages']}
+        selected = sorted(selected if selected is not None else entries)
+        catalog['packages'] = [entries[source] for source in selected]
+        plan = {'sources': selected, 'waves': [], 'archive_bootstrap_edges': [],
+                'cycle_components': [], 'phase': 'source-discovery'}
+    else:
+        catalog, plan = plan_catalog(catalog, selected, args.max_waves, constraints)
     plan['requested_sources'] = sorted(roots)
+    catalog['requested_sources'] = sorted(roots)
     catalog['resolved_at'] = datetime.now(timezone.utc).isoformat()
     catalog['ci'] = {'run_id': os.getenv('GITHUB_RUN_ID', 'local'), 'run_attempt': os.getenv('GITHUB_RUN_ATTEMPT', '1')}
     args.output.mkdir(parents=True, exist_ok=True)
@@ -516,7 +542,8 @@ def main():
         {'source': p['source'], 'error': p['packaging_resolution_error']}
         for p in catalog['packages'] if p.get('packaging_source_kind') == 'archive']
     (args.output / 'plan.json').write_text(json.dumps(plan, indent=2) + '\n')
-    summary = render_plan_summary(plan, catalog)
+    summary = (render_discovery_summary(catalog, plan['sources'], plan['requested_sources'])
+               if args.discovery_only else render_plan_summary(plan, catalog))
     (args.output / 'summary.md').write_text(summary)
     if os.getenv('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as handle:

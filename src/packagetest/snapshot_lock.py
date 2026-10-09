@@ -47,11 +47,22 @@ def select_commit(resolver, checkout: Path, ref: str, cutoff: str | None) -> dic
         raise ValueError('Snapshot base is not a supported release tag')
     base_sha = resolver.command('git', 'rev-parse', f'refs/tags/{base}^{{commit}}', cwd=checkout)
     count = int(resolver.command('git', 'rev-list', '--count', f'{base_sha}..{sha}', cwd=checkout))
+    history = resolver.command(
+        'git', 'log', '--reverse', '--format=%H%x00%ct%x00%an%x00%s',
+        f'{base_sha}..{sha}', cwd=checkout)
+    commits = []
+    for line in history.splitlines():
+        commit_sha, timestamp, author, subject = line.split('\0', 3)
+        commits.append({'sha': commit_sha, 'timestamp': int(timestamp),
+                        'author': author, 'subject': subject})
+    if len(commits) != count:
+        raise ValueError('Snapshot commit inventory differs from Git revision count')
     epoch = int(resolver.command('git', 'show', '-s', '--format=%ct', sha, cwd=checkout))
     version = snapshot_version(base, epoch, count, sha)
     return {'ref': ref, 'resolved_branch_tip': tip, 'cutoff': cutoff, 'sha': sha,
             'resolved_at': datetime.now(timezone.utc).isoformat(), 'base_tag': base,
-            'base_tag_sha': base_sha, 'commits_since_tag': count, 'commit_timestamp': str(epoch),
+            'base_tag_sha': base_sha, 'commits_since_tag': count, 'commits': commits,
+            'commit_timestamp': str(epoch),
             'pep440_version': snapshot_pep440_version(version), 'upstream_version': version}
 
 

@@ -165,6 +165,17 @@ def test_dynamic_matrix_contains_only_real_dependency_levels():
     assert '__empty__' not in json.dumps(matrix)
 
 
+def test_discovery_summary_defers_dependency_levels_until_preparation():
+    data = {'packages': [
+        {'source': 'a', 'selection_reasons': ['requested'], 'upstream_sha': '1' * 40,
+         'packaging_sha': '2' * 40},
+    ]}
+    summary = module.render_discovery_summary(data, ['a'], ['a'])
+    assert 'selected and pinned for parallel source preparation' in summary
+    assert 'Dependency levels will be computed after' in summary
+    assert '| `a` | requested |' in summary
+
+
 def test_upstream_metadata_expands_requested_roots_before_planning():
     data = {'packages': [
         {'source': 'ironic', 'deliverable': 'ironic', 'binaries': ['python3-ironic'],

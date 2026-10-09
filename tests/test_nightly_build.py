@@ -42,3 +42,14 @@ def test_adapted_indep_dependency_is_pinned_to_candidate(tmp_path):
                  'helper': [{'package': 'python3-helper', 'version': '2.0+git1'}]}
     assert module.required_versions(fields(dsc), producers) == {
         'python3-sdk': '4.20.0+git1', 'python3-helper': '2.0+git1'}
+
+
+def test_prepared_dsc_is_binary_package_source_of_truth():
+    path = Path(__file__).parents[1] / 'scripts/nightly-build.py'
+    spec = importlib.util.spec_from_file_location('nightly_build_binaries', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.declared_binaries({'Binary': 'python3-demo, demo-api'}) == [
+        'demo-api', 'python3-demo']
+    with pytest.raises(ValueError, match='declares no binary'):
+        module.declared_binaries({})

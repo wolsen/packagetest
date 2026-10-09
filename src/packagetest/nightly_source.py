@@ -7,7 +7,9 @@ explicit final fallback when neither packaging repository can be resolved.
 """
 from __future__ import annotations
 
+import configparser
 from datetime import datetime, timezone
+import fnmatch
 import gzip
 import io
 import json
@@ -18,6 +20,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import tomllib
 from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
 
@@ -36,6 +39,218 @@ SCM_REQUIREMENTS = [
     {'name': 'setuptools-scm', 'version': '8.3.1', 'sha256': '332ca0d43791b818b841213e76b1971b7711a960761c5bea5fc5cdb5196fbce3'},
     {'name': 'packaging', 'version': '25.0', 'sha256': '29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484'},
 ]
+
+
+def _entry_points_from_text(setup_cfg: str | None, pyproject: str | None) -> list[dict]:
+    """Return statically declared Python entry points in a stable form."""
+    result = []
+    if setup_cfg:
+        parser = configparser.ConfigParser(interpolation=None)
+        try:
+            parser.read_string(setup_cfg)
+        except configparser.Error as exc:
+            raise ValueError(f'Invalid setup.cfg while inspecting entry points: {exc}') from exc
+        if parser.has_section('entry_points'):
+            for group, value in parser.items('entry_points'):
+                for line in value.splitlines():
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        name, target = (part.strip() for part in line.split('=', 1))
+                        result.append({'group': group.replace('-', '_'), 'name': name,
+                                       'target': target, 'declared_in': 'setup.cfg'})
+    if pyproject:
+        try:
+            project = tomllib.loads(pyproject).get('project', {})
+        except tomllib.TOMLDecodeError as exc:
+            raise ValueError(f'Invalid pyproject.toml while inspecting entry points: {exc}') from exc
+        groups = {
+            'console_scripts': project.get('scripts', {}),
+            'gui_scripts': project.get('gui-scripts', {}),
+            **project.get('entry-points', {}),
+        }
+        for group, declarations in groups.items():
+            if not isinstance(declarations, dict):
+                continue
+            for name, target in declarations.items():
+                result.append({'group': group.replace('-', '_'), 'name': name,
+                               'target': str(target), 'declared_in': 'pyproject.toml'})
+    unique = {(item['group'], item['name'], item['target']): item for item in result}
+    return [unique[key] for key in sorted(unique)]
+
+
+def _revision_file(checkout: Path, revision: str, name: str) -> str | None:
+    result = subprocess.run(['git', '-C', str(checkout), 'show', f'{revision}:{name}'],
+                            text=True, capture_output=True)
+    return result.stdout if result.returncode == 0 else None
+
+
+def _tree_entry_points(tree: Path) -> list[dict]:
+    def content(name):
+        path = tree / name
+        return path.read_text() if path.is_file() else None
+    return _entry_points_from_text(content('setup.cfg'), content('pyproject.toml'))
+
+
+def _revision_entry_points(checkout: Path, revision: str) -> list[dict]:
+    return _entry_points_from_text(_revision_file(checkout, revision, 'setup.cfg'),
+                                   _revision_file(checkout, revision, 'pyproject.toml'))
+
+
+def _install_patterns(path: Path) -> list[str]:
+    patterns = []
+    for line in path.read_text().splitlines():
+        words = line.split('#', 1)[0].split()
+        if words:
+            pattern = words[0].removeprefix('debian/tmp/')
+            patterns.append(pattern)
+    return patterns
+
+
+def _manifest_owners(debian: Path, installed_path: str) -> list[Path]:
+    return sorted(path for path in debian.glob('*.install')
+                  if any(fnmatch.fnmatchcase(installed_path, pattern)
+                         for pattern in _install_patterns(path)))
+
+
+def _archive_upstream_version(version: str) -> str:
+    without_epoch = version.split(':', 1)[-1]
+    return without_epoch.rsplit('-', 1)[0] if '-' in without_epoch else without_epoch
+
+
+def _commit_inventory(checkout: Path, start: str, end: str) -> list[dict]:
+    result = subprocess.run(
+        ['git', '-C', str(checkout), 'log', '--reverse',
+         '--format=%H%x00%ct%x00%an%x00%s', f'{start}..{end}'],
+        text=True, capture_output=True, check=True)
+    return [{'sha': values[0], 'timestamp': int(values[1]), 'author': values[2],
+             'subject': values[3]}
+            for line in result.stdout.splitlines() for values in [line.split('\0', 3)]]
+
+
+def _official_commit_delta(entry: dict, checkout: Path, selected: dict) -> dict:
+    """Prefer the release tag matching Ubuntu's packaged upstream version."""
+    archive_upstream = _archive_upstream_version(entry['archive_version'])
+    from .versioning import upstream_version_to_debian_version
+    tags = subprocess.run(
+        ['git', '-C', str(checkout), 'tag', '--merged', selected['sha']],
+        text=True, capture_output=True, check=True).stdout.splitlines()
+    matches = []
+    for tag in tags:
+        normalized = upstream_version_to_debian_version(tag).rsplit('-', 1)[0]
+        if normalized == archive_upstream:
+            matches.append(tag)
+    if len(matches) == 1:
+        tag = matches[0]
+        tag_sha = subprocess.check_output(
+            ['git', '-C', str(checkout), 'rev-parse', f'refs/tags/{tag}^{{commit}}'],
+            text=True).strip()
+        commits = _commit_inventory(checkout, tag_sha, selected['sha'])
+        return {
+            'comparison_tag': tag, 'comparison_tag_sha': tag_sha,
+            'archive_upstream_version': archive_upstream,
+            'comparison_tag_matches_archive_version': True,
+            'basis': 'official-package-upstream-tag',
+            'count': len(commits), 'commits': commits,
+        }
+    # Some Ubuntu versions contain repacks or post-release snapshots for which
+    # no unique upstream tag exists. Preserve a useful, explicitly qualified
+    # delta rather than presenting the nearest tag as the official baseline.
+    return {
+        'comparison_tag': selected['base_tag'],
+        'comparison_tag_sha': selected['base_tag_sha'],
+        'archive_upstream_version': archive_upstream,
+        'comparison_tag_matches_archive_version': False,
+        'basis': 'nearest-upstream-release-tag',
+        'count': selected['commits_since_tag'],
+        'commits': selected.get('commits', []),
+        'official_tag_resolution': ('not-found' if not matches else 'ambiguous'),
+        'matching_tags': matches,
+    }
+
+
+def source_evolution(entry: dict, checkout: Path, selected: dict, tree: Path) -> tuple[dict, list[dict]]:
+    """Describe upstream changes and safely assign new executable entry points.
+
+    A manifest is changed only when existing commands identify exactly one
+    binary-package owner. Package splits remain an explicit human decision.
+    """
+    baseline = _revision_entry_points(checkout, selected['base_tag_sha'])
+    candidate = _tree_entry_points(tree)
+    old_keys = {(item['group'], item['name'], item['target']) for item in baseline}
+    introduced = [item for item in candidate
+                  if (item['group'], item['name'], item['target']) not in old_keys]
+    executable_groups = {'console_scripts', 'gui_scripts', 'wsgi_scripts'}
+    old_commands = {item['name'] for item in baseline if item['group'] in executable_groups}
+    debian = tree / 'debian'
+    existing_owners = {owner for command in old_commands
+                       for owner in _manifest_owners(debian, f'usr/bin/{command}')}
+    actions = []
+    findings = []
+    for item in introduced:
+        finding = {**item, 'kind': ('command-or-service' if item['group'] in executable_groups
+                                    else 'plugin-entry-point'),
+                   'human_binary_package_review_required': True}
+        if item['group'] in executable_groups:
+            installed_path = f"usr/bin/{item['name']}"
+            owners = _manifest_owners(debian, installed_path)
+            finding['installed_path'] = installed_path
+            if owners:
+                finding.update(packaging='already-covered',
+                               owning_manifests=[path.name for path in owners])
+            elif len(existing_owners) == 1:
+                owner = next(iter(existing_owners))
+                with owner.open('a') as stream:
+                    if owner.stat().st_size and not owner.read_text().endswith('\n'):
+                        stream.write('\n')
+                    stream.write(installed_path + '\n')
+                finding.update(packaging='assigned-to-existing-binary',
+                               owning_manifests=[owner.name])
+                actions.append({
+                    'action': 'install-new-upstream-command',
+                    'name': item['name'], 'entry_point_group': item['group'],
+                    'target': item['target'], 'installed_path': installed_path,
+                    'manifest': owner.name,
+                    'reason': ('A new upstream executable was not covered by packaging; '
+                               'existing commands identify one unambiguous binary owner.'),
+                    'human_binary_package_review_required': True,
+                })
+            else:
+                finding.update(packaging='human-decision-required',
+                               candidate_manifests=sorted(path.name for path in existing_owners))
+        else:
+            finding['packaging'] = 'included-with-python-metadata'
+        findings.append(finding)
+
+    commit_delta = _official_commit_delta(entry, checkout, selected)
+    return ({'schema_version': 1, 'source': entry['source'],
+             'commit_delta': commit_delta, 'introduced_entry_points': findings,
+             'human_binary_package_review_required': bool(findings)}, actions)
+
+
+def write_source_evolution(report: dict, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    (destination / 'source-evolution.json').write_text(json.dumps(report, indent=2) + '\n')
+    delta = report['commit_delta']
+    lines = [f"## {report['source']} upstream evolution", '',
+             f"{delta['count']} commits since `{delta['comparison_tag']}` "
+             f"({delta['basis'].replace('-', ' ')})."]
+    if not delta['comparison_tag_matches_archive_version']:
+        lines.extend(['', f"Archive upstream version `{delta['archive_upstream_version']}` did not "
+                      'match that tag; verify the official-package baseline.'])
+    if delta['commits']:
+        lines.extend(['', '| Commit | Subject |', '|---|---|'])
+        lines.extend(f"| `{item['sha'][:12]}` | {item['subject'].replace('|', '&#124;')} |"
+                     for item in delta['commits'])
+    introduced = report['introduced_entry_points']
+    if introduced:
+        lines.extend(['', '### New commands, services, and entry points', '',
+                      'Human review is required to decide whether any item needs a new binary package.', '',
+                      '| Group | Name | Packaging |', '|---|---|---|'])
+        lines.extend(f"| `{item['group']}` | `{item['name']}` | {item['packaging']} |"
+                     for item in introduced)
+    else:
+        lines.extend(['', 'No new statically declared entry points were detected.'])
+    (destination / 'source-evolution.md').write_text('\n'.join(lines) + '\n')
 
 
 class Preparation:
@@ -496,8 +711,12 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
         ubuntu_maintainer(tree / 'debian' / 'control')
         proposal_baseline = build.work / 'packaging-proposal-baseline'
         shutil.copytree(tree / 'debian', proposal_baseline, symlinks=True)
+        evolution, evolution_actions = source_evolution(entry, checkout, selected, tree)
+        report['source_evolution'] = evolution
+        write_source_evolution(evolution, build.root / 'packaging-proposal')
         report['packaging_adjustments'] = already_applied_patches(tree)
         report['packaging_adjustments'].extend(upstream_dependency_adjustments(entry, tree))
+        report['packaging_adjustments'].extend(evolution_actions)
         if remediation_patch is not None:
             from .failure_analysis import validate_source_patch
             patch = remediation_patch.read_text()
@@ -533,7 +752,8 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
                       dsc=str(dscs[0]), dsc_sha256=sha256(dscs[0]),
                       prepared_at=datetime.now(timezone.utc).isoformat())
         report_path.write_text(json.dumps(report, indent=2) + '\n')
-        return {'dsc': str(dscs[0]), 'metadata': report, 'lock': str(report_path)}
+        return {'dsc': str(dscs[0]), 'tree': str(tree),
+                'metadata': report, 'lock': str(report_path)}
     except Exception as error:
         report.update(status='FAILED', error=str(error))
         report_path.write_text(json.dumps(report, indent=2) + '\n')

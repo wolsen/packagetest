@@ -14,7 +14,10 @@ def test_each_build_matrix_runs_its_own_autopkgtest():
     assert 'autopkgtest_dependency_level_' not in workflow
     assert 'hibiscus-autopkgtest.yml' not in workflow
     assert 'build_dependency_level_' not in workflow
-    assert 'matrix: ${{ fromJSON(needs.plan.outputs.dependency_levels) }}' in workflow
+    assert 'matrix: ${{ fromJSON(needs.finalize_plan.outputs.dependency_levels) }}' in workflow
+    assert 'name: Prepare ${{ matrix.source }} source' in workflow
+    assert 'scripts/prepare-nightly-source.py' in workflow
+    assert 'scripts/finalize-nightly-plan.py' in workflow
     assert 'max-parallel: 1' in workflow
 
 
@@ -46,7 +49,7 @@ def test_local_ai_repairs_inside_each_package_job_before_publication():
     assert 'failure_analysis_plan:' not in workflow
     assert 'analyze_failure:' not in workflow
     assert reusable.count('uses: ./.github/actions/build-test-remediate') == 1
-    assert 'needs: [plan, prepare_autopkgtest_image, prepare_sbuild_rootfs, prepare_local_ai]' in workflow
+    assert 'needs: [finalize_plan, prepare_autopkgtest_image, prepare_sbuild_rootfs, prepare_local_ai]' in workflow
     assert 'scripts/remediate-package.py' in action
     assert action.index('id: initial_test') < action.index('id: ai_cache')
     assert action.index('id: ai_cache') < action.index('id: remediation')

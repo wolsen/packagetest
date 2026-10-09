@@ -41,6 +41,7 @@ runs:
         set -o pipefail
         sg sbuild -c 'PYTHONPATH=src python3 scripts/nightly-build.py \
           --source "$SOURCE" --catalog nightly-plan/catalog.json --inputs inputs --output outputs \
+          --prepared-source outputs/source-preparation \
           --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"' 2>&1 | tee outputs/nightly-build.log
 
     - id: initial_test
@@ -108,6 +109,11 @@ runs:
           outputs/source-preparation/packaging-proposal/packaging-proposal.json \
           outputs/result.json test-results/result/result.json
 
+    - name: Summarize upstream evolution
+      if: always() && hashFiles('outputs/source-preparation/packaging-proposal/source-evolution.md') != ''
+      shell: bash
+      run: cat outputs/source-preparation/packaging-proposal/source-evolution.md >> "$GITHUB_STEP_SUMMARY"
+
     - name: Record producer build-and-test readiness
       if: always()
       shell: bash
@@ -162,7 +168,7 @@ runs:
 
     - id: upload_packaging_proposal
       uses: actions/upload-artifact@v4
-      if: always() && hashFiles('outputs/source-preparation/packaging-proposal/packaging-proposal.json') != ''
+      if: always() && hashFiles('outputs/source-preparation/packaging-proposal/*') != ''
       with:
         name: packaging-proposal-${{ inputs.source }}
         path: outputs/source-preparation/packaging-proposal/
@@ -174,7 +180,7 @@ runs:
       env:
         ARTIFACT_URL: ${{ steps.upload_packaging_proposal.outputs.artifact-url }}
         SOURCE: ${{ inputs.source }}
-      run: printf '\n[Download the packaging-repository proposal for `%s`](%s) — candidate patch; human review and target selection are required.\n' "$SOURCE" "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+      run: printf '\n[Download the source-evolution analysis and packaging proposal for `%s`](%s) — human review and target selection are required for any candidate patch or binary-package split.\n' "$SOURCE" "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
 
     - id: upload_ai
       uses: actions/upload-artifact@v4

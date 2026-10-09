@@ -82,6 +82,9 @@ fi
 for package in "${host_packages[@]}"; do
     dpkg-query -W -f='${db:Status-Abbrev}\n' "$package" | grep -qx 'ii '
 done
+if [[ ${PACKAGETEST_HOST_TOOLS_ONLY:-0} == 1 ]]; then
+    exit 0
+fi
 sudo sbuild-adduser "$USER"
 # File-based schroot creates a new extracted build environment for every session.
 # Refuse stale partial bootstrap state rather than silently reusing it.

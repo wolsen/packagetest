@@ -33,7 +33,6 @@ jobs:
     timeout-minutes: 30
     outputs:
       sources: ${{ steps.plan.outputs.sources }}
-      dependency_levels: ${{ steps.plan.outputs.dependency_levels }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,10 +60,11 @@ jobs:
         run: >-
           python3 scripts/nightly-plan.py
           --catalog "$RUNNER_TEMP/catalog-input.json"
+          --discovery-only
           --sources "$SOURCES"
       - uses: actions/upload-artifact@v4
         with:
-          name: nightly-plan
+          name: nightly-discovery
           path: nightly-plan/
           retention-days: 14
           if-no-files-found: error
@@ -107,6 +107,7 @@ jobs:
     timeout-minutes: 45
     outputs:
       cache_key: ${{ steps.identity.outputs.key }}
+      host_cache_key: ${{ steps.identity.outputs.key }}-host-tools
     env:
       SBUILD_ROOTFS_CACHE: ${{ github.workspace }}/.cache/sbuild/resolute-amd64
       SBUILD_HOST_APT_CACHE: ${{ github.workspace }}/.cache/sbuild/ubuntu-24.04-host-tools
@@ -117,15 +118,18 @@ jobs:
       - id: identity
         name: Resolve sbuild rootfs identity
         run: scripts/sbuild-cache-key.sh resolute amd64
-      - id: cache
+      - id: rootfs_cache
         uses: actions/cache@v4
         with:
-          path: |
-            ${{ env.SBUILD_ROOTFS_CACHE }}
-            ${{ env.SBUILD_HOST_APT_CACHE }}
+          path: ${{ env.SBUILD_ROOTFS_CACHE }}
           key: ${{ steps.identity.outputs.key }}
+      - id: host_cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SBUILD_HOST_APT_CACHE }}
+          key: ${{ steps.identity.outputs.key }}-host-tools
       - name: Cache updated source chroot and Noble host tools
-        if: steps.cache.outputs.cache-hit != 'true'
+        if: steps.rootfs_cache.outputs.cache-hit != 'true' || steps.host_cache.outputs.cache-hit != 'true'
         run: bash scripts/prepare-builder.sh resolute
       - name: Verify cached builder inputs
         run: |
@@ -134,27 +138,113 @@ jobs:
           cd "$SBUILD_HOST_APT_CACHE"
           sha256sum --check packages.sha256
 
+  prepare_sources:
+    name: Prepare ${{ matrix.source }} source
+    needs: [plan, prepare_sbuild_rootfs]
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.prepare_sbuild_rootfs.result == 'success' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.sources) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      SBUILD_HOST_APT_CACHE: ${{ github.workspace }}/.cache/sbuild/ubuntu-24.04-host-tools
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-discovery
+          path: nightly-discovery
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SBUILD_HOST_APT_CACHE }}
+          key: ${{ needs.prepare_sbuild_rootfs.outputs.host_cache_key }}
+          fail-on-cache-miss: true
+      - name: Install pinned source preparation tools
+        env:
+          PACKAGETEST_HOST_TOOLS_ONLY: 1
+        run: bash scripts/prepare-builder.sh resolute
+      - name: Prepare immutable snapshot source
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: >-
+          PYTHONPATH=src python3 scripts/prepare-nightly-source.py
+          --catalog nightly-discovery/catalog.json
+          --source "$SOURCE"
+          --work "$RUNNER_TEMP/source-preparation-$SOURCE"
+          --output prepared-source
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Add source evolution to the job summary
+        if: always() && hashFiles('prepared-source/packaging-proposal/source-evolution.md') != ''
+        run: cat prepared-source/packaging-proposal/source-evolution.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prepared-source-${{ matrix.source }}
+          path: prepared-source/
+          retention-days: 14
+          if-no-files-found: error
+
+  finalize_plan:
+    name: Build exact dependency plan from prepared sources
+    needs: [plan, prepare_sources]
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.prepare_sources.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      dependency_levels: ${{ steps.finalize.outputs.dependency_levels }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-discovery
+          path: nightly-discovery
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: prepared-source-*
+          path: prepared-inputs
+      - id: finalize
+        name: Resolve exact binary providers and dependency levels
+        run: >-
+          PYTHONPATH=src python3 scripts/finalize-nightly-plan.py
+          --catalog nightly-discovery/catalog.json
+          --prepared-inputs prepared-inputs
+          --output nightly-plan
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightly-plan
+          path: nightly-plan/
+          retention-days: 14
+          if-no-files-found: error
+
   build_dependency_levels:
     name: Dependency level ${{ matrix.level }}
-    needs: [plan, prepare_autopkgtest_image, prepare_sbuild_rootfs, prepare_local_ai]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.prepare_autopkgtest_image.result == 'success' && needs.prepare_sbuild_rootfs.result == 'success' }}
+    needs: [finalize_plan, prepare_autopkgtest_image, prepare_sbuild_rootfs, prepare_local_ai]
+    if: ${{ always() && !cancelled() && needs.finalize_plan.result == 'success' && needs.prepare_autopkgtest_image.result == 'success' && needs.prepare_sbuild_rootfs.result == 'success' }}
     strategy:
       fail-fast: false
       max-parallel: 1
-      matrix: ${{ fromJSON(needs.plan.outputs.dependency_levels) }}
+      matrix: ${{ fromJSON(needs.finalize_plan.outputs.dependency_levels) }}
     uses: ./.github/workflows/build-dependency-level.yml
     with:
       packages: ${{ matrix.packages }}
       plan-artifact: nightly-plan
       autopkgtest-cache-key: ${{ needs.prepare_autopkgtest_image.outputs.cache_key }}
       sbuild-cache-key: ${{ needs.prepare_sbuild_rootfs.outputs.cache_key }}
+      sbuild-host-cache-key: ${{ needs.prepare_sbuild_rootfs.outputs.host_cache_key }}
       max-parallel: 20
       timeout-minutes: 360
 
   summary:
     name: Summarize all package and test results
-    needs: [plan, build_dependency_levels]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' }}
+    needs: [finalize_plan, build_dependency_levels]
+    if: ${{ always() && !cancelled() && needs.finalize_plan.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

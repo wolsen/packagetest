@@ -183,6 +183,160 @@ Description: demo
     assert actions == []
 
 
+def test_new_console_script_uses_unambiguous_existing_install_owner(tmp_path):
+    from packagetest.nightly_source import source_evolution
+    repository = tmp_path / 'upstream'
+    repository.mkdir()
+    (repository / 'setup.cfg').write_text('''[metadata]
+name = demo
+[entry_points]
+console_scripts =
+ old-command = demo.cmd:old
+openstack.demo.plugin =
+ old = demo.plugin:Old
+''')
+    subprocess.run(['git', 'init', '-q', '-b', 'master', str(repository)], check=True)
+    subprocess.run(['git', '-C', str(repository), 'add', '.'], check=True)
+    subprocess.run(['git', '-C', str(repository), '-c', 'user.name=Test',
+                    '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'release'], check=True)
+    base = subprocess.check_output(['git', '-C', str(repository), 'rev-parse', 'HEAD'],
+                                   text=True).strip()
+    subprocess.run(['git', '-C', str(repository), 'tag', '1.0.0'], check=True)
+    tree = tmp_path / 'candidate'
+    (tree / 'debian').mkdir(parents=True)
+    (tree / 'setup.cfg').write_text('''[metadata]
+name = demo
+[entry_points]
+console_scripts =
+ old-command = demo.cmd:old
+ new-command = demo.cmd:new
+openstack.demo.plugin =
+ old = demo.plugin:Old
+ new = demo.plugin:New
+''')
+    manifest = tree / 'debian/demo-api.install'
+    manifest.write_text('usr/bin/old-command\nusr/share/demo/*\n')
+    selected = {'sha': base, 'base_tag': '1.0.0', 'base_tag_sha': base, 'commits_since_tag': 2,
+                'commits': [{'sha': 'a' * 40, 'timestamp': 1, 'author': 'Dev',
+                             'subject': 'Add command'}]}
+
+    report, actions = source_evolution(
+        {'source': 'demo', 'archive_version': '1.0.0-1'}, repository, selected, tree)
+
+    assert 'usr/bin/new-command' in manifest.read_text().splitlines()
+    assert actions[0]['manifest'] == 'demo-api.install'
+    findings = {item['name']: item for item in report['introduced_entry_points']}
+    assert findings['new-command']['packaging'] == 'assigned-to-existing-binary'
+    assert findings['new']['packaging'] == 'included-with-python-metadata'
+    assert report['human_binary_package_review_required'] is True
+    assert report['commit_delta']['comparison_tag_matches_archive_version'] is True
+    assert report['commit_delta']['count'] == 0
+
+
+def test_new_console_script_with_ambiguous_owner_requires_human_decision(tmp_path):
+    from packagetest.nightly_source import source_evolution
+    repository = tmp_path / 'upstream'
+    repository.mkdir()
+    (repository / 'setup.cfg').write_text('''[entry_points]
+console_scripts =
+ one = demo:one
+ two = demo:two
+''')
+    subprocess.run(['git', 'init', '-q', '-b', 'master', str(repository)], check=True)
+    subprocess.run(['git', '-C', str(repository), 'add', '.'], check=True)
+    subprocess.run(['git', '-C', str(repository), '-c', 'user.name=Test',
+                    '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'release'], check=True)
+    base = subprocess.check_output(['git', '-C', str(repository), 'rev-parse', 'HEAD'],
+                                   text=True).strip()
+    subprocess.run(['git', '-C', str(repository), 'tag', '1.0.0'], check=True)
+    tree = tmp_path / 'candidate'
+    (tree / 'debian').mkdir(parents=True)
+    (tree / 'setup.cfg').write_text('''[entry_points]
+console_scripts =
+ one = demo:one
+ two = demo:two
+ three = demo:three
+''')
+    (tree / 'debian/one.install').write_text('usr/bin/one\n')
+    (tree / 'debian/two.install').write_text('usr/bin/two\n')
+
+    report, actions = source_evolution(
+        {'source': 'demo', 'archive_version': '0.9-1'}, repository,
+        {'sha': base, 'base_tag': '1.0.0', 'base_tag_sha': base, 'commits_since_tag': 0,
+         'commits': []}, tree)
+
+    assert actions == []
+    finding = report['introduced_entry_points'][0]
+    assert finding['name'] == 'three'
+    assert finding['packaging'] == 'human-decision-required'
+    assert finding['candidate_manifests'] == ['one.install', 'two.install']
+    assert report['commit_delta']['basis'] == 'nearest-upstream-release-tag'
+
+
+def test_official_package_tag_delta_lists_every_snapshot_commit(tmp_path):
+    from packagetest.nightly_source import _official_commit_delta
+    repository = tmp_path / 'upstream'
+    repository.mkdir()
+    subprocess.run(['git', 'init', '-q', '-b', 'master', str(repository)], check=True)
+    subprocess.run(['git', '-C', str(repository), '-c', 'user.name=Test',
+                    '-c', 'user.email=test@example.invalid', 'commit', '--allow-empty',
+                    '-qm', 'official release'], check=True)
+    base = subprocess.check_output(['git', '-C', str(repository), 'rev-parse', 'HEAD'],
+                                   text=True).strip()
+    subprocess.run(['git', '-C', str(repository), 'tag', '2.3.0'], check=True)
+    for subject in ('Add API command', 'Move service to WSGI'):
+        subprocess.run(['git', '-C', str(repository), '-c', 'user.name=Test',
+                        '-c', 'user.email=test@example.invalid', 'commit', '--allow-empty',
+                        '-qm', subject], check=True)
+    tip = subprocess.check_output(['git', '-C', str(repository), 'rev-parse', 'HEAD'],
+                                  text=True).strip()
+
+    delta = _official_commit_delta(
+        {'archive_version': '1:2.3.0-0ubuntu1'}, repository,
+        {'sha': tip, 'base_tag': '2.4.0', 'base_tag_sha': base,
+         'commits_since_tag': 0, 'commits': []})
+
+    assert delta['basis'] == 'official-package-upstream-tag'
+    assert delta['comparison_tag'] == '2.3.0'
+    assert delta['count'] == 2
+    assert [item['subject'] for item in delta['commits']] == [
+        'Add API command', 'Move service to WSGI']
+
+
+def test_prepared_control_metadata_captures_binary_and_autopkgtest_relationships(tmp_path):
+    import importlib.util
+    path = Path(__file__).parents[1] / 'scripts/prepare-nightly-source.py'
+    spec = importlib.util.spec_from_file_location('prepare_nightly_source', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    tree = tmp_path / 'source'
+    (tree / 'debian/tests').mkdir(parents=True)
+    (tree / 'debian/control').write_text('''Source: demo
+Build-Depends: debhelper-compat (= 13), python3-setuptools
+
+Package: python3-demo
+Architecture: all
+Depends: ${python3:Depends}, python3-runtime
+Description: demo
+
+Package: demo-api
+Architecture: all
+Depends: python3-demo (= ${binary:Version})
+Description: api
+''')
+    (tree / 'debian/tests/control').write_text('''Tests: smoke
+Depends: @, python3-testtools
+Restrictions: superficial
+''')
+
+    value = module.control_metadata(tree)
+
+    assert value['build_depends']['Build-Depends'].startswith('debhelper-compat')
+    assert [item['package'] for item in value['binary_packages']] == [
+        'python3-demo', 'demo-api']
+    assert value['autopkgtests'][0]['depends'] == '@, python3-testtools'
+
+
 def test_only_complete_already_applied_patch_is_omitted(tmp_path):
     from packagetest.nightly_source import already_applied_patches
     patches = tmp_path / 'debian/patches'

@@ -53,6 +53,21 @@ def write_inputs(tmp_path, *, valid_checksum=True):
         'validation': {'build': {'result': 'SUCCEEDED'},
                        'autopkgtest': {'result': 'NO_TESTS'}},
     }))
+    (proposal_dir / 'source-evolution.json').write_text(json.dumps({
+        'schema_version': 1, 'source': 'alpha',
+        'commit_delta': {
+            'comparison_tag': '1.0', 'archive_upstream_version': '1.0',
+            'comparison_tag_matches_archive_version': True,
+            'basis': 'official-package-upstream-tag', 'count': 1,
+            'commits': [{'sha': 'c' * 40, 'subject': 'Add alpha-api command'}],
+        },
+        'introduced_entry_points': [{
+            'group': 'console_scripts', 'name': 'alpha-api',
+            'packaging': 'assigned-to-existing-binary',
+            'human_binary_package_review_required': True,
+        }],
+        'human_binary_package_review_required': True,
+    }))
     for name, value in [('catalog.json', catalog), ('plan.json', plan), ('results.json', results)]:
         (tmp_path / name).write_text(json.dumps(value))
     return proposal_dir.parent
@@ -88,6 +103,9 @@ def test_report_renders_results_rationale_and_verified_inline_diff(tmp_path):
     assert 'Ubuntu development release' in page
     assert 'alpha' in page and 'beta' in page
     assert 'Upstream renamed the WSGI entry point' in page
+    assert 'Add alpha-api command' in page
+    assert 'alpha-api' in page
+    assert 'Human review must decide whether a new binary package is needed.' in page
     assert 'diff-add">+new dependency' in page
     assert '&lt;script&gt;bad()&lt;/script&gt;' in page
     assert '<script>bad()</script>' not in page
@@ -96,6 +114,8 @@ def test_report_renders_results_rationale_and_verified_inline_diff(tmp_path):
     assert (output / 'patches/alpha.patch').is_file()
     assert report['target']['kind'] == 'development'
     assert report['packages'][0]['proposal']['status'] == 'validated'
+    assert report['packages'][0]['source_evolution']['commit_delta']['count'] == 1
+    assert report['plan']['binary_review_count'] == 1
     assert report['counts']['build'] == {'FAILED': 1, 'SUCCEEDED': 1}
 
 

@@ -41,6 +41,27 @@ def proposal_files(root: Path | None):
     return sorted(root.rglob('packaging-proposal.json')) if root and root.exists() else []
 
 
+def load_evolutions(root: Path | None, known_sources: set[str]):
+    evolutions, warnings = {}, []
+    paths = sorted(root.rglob('source-evolution.json')) if root and root.exists() else []
+    for path in paths:
+        try:
+            value = read_json(path)
+            source = value.get('source')
+            if source not in known_sources:
+                raise ValueError(f'evolution record names unknown source {source!r}')
+            if source in evolutions:
+                raise ValueError(f'duplicate evolution record for {source}')
+            if not isinstance(value.get('commit_delta'), dict):
+                raise ValueError(f'invalid commit delta for {source}')
+            if not isinstance(value.get('introduced_entry_points', []), list):
+                raise ValueError(f'invalid entry point list for {source}')
+            evolutions[source] = value
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            warnings.append({'file': str(path), 'error': str(exc)})
+    return evolutions, warnings
+
+
 def load_proposals(root: Path | None, known_sources: set[str], output: Path):
     proposals, warnings = {}, []
     patch_output = output / 'patches'
@@ -91,6 +112,8 @@ def build_report(catalog: dict, plan: dict, results: list[dict], proposals_root:
     entries = {entry['source']: entry for entry in catalog['packages']}
     results_by_source = {row['source']: row for row in results}
     proposals, warnings = load_proposals(proposals_root, set(entries), output)
+    evolutions, evolution_warnings = load_evolutions(proposals_root, set(entries))
+    warnings.extend(evolution_warnings)
     levels = {source: index for index, level in enumerate(plan.get('waves', []), 1)
               for source in level}
     missing_results = sorted(set(entries) - set(results_by_source))
@@ -122,6 +145,7 @@ def build_report(catalog: dict, plan: dict, results: list[dict], proposals_root:
             'build': result.get('build', missing),
             'autopkgtest': result.get('autopkgtest', missing),
             'proposal': proposals.get(source),
+            'source_evolution': evolutions.get(source),
         })
     counts = {
         phase: dict(sorted(Counter(package[phase].get('result', 'UNKNOWN')
@@ -144,6 +168,9 @@ def build_report(catalog: dict, plan: dict, results: list[dict], proposals_root:
             'package_count': len(packages),
             'dependency_levels': len(plan.get('waves', [])),
             'proposal_count': len(proposals),
+            'binary_review_count': sum(
+                bool(value.get('human_binary_package_review_required'))
+                for value in evolutions.values()),
             'requested_sources': plan.get('requested_sources', plan.get('sources', [])),
             'resolution_failures': plan.get('resolution_failures', []),
         },
@@ -213,6 +240,40 @@ def render_proposal(proposal: dict | None) -> str:
       </details>'''
 
 
+def render_evolution(evolution: dict | None) -> str:
+    if not evolution:
+        return '<p class="empty">No upstream evolution record was available.</p>'
+    delta = evolution.get('commit_delta', {})
+    commits = delta.get('commits', [])
+    commit_rows = ''.join(
+        f'<li><code>{html.escape(item.get("sha", "")[:12])}</code> '
+        f'{html.escape(item.get("subject", ""))}</li>' for item in commits)
+    introduced = evolution.get('introduced_entry_points', [])
+    entry_rows = ''.join(
+        '<li><strong>' + html.escape(item.get('name', 'unknown')) + '</strong> '
+        f'(<code>{html.escape(item.get("group", "unknown"))}</code>): '
+        + html.escape(item.get('packaging', 'review required')) + '</li>'
+        for item in introduced)
+    mismatch = ''
+    if not delta.get('comparison_tag_matches_archive_version', False):
+        mismatch = ('<p class="review">The archive version did not match this tag; '
+                    'verify the official-package baseline.</p>')
+    review = ('<p class="review">Human review must decide whether a new binary package is needed.</p>'
+              if evolution.get('human_binary_package_review_required') else '')
+    return f'''<dl>{render_key_values({
+        'archive upstream version': delta.get('archive_upstream_version'),
+        'comparison tag': delta.get('comparison_tag'),
+        'commits after baseline': delta.get('count'),
+        'comparison basis': delta.get('basis'),
+    }, ('archive upstream version', 'comparison tag', 'commits after baseline', 'comparison basis'))}</dl>
+      {mismatch}
+      <details><summary>Commits in snapshot ({len(commits)})</summary>
+        {'<ol>' + commit_rows + '</ol>' if commits else '<p>Snapshot matches the comparison tag.</p>'}
+      </details>
+      <h4>New commands, services, and entry points</h4>
+      {review}{'<ul>' + entry_rows + '</ul>' if introduced else '<p>None detected.</p>'}'''
+
+
 def render_html(report: dict) -> str:
     target = report['target']
     run = report.get('run', {})
@@ -223,10 +284,14 @@ def render_html(report: dict) -> str:
         build = package['build']
         test = package['autopkgtest']
         proposal = package['proposal']
+        evolution = package.get('source_evolution')
         dependencies = ', '.join(package['dependencies']) or 'None'
         bootstrap = ', '.join(package['archive_bootstrap_dependencies']) or 'None'
         reasons = ', '.join(package['selection_reasons']) or 'Catalog selection'
-        search = ' '.join((source, package.get('deliverable') or '', dependencies, reasons)).lower()
+        evolution_search = ' '.join(item.get('name', '')
+                                    for item in (evolution or {}).get('introduced_entry_points', []))
+        search = ' '.join((source, package.get('deliverable') or '', dependencies, reasons,
+                           evolution_search)).lower()
         errors = []
         for label, value in [('Build', build), ('Autopkgtest', test)]:
             if value.get('error'):
@@ -255,7 +320,8 @@ def render_html(report: dict) -> str:
                               'candidate dependencies', 'archive bootstrap dependencies', 'selection reason'))}</dl>
       {''.join(errors)}
     </section>
-    <section><h3>Packaging proposal</h3>{render_proposal(proposal)}</section>
+    <section><h3>Upstream evolution</h3>{render_evolution(evolution)}
+      <h3>Packaging proposal</h3>{render_proposal(proposal)}</section>
   </div>
 </details>''')
     count_cards = []
@@ -265,6 +331,8 @@ def render_html(report: dict) -> str:
         f'<span>Packages <b>{plan["package_count"]}</b></span>'
         f'<span>Dependency levels <b>{plan["dependency_levels"]}</b></span>'
         f'<span>Proposed patches <b>{plan["proposal_count"]}</b></span></section>')
+    count_cards[-1] = count_cards[-1].replace(
+        '</section>', f'<span>Binary package reviews <b>{plan.get("binary_review_count", 0)}</b></span></section>')
     for phase, outcomes in report['counts'].items():
         count_cards.append('<section class="metric"><h3>' + html.escape(phase.title()) + '</h3>' +
                            ''.join(f'<span>{status_badge(status)} <b>{count}</b></span>'
