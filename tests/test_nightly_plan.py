@@ -2,6 +2,7 @@ import importlib.util
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -47,6 +48,70 @@ def test_resolution_failure_is_individual_and_never_branch_fallback(monkeypatch)
     assert result['upstream_sha'] is None
     assert result['upstream_resolution_error'] == 'network timed out'
     assert result['upstream_ref'] == 'stable/2026.2'
+
+
+def test_freeze_pins_launchpad_packaging_and_related_source_branches(monkeypatch):
+    upstream_sha = '1' * 40
+    packaging_sha = '2' * 40
+    packaging_upstream_sha = '3' * 40
+    pristine_sha = '4' * 40
+
+    def run(command, **kwargs):
+        if command[3] == 'https://opendev.org/openstack/demo':
+            return SimpleNamespace(stdout=f'{upstream_sha}\trefs/heads/stable/2026.2\n',
+                                   stderr='', returncode=0)
+        return SimpleNamespace(stdout=(
+            f'{packaging_sha}\trefs/heads/master\n'
+            f'{packaging_upstream_sha}\trefs/heads/upstream-hibiscus\n'
+            f'{pristine_sha}\trefs/heads/pristine-tar\n'), stderr='', returncode=0)
+
+    monkeypatch.setattr(module.subprocess, 'run', run)
+    entry = module.freeze({
+        'source': 'demo',
+        'upstream_repository': 'https://opendev.org/openstack/demo',
+        'upstream_ref': 'stable/2026.2',
+        'packaging_repository':
+            'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/demo',
+        'packaging_branch_candidates': ['stable/2026.2', 'master'],
+        'packaging_upstream_branch_candidates': ['upstream-hibiscus', 'upstream'],
+        'packaging_pristine_tar_branch': 'pristine-tar',
+    })
+
+    assert entry['upstream_sha'] == upstream_sha
+    assert entry['packaging_source_kind'] == 'git'
+    assert entry['packaging_branch'] == 'master'
+    assert entry['packaging_sha'] == packaging_sha
+    assert entry['packaging_upstream_branch'] == 'upstream-hibiscus'
+    assert entry['packaging_upstream_sha'] == packaging_upstream_sha
+    assert entry['packaging_pristine_tar_sha'] == pristine_sha
+
+
+def test_packaging_resolution_uses_archive_vcs_when_launchpad_tree_is_absent(monkeypatch):
+    revision = '5' * 40
+
+    def run(command, **kwargs):
+        if 'git.launchpad.net' in command[3]:
+            return SimpleNamespace(stdout='', stderr='repository does not exist', returncode=128)
+        return SimpleNamespace(stdout=f'{revision}\trefs/heads/debian/hibiscus\n',
+                               stderr='', returncode=0)
+
+    monkeypatch.setattr(module.subprocess, 'run', run)
+    entry = module.freeze_packaging({
+        'source': 'demo',
+        'packaging_repository':
+            'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/demo',
+        'packaging_branch_candidates': ['stable/2026.2', 'master'],
+        'packaging_upstream_branch_candidates': ['upstream-hibiscus', 'upstream'],
+        'packaging_pristine_tar_branch': 'pristine-tar',
+        'archive_packaging_repository': 'https://salsa.example/openstack/demo.git',
+        'archive_packaging_branch': 'debian/hibiscus',
+    })
+
+    assert entry['packaging_source_kind'] == 'git'
+    assert entry['packaging_source_role'] == 'archive-vcs'
+    assert entry['packaging_source_repository'] == 'https://salsa.example/openstack/demo.git'
+    assert entry['packaging_branch'] == 'debian/hibiscus'
+    assert entry['packaging_sha'] == revision
 
 
 def test_mandatory_candidate_restores_one_direction_of_cycle():

@@ -52,6 +52,14 @@ and upstream commits into the `nightly-plan` artifact consumed by all parallel
 jobs. Generated catalogs are run artifacts and are not committed to this
 repository.
 
+For Debian packaging, planning first resolves and pins the corresponding
+`~ubuntu-openstack-dev/ubuntu/+source/<source>` Launchpad Git tree. When that
+team has no tree for a package, the archive's `Vcs-Git` repository is pinned
+instead. Package jobs fetch the exact recorded commit and copy its `debian/`
+tree onto the upstream snapshot. Published `.dsc` packaging is retained only as
+an explicit, reported compatibility fallback; supplementary orig components
+are still downloaded by their archive checksums when a source requires them.
+
 One daily preparation job updates the target schroot and resolves the Ubuntu
 24.04 host tools needed to operate it. The resulting cache contains the updated
 schroot tarball and checksum-pinned host-tool `.deb` files. Package jobs install

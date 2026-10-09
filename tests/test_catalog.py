@@ -7,7 +7,7 @@ import pytest
 
 from packagetest.catalog import (archive_python_packages, dependency_names, make_catalog,
                                 package_record, paragraphs, source_name,
-                                ubuntu_source_indexes, validate_archive_sources)
+                                ubuntu_source_indexes, validate_archive_sources, vcs_git)
 
 
 def archive(name, binaries=None, depends=''):
@@ -41,11 +41,31 @@ def test_alias_and_unmapped_package():
     assert source_name('not-packaged', {}) is None
 
 
+def test_vcs_git_keeps_debian_branch_hint():
+    assert vcs_git('https://salsa.example/package.git -b debian/hibiscus') == (
+        'https://salsa.example/package.git', 'debian/hibiscus')
+
+
+def test_obsolete_archive_vcs_path_uses_reviewed_repository_override():
+    item = archive('python-cyborgclient')
+    item['Vcs-Git'] = 'https://salsa.debian.org/openstack-team/python/python-cyborgclient.git'
+    record = package_record(
+        'python-cyborgclient',
+        {'repository-settings': {'openstack/python-cyborgclient': {}}},
+        item, series='2026.2', membership='cycle')
+    assert record['archive_packaging_repository'] == (
+        'https://salsa.debian.org/openstack-team/clients/python-cyborgclient.git')
+
+
 def test_branch_selection_uses_release_metadata():
     metadata = {'repository-settings': {'openstack/glance': {}}, 'branches': [{'name': 'stable/2026.2', 'location': '33.0.0.0rc1'}]}
     record = package_record('glance', metadata, archive('glance'), series='2026.2', membership='cycle')
     assert record['upstream_ref'] == 'stable/2026.2'
     assert record['archive_source']['sha256'] == 'a' * 64
+    assert record['packaging_repository'].startswith(
+        'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/')
+    assert record['packaging_upstream_branch_candidates'][0] == 'upstream-hibiscus'
+    assert record['packaging_pristine_tar_branch'] == 'pristine-tar'
     assert record['archive_source']['files'] == [{
         'name': 'glance_2.0-0ubuntu1.dsc',
         'url': 'https://archive.ubuntu.com/ubuntu/pool/main/p/glance/glance_2.0-0ubuntu1.dsc',

@@ -77,6 +77,40 @@ def test_existing_ubuntu_maintainer_is_byte_stable(tmp_path):
     assert path.read_text() == content
 
 
+def test_packaging_tree_is_cloned_at_plan_pinned_launchpad_commit(tmp_path):
+    from packagetest.nightly_source import Preparation, checkout_packaging_tree
+
+    repository = tmp_path / 'packaging-repository'
+    (repository / 'debian').mkdir(parents=True)
+    (repository / 'debian/control').write_text(
+        'Source: demo\nMaintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>\n\n'
+        'Package: demo\nArchitecture: all\nDescription: demo\n')
+    (repository / 'debian/changelog').write_text(
+        'demo (1.0-1) unstable; urgency=medium\n\n  * Test.\n\n'
+        ' -- Test <test@example.invalid>  Thu, 01 Jan 2026 00:00:00 +0000\n')
+    subprocess.run(['git', 'init', '-q', '-b', 'master', str(repository)], check=True)
+    subprocess.run(['git', '-C', str(repository), 'add', '.'], check=True)
+    subprocess.run(['git', '-C', str(repository), '-c', 'user.name=Test',
+                    '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'packaging'], check=True)
+    revision = subprocess.check_output(
+        ['git', '-C', str(repository), 'rev-parse', 'HEAD'], text=True).strip()
+    build = Preparation(tmp_path / 'result')
+
+    checkout, metadata = checkout_packaging_tree(build, {
+        'source': 'demo', 'packaging_source_kind': 'git',
+        'packaging_source_role': 'ubuntu-openstack',
+        'packaging_source_repository': str(repository), 'packaging_branch': 'master',
+        'packaging_sha': revision, 'packaging_upstream_branch': 'upstream-hibiscus',
+        'packaging_upstream_sha': '2' * 40, 'packaging_pristine_tar_sha': '3' * 40,
+    })
+
+    assert (checkout / 'debian/control').is_file()
+    assert metadata['kind'] == 'git'
+    assert metadata['sha'] == revision
+    assert subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', 'HEAD'],
+                                   text=True).strip() == revision
+
+
 def test_upstream_test_dependencies_only_change_build_dependencies(tmp_path):
     from packagetest.nightly_source import upstream_dependency_adjustments
     tree = tmp_path / 'watcher'

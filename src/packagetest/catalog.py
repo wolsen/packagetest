@@ -11,6 +11,7 @@ import json
 import lzma
 from pathlib import Path
 import re
+import shlex
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from urllib.error import HTTPError
@@ -32,6 +33,12 @@ UPSTREAM_OVERRIDES = {
         'upstream_ref': 'bb64d8a07b515947cf000c375b017026a01f7a4f',
         'branch_policy': 'last-source-commit-before-upstream-retirement',
     },
+}
+
+# Ubuntu source metadata can retain an obsolete Debian Vcs-Git path after the
+# OpenStack packaging team reorganizes Salsa subgroups.
+PACKAGING_REPOSITORY_OVERRIDES = {
+    'python-cyborgclient': 'https://salsa.debian.org/openstack-team/clients/python-cyborgclient.git',
 }
 
 ARCHIVE_COMPONENTS = ('main', 'universe')
@@ -168,6 +175,15 @@ def source_name(deliverable: str, sources: dict) -> str | None:
     return None
 
 
+def vcs_git(value: str) -> tuple[str | None, str | None]:
+    """Split a Debian Vcs-Git URL and its optional ``-b`` branch hint."""
+    words = shlex.split(value or '')
+    if not words:
+        return None, None
+    branch = words[words.index('-b') + 1] if '-b' in words and words.index('-b') + 1 < len(words) else None
+    return words[0], branch
+
+
 def repository_names(metadata: dict) -> list[str]:
     names = set(metadata.get('repository-settings', {}))
     for release in metadata.get('releases', []):
@@ -190,6 +206,9 @@ def package_record(name: str, metadata: dict, archive: dict, *, series: str, mem
     dsc = next((row for row in archive_files if row['name'].endswith('.dsc')), None)
     if dsc is None:
         raise ValueError(f'No .dsc checksum for {archive["Package"]}')
+    archive_packaging_repository, archive_packaging_branch = vcs_git(archive.get('Vcs-Git', ''))
+    archive_packaging_repository = PACKAGING_REPOSITORY_OVERRIDES.get(
+        archive['Package'], archive_packaging_repository)
     return {
         'deliverable': name, 'source': archive['Package'], 'membership': membership,
         'release_type': metadata.get('type', 'other'), 'team': metadata.get('team'),
@@ -202,14 +221,27 @@ def package_record(name: str, metadata: dict, archive: dict, *, series: str, mem
         'binaries': sorted(x.strip() for x in archive.get('Binary', '').split(',') if x.strip()),
         'build_depends': ', '.join(archive.get(k, '') for k in ('Build-Depends', 'Build-Depends-Indep', 'Build-Depends-Arch') if archive.get(k)),
         'testsuite': archive.get('Testsuite', ''),
-        'archive_packaging_repository': archive.get('Vcs-Git'),
+        'archive_packaging_repository': archive_packaging_repository,
+        'archive_packaging_branch': archive_packaging_branch,
         'packaging_repository': f'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/{archive["Package"]}',
         'packaging_branch_candidates': [f'stable/{series}', 'master'],
+        'packaging_upstream_branch_candidates': [f'upstream-{series_name(series)}', 'upstream'],
+        'packaging_pristine_tar_branch': 'pristine-tar',
         'archive_source': {'url': dsc['url'], 'sha256': dsc['sha256'],
                            'files': archive_files},
         'snapshot_backend': 'git-archive' if name.startswith('puppet-') else 'python-sdist',
         'discovery_error': None if repo else 'Multiple or missing upstream repositories require explicit mapping',
     }
+
+
+def series_name(series: str) -> str:
+    """Map the active numeric OpenStack series to its release codename."""
+    # Keep this explicit: guessing a future codename would select the wrong
+    # packaging upstream branch while still producing a syntactically valid ref.
+    names = {'2026.2': 'hibiscus'}
+    if series not in names:
+        raise ValueError(f'No packaging upstream branch mapping for OpenStack {series}')
+    return names[series]
 
 
 def archive_python_packages(sources: dict[str, dict]) -> list[dict]:

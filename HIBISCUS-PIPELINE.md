@@ -9,8 +9,11 @@ OpenStack release metadata with the live Resolute, updates, and security source
 indexes. It records explicit exclusions, checksums the input indexes, and
 preflights every selected Ubuntu source file. The resulting catalog is frozen
 inside the `nightly-plan` artifact rather than committed to the repository.
+The same planning pass pins source-package Git commits, preferring Ubuntu
+OpenStack Launchpad trees and falling back to the archive `Vcs-Git` repository.
+Build jobs fetch those exact commits for their `debian/` packaging.
 
-The plan resolves references once. Declared `stable/2026.2` branches take precedence. Each build checks out its frozen commit and applies checksum-pinned Ubuntu archive packaging. Snapshot versions contain commit date, distance from the base tag, and abbreviated SHA; commits at a tag use distance zero. Python sdists retain generated metadata. Swift explicitly opts out of a generated ChangeLog. Gnocchi uses its maintained GitHub repository and pinned setuptools-scm tools; the retired requestsexceptions dependency uses its last source commit, recorded explicitly in the catalog. Puppet sources use deterministic Git archives.
+The plan resolves references once. Declared `stable/2026.2` branches take precedence. Each build checks out its frozen upstream and packaging commits, then applies the pinned packaging `debian/` tree to the snapshot. Snapshot versions contain commit date, distance from the base tag, and abbreviated SHA; commits at a tag use distance zero. Python sdists retain generated metadata. Swift explicitly opts out of a generated ChangeLog. Gnocchi uses its maintained GitHub repository and pinned setuptools-scm tools; the retired requestsexceptions dependency uses its last source commit, recorded explicitly in the catalog. Puppet sources use deterministic Git archives.
 
 ## Parallel builds and artifacts
 

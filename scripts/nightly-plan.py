@@ -365,6 +365,22 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
             lines.append(f"- `{drift['source']}`: {drift['error']}")
     else:
         lines.append('Every selected reviewed control replacement matches its resolved Ubuntu baseline.')
+    fallbacks = plan.get('packaging_source_fallbacks', [])
+    ubuntu_git = sum(1 for source in plan['sources']
+                     if entries[source].get('packaging_source_role') == 'ubuntu-openstack')
+    archive_git = sum(1 for source in plan['sources']
+                      if entries[source].get('packaging_source_role') == 'archive-vcs')
+    lines.extend(['', '## Packaging source', '',
+                  f'{ubuntu_git} selected packages use plan-pinned Ubuntu OpenStack Launchpad Git trees. '
+                  f'{archive_git} use their archive VCS repository because Launchpad has no corresponding tree.'])
+    if fallbacks:
+        lines.append(
+            f'{len(fallbacks)} packages require the published Ubuntu source fallback:')
+        lines.append('')
+        for fallback in fallbacks:
+            lines.append(f"- `{fallback['source']}`: {fallback['error']}")
+    else:
+        lines.append('No selected package requires archive packaging extraction.')
     return '\n'.join(lines) + '\n'
 
 
@@ -373,6 +389,71 @@ def dependency_level_matrix(waves: list[list[str]]) -> dict:
     return {'include': [{'level': index,
                          'packages': json.dumps(packages, separators=(',', ':'))}
                         for index, packages in enumerate(waves, 1) if packages]}
+
+
+def freeze_packaging(entry):
+    """Prefer Ubuntu OpenStack Git, then archive VCS, then published source."""
+    ubuntu_repository = entry.get('packaging_repository')
+    ubuntu_branches = entry.get('packaging_branch_candidates') or []
+    upstream_branches = entry.get('packaging_upstream_branch_candidates') or []
+    pristine_branch = entry.get('packaging_pristine_tar_branch')
+
+    def resolve(repository, branches, role):
+        if not repository or not repository.startswith('https://'):
+            raise ValueError(f'No usable {role} packaging repository')
+        refs = [*(f'refs/heads/{branch}' for branch in branches),
+                *(f'refs/heads/{branch}' for branch in upstream_branches)]
+        if pristine_branch:
+            refs.append(f'refs/heads/{pristine_branch}')
+        result = subprocess.run(
+            ['git', 'ls-remote', '--exit-code', repository, *dict.fromkeys(refs)],
+            text=True, capture_output=True, timeout=90,
+            env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'})
+        if result.returncode:
+            raise ValueError(result.stderr.strip().splitlines()[-1]
+                             if result.stderr.strip() else f'git ls-remote exited {result.returncode}')
+        resolved = {ref.removeprefix('refs/heads/'): sha
+                    for line in result.stdout.splitlines()
+                    for sha, ref in [line.split()]
+                    if re.fullmatch(r'[0-9a-f]{40}', sha) and ref.startswith('refs/heads/')}
+        branch = next((candidate for candidate in branches if candidate in resolved), None)
+        if branch is None:
+            raise ValueError(f'None of the packaging branches exist: {branches}')
+        upstream_branch = next((candidate for candidate in upstream_branches
+                                if candidate in resolved), None)
+        entry.update(packaging_source_kind='git', packaging_source_role=role,
+                     packaging_source_repository=repository, packaging_branch=branch,
+                     packaging_sha=resolved[branch],
+                     packaging_upstream_branch=upstream_branch,
+                     packaging_upstream_sha=resolved.get(upstream_branch),
+                     packaging_pristine_tar_sha=resolved.get(pristine_branch))
+        entry.pop('packaging_resolution_error', None)
+        return
+
+    errors = []
+    try:
+        resolve(ubuntu_repository, ubuntu_branches, 'ubuntu-openstack')
+        return entry
+    except Exception as exc:
+        errors.append(f'Ubuntu OpenStack Git: {exc}')
+    archive_repository = entry.get('archive_packaging_repository')
+    if archive_repository and archive_repository != ubuntu_repository:
+        archive_branches = list(dict.fromkeys(filter(None, [
+            entry.get('archive_packaging_branch'), 'debian/hibiscus',
+            'debian/unstable', 'master'])))
+        try:
+            resolve(archive_repository, archive_branches, 'archive-vcs')
+            return entry
+        except Exception as exc:
+            errors.append(f'Archive VCS: {exc}')
+    # Published source remains an explicit compatibility fallback when neither
+    # source-package Git repository can be resolved.
+    entry.update(packaging_source_kind='archive', packaging_source_role='published-source',
+                 packaging_source_repository=None, packaging_branch=None,
+                 packaging_sha=None, packaging_upstream_branch=None,
+                 packaging_upstream_sha=None, packaging_pristine_tar_sha=None,
+                 packaging_resolution_error='; '.join(errors))
+    return entry
 
 
 def freeze(entry):
@@ -384,7 +465,7 @@ def freeze(entry):
             # prepare_source verifies the object exists in its full clone.
             entry['upstream_sha'] = ref
             entry.pop('upstream_resolution_error', None)
-            return entry
+            return freeze_packaging(entry)
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/-]*', ref) or '..' in ref:
             raise ValueError(f'Invalid branch: {ref}')
         result = subprocess.run(['git', 'ls-remote', '--exit-code', repository, f'refs/heads/{ref}'],
@@ -397,7 +478,7 @@ def freeze(entry):
     except Exception as exc:
         entry['upstream_resolution_error'] = str(exc)
         entry['upstream_sha'] = None
-    return entry
+    return freeze_packaging(entry)
 
 
 def main():
@@ -490,6 +571,9 @@ def main():
     plan['packaging_baseline_drifts'] = [
         {'source': p['source'], 'error': p['packaging_dependency_error']}
         for p in catalog['packages'] if p.get('packaging_dependency_error')]
+    plan['packaging_source_fallbacks'] = [
+        {'source': p['source'], 'error': p['packaging_resolution_error']}
+        for p in catalog['packages'] if p.get('packaging_source_kind') == 'archive']
     (args.output / 'plan.json').write_text(json.dumps(plan, indent=2) + '\n')
     summary = render_plan_summary(plan, catalog)
     (args.output / 'summary.md').write_text(summary)

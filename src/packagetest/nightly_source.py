@@ -1,8 +1,9 @@
 """Prepare independently buildable, pinned snapshot source packages.
 
-Ubuntu's checksum-pinned source package supplies Debian packaging. Upstream Git
-supplies the new source tree. This avoids assuming every Ubuntu source has an
-up-to-date, publicly usable git-buildpackage branch.
+The Ubuntu OpenStack Launchpad Git tree normally supplies Debian packaging;
+the archive Vcs-Git tree covers packages not maintained there. Upstream Git
+supplies the new source tree. A checksum-pinned published source package is an
+explicit final fallback when neither packaging repository can be resolved.
 """
 from __future__ import annotations
 
@@ -270,10 +271,9 @@ def write_packaging_proposal(entry: dict, baseline: Path, tree: Path, output: Pa
                              actions: list[dict]) -> dict | None:
     """Export temporary packaging adaptations for human review upstream.
 
-    The patch is rooted at ``debian/`` so it can be reviewed against a real
-    packaging repository.  The archive source remains the reproducible base;
-    choosing Debian or Ubuntu as the submission target is deliberately left to
-    a human reviewer.
+    The patch is rooted at ``debian/`` so it can be reviewed against the pinned
+    packaging repository. Choosing the final submission target remains a human
+    review decision.
     """
     if not actions:
         return None
@@ -322,6 +322,13 @@ def write_packaging_proposal(entry: dict, baseline: Path, tree: Path, output: Pa
         'selected_target': None,
         'destination_candidates': repositories,
         'branch_candidates': branches,
+        'packaging_base': {
+            'kind': entry.get('packaging_source_kind', 'archive'),
+            'role': entry.get('packaging_source_role'),
+            'repository': entry.get('packaging_source_repository'),
+            'branch': entry.get('packaging_branch'),
+            'sha': entry.get('packaging_sha'),
+        },
         'archive_base': {
             'version': entry['archive_version'],
             'url': entry['archive_source']['url'],
@@ -420,6 +427,88 @@ def preserve_orig_components(baseline_dsc: Path, source: str, upstream: str,
     return components
 
 
+def preserve_catalog_orig_components(build: Preparation, entry: dict, upstream: str,
+                                     tree: Path, output: Path) -> list[dict]:
+    """Restore supplementary orig components while packaging comes from Git."""
+    source = entry['source']
+    components = []
+    directory = build.work / 'supplementary-orig'
+    for record in entry['archive_source'].get('files', []):
+        filename = record['name']
+        if '.orig-' not in filename or filename.endswith('.asc'):
+            continue
+        match = re.fullmatch(re.escape(source) + r'_[^/]+\.orig-([A-Za-z0-9-]+)\.tar\.(gz|xz|bz2|lzma)', filename)
+        if not match:
+            raise ValueError('Unsupported supplementary orig filename: ' + filename)
+        component, compression = match.groups()
+        directory.mkdir(exist_ok=True)
+        archive = directory / filename
+        download_verified(record['url'], archive, record['sha256'])
+        if archive.stat().st_size != record['size']:
+            raise ValueError('Supplementary orig size mismatch: ' + filename)
+        destination = output / f'{source}_{upstream}.orig-{component}.tar.{compression}'
+        component_tree = tree / component
+        if destination.exists() or destination.is_symlink() or component_tree.exists() or component_tree.is_symlink():
+            raise ValueError('Supplementary orig component collides with snapshot: ' + component)
+        extract_snapshot(archive, component_tree)
+        shutil.copyfile(archive, destination)
+        components.append({'component': component, 'archive_file': filename,
+                           'snapshot_file': destination.name,
+                           'sha256': record['sha256']})
+    return components
+
+
+def checkout_packaging_tree(build: Preparation, entry: dict) -> tuple[Path, dict]:
+    """Checkout the exact source-package Git commit pinned by the run plan."""
+    if entry.get('packaging_source_kind') != 'git':
+        raise ValueError('Catalog entry does not select Git packaging')
+    repository = entry.get('packaging_source_repository')
+    revision = entry.get('packaging_sha')
+    branch = entry.get('packaging_branch')
+    if not repository or not re.fullmatch(r'[a-f0-9]{40}', revision or '') or not branch:
+        raise ValueError('Git packaging requires a pinned repository, branch, and commit')
+    checkout = build.work / 'packaging'
+    build.command('git', 'init', '--quiet', str(checkout))
+    build.command('git', 'remote', 'add', 'origin', repository, cwd=checkout)
+    build.command('git', 'fetch', '--no-tags', '--depth=1', 'origin', revision, cwd=checkout)
+    build.command('git', 'checkout', '--detach', revision, cwd=checkout)
+    actual = build.command('git', 'rev-parse', 'HEAD', cwd=checkout)
+    if actual != revision:
+        raise ValueError('Packaging checkout differs from the plan-pinned commit')
+    control = checkout / 'debian' / 'control'
+    if not control.is_file() or fields(control).get('Source') != entry['source']:
+        raise ValueError('Launchpad packaging debian/control source mismatch')
+    changelog_source = build.command('dpkg-parsechangelog', '-S', 'Source', cwd=checkout)
+    if changelog_source != entry['source']:
+        raise ValueError('Launchpad packaging debian/changelog source mismatch')
+    return checkout, {
+        'kind': 'git', 'role': entry.get('packaging_source_role'),
+        'repository': repository, 'branch': branch, 'sha': revision,
+        'upstream_branch': entry.get('packaging_upstream_branch'),
+        'upstream_sha': entry.get('packaging_upstream_sha'),
+        'pristine_tar_sha': entry.get('packaging_pristine_tar_sha'),
+    }
+
+
+def extract_archive_packaging(build: Preparation, entry: dict) -> tuple[Path, Path, dict]:
+    """Extract published packaging only when the run lock records a Git fallback."""
+    source = entry['source']
+    baseline_dir = build.work / 'baseline'
+    baseline_dir.mkdir()
+    spec = entry['archive_source']
+    baseline_dsc = baseline_dir / Path(urlparse(spec['url']).path).name
+    download_verified(spec['url'], baseline_dsc, spec['sha256'])
+    for digest, _, filename in checksum_entries(fields(baseline_dsc)):
+        download_verified(urljoin(spec['url'], filename), baseline_dir / filename, digest)
+    verify_source(baseline_dsc, source, entry['archive_version'])
+    packaging_tree = build.work / 'packaging'
+    build.command('dpkg-source', '--skip-patches', '-x', str(baseline_dsc), str(packaging_tree))
+    return packaging_tree, baseline_dsc, {
+        'kind': 'archive', 'url': spec['url'], 'sha256': spec['sha256'],
+        'reason': entry.get('packaging_resolution_error'),
+    }
+
+
 def git_archive(build: Preparation, checkout: Path, selected: dict, destination: Path, package: str) -> dict:
     raw = build.work / 'git-source.tar'
     build.command('git', 'archive', '--format=tar', f'--prefix={package}-{selected["upstream_version"]}/',
@@ -456,16 +545,12 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
         if not re.fullmatch(r'[a-f0-9]{40}', entry.get('upstream_sha', '')):
             raise ValueError('Source preparation requires a plan-pinned upstream_sha')
         source = entry['source']
-        baseline_dir = build.work / 'baseline'
-        baseline_dir.mkdir()
-        spec = entry['archive_source']
-        baseline_dsc = baseline_dir / Path(urlparse(spec['url']).path).name
-        download_verified(spec['url'], baseline_dsc, spec['sha256'])
-        for digest, _, filename in checksum_entries(fields(baseline_dsc)):
-            download_verified(urljoin(spec['url'], filename), baseline_dir / filename, digest)
-        verify_source(baseline_dsc, source, entry['archive_version'])
-        packaging_tree = build.work / 'packaging'
-        build.command('dpkg-source', '--skip-patches', '-x', str(baseline_dsc), str(packaging_tree))
+        baseline_dsc = None
+        if entry.get('packaging_source_kind') == 'git':
+            packaging_tree, packaging_source = checkout_packaging_tree(build, entry)
+        else:
+            packaging_tree, baseline_dsc, packaging_source = extract_archive_packaging(build, entry)
+        report['packaging_source'] = packaging_source
         checkout = build.work / 'upstream-discovery'
         build.command('git', 'clone', '--no-checkout', entry['upstream_repository'], str(checkout))
         # Stable branch is chosen in the catalog from release declarations. A
@@ -489,8 +574,12 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
             snapshot = build_snapshot(build, {'source': source, 'input': {'snapshot': snapshot_spec, 'upstream_version': upstream}}, orig)
         tree = build.root / f'{source}-{upstream}'
         extract_snapshot(orig, tree)
-        report['supplementary_orig_components'] = preserve_orig_components(
-            baseline_dsc, source, upstream, tree, build.root)
+        if baseline_dsc is not None:
+            report['supplementary_orig_components'] = preserve_orig_components(
+                baseline_dsc, source, upstream, tree, build.root)
+        else:
+            report['supplementary_orig_components'] = preserve_catalog_orig_components(
+                build, entry, upstream, tree, build.root)
         if (tree / 'debian').exists():
             raise ValueError('Upstream snapshot unexpectedly contains Debian packaging')
         shutil.copytree(packaging_tree / 'debian', tree / 'debian', symlinks=True)
