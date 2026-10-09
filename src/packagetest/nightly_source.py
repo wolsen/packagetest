@@ -501,6 +501,114 @@ def already_applied_patches(tree: Path) -> list[dict]:
         series.write_text('\n'.join(lines) + '\n')
     return omitted
 
+
+SEMANTIC_PATCH_STOPWORDS = {
+    'false', 'from', 'import', 'none', 'return', 'self', 'test', 'true',
+    'value', 'with',
+}
+
+
+def _semantic_patch_tokens(value: str) -> set[str]:
+    result = set()
+    for token in re.findall(r'[A-Za-z][A-Za-z0-9_]{3,}', value):
+        token = token.lower()
+        if token not in SEMANTIC_PATCH_STOPWORDS:
+            result.add(token)
+        result.update(part.lower() for part in token.split('_')
+                      if len(part) >= 4 and part.lower() not in SEMANTIC_PATCH_STOPWORDS)
+    return result
+
+
+def superseded_upstream_patches(tree: Path, checkout: Path, selected: dict) -> list[dict]:
+    """Omit a failed patch when a post-release upstream commit proves equivalence.
+
+    This deliberately requires both the selected source and one recorded commit
+    since the base tag to contain at least 70% of the patch's distinctive added
+    identifiers. A named Python definition must also survive in current source.
+    Borderline cases remain active and are handed to model-assisted review.
+    """
+    series = tree / 'debian/patches/series'
+    if not series.is_file():
+        return []
+    lines = series.read_text().splitlines()
+    adjustments = []
+    commits = [item for item in selected.get('commits', [])
+               if re.fullmatch(r'[0-9a-f]{40}', item.get('sha', ''))]
+    if not commits:
+        return []
+    for index, line in enumerate(lines):
+        words = line.split()
+        if len(words) != 1 or words[0].startswith('#'):
+            continue
+        name = Path(words[0])
+        if name.is_absolute() or '..' in name.parts:
+            raise ValueError('Unsafe quilt patch path')
+        patch = tree / 'debian/patches' / name
+        if not patch.is_file() or patch.is_symlink():
+            continue
+        data = patch.read_bytes()
+        probe = ['patch', '--dry-run', '--batch', '--force', '--fuzz=0', '-p1']
+        if subprocess.run(probe, input=data, cwd=tree, capture_output=True).returncode == 0:
+            continue
+        if subprocess.run(probe + ['--reverse'], input=data, cwd=tree,
+                          capture_output=True).returncode == 0:
+            continue
+        text = data.decode(errors='replace')
+        targets = []
+        for target in re.findall(r'^\+\+\+\s+(?:b/)?([^\t\n ]+)', text, re.M):
+            path = Path(target)
+            if path.is_absolute() or '..' in path.parts or path.parts[:1] == ('debian',):
+                targets = []
+                break
+            if target not in targets:
+                targets.append(target)
+        added = '\n'.join(item[1:] for item in text.splitlines()
+                          if item.startswith('+') and not item.startswith('+++'))
+        tokens = _semantic_patch_tokens(added)
+        definitions = set(re.findall(
+            r'\b(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)', added))
+        if not targets or len(tokens) < 8 or not definitions:
+            continue
+        current_parts = []
+        for target in targets:
+            path = tree / target
+            if not path.is_file() or path.is_symlink():
+                current_parts = []
+                break
+            current_parts.append(path.read_text(errors='replace'))
+        if not current_parts or not all(any(definition in part for part in current_parts)
+                                        for definition in definitions):
+            continue
+        current_tokens = _semantic_patch_tokens('\n'.join(current_parts))
+        current_overlap = len(tokens & current_tokens) / len(tokens)
+        if current_overlap < 0.70:
+            continue
+        best = None
+        for commit in commits:
+            result = subprocess.run(
+                ['git', 'show', '--format=%B', commit['sha'], '--', *targets],
+                cwd=checkout, text=True, capture_output=True, timeout=30)
+            if result.returncode or not result.stdout.strip():
+                continue
+            commit_tokens = _semantic_patch_tokens(result.stdout)
+            overlap = len(tokens & commit_tokens) / len(tokens)
+            if overlap >= 0.70 and (best is None or overlap > best['commit_overlap']):
+                best = {'sha': commit['sha'], 'subject': commit.get('subject', ''),
+                        'commit_overlap': round(overlap, 3)}
+        if best is None:
+            continue
+        lines[index] = '# Superseded by verified upstream commit ' + best['sha'][:12] + ': ' + str(name)
+        adjustments.append({
+            'action': 'omit-upstream-superseded-patch', 'name': str(name),
+            'sha256': sha256(patch), 'upstream_commit': best,
+            'current_overlap': round(current_overlap, 3),
+            'token_count': len(tokens), 'targets': targets,
+            'human_review_required': True,
+        })
+    if adjustments:
+        series.write_text('\n'.join(lines) + '\n')
+    return adjustments
+
 def extract_snapshot(archive: Path, destination: Path) -> None:
     destination.mkdir()
     with tarfile.open(archive) as source:
@@ -715,6 +823,8 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
         report['source_evolution'] = evolution
         write_source_evolution(evolution, build.root / 'packaging-proposal')
         report['packaging_adjustments'] = already_applied_patches(tree)
+        report['packaging_adjustments'].extend(superseded_upstream_patches(
+            tree, checkout, evolution.get('commit_delta', {})))
         report['packaging_adjustments'].extend(upstream_dependency_adjustments(entry, tree))
         report['packaging_adjustments'].extend(evolution_actions)
         if remediation_patch is not None:

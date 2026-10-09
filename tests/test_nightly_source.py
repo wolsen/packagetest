@@ -1,6 +1,7 @@
 import io
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import tarfile
 
@@ -350,6 +351,84 @@ def test_only_complete_already_applied_patch_is_omitted(tmp_path):
     assert already_applied_patches(tmp_path)[0]['name'] == 'fix.patch'
     assert code.read_text() == 'context\nfixed\n'
     assert (patches / 'series').read_text().startswith('# Fully present upstream')
+
+
+def test_semantically_equivalent_post_release_commit_supersedes_patch(tmp_path):
+    from packagetest.nightly_source import superseded_upstream_patches
+    checkout = tmp_path / 'checkout'
+    checkout.mkdir()
+    subprocess.run(['git', 'init', '-q', '-b', 'master'], cwd=checkout, check=True)
+    target = checkout / 'sample/test_store.py'
+    target.parent.mkdir()
+    target.write_text('''class TestImage:\n    def test_new_image_with_location(self):\n        create_image()\n''')
+    subprocess.run(['git', 'add', '.'], cwd=checkout, check=True)
+    subprocess.run(['git', '-c', 'user.name=Test', '-c', 'user.email=t@example.invalid',
+                    'commit', '-qm', 'release'], cwd=checkout, check=True)
+    target.write_text('''class TestImage:\n    @mock.patch("glance.common.utils.socket.getaddrinfo")\n    def test_new_image_with_location(self, mock_getaddrinfo):\n        # Avoid DNS resolution in offline builds.\n        mock_getaddrinfo.return_value = [(None, None, None, None, ("192.0.2.1", 80))]\n        create_image()\n''')
+    subprocess.run(['git', 'add', '.'], cwd=checkout, check=True)
+    subprocess.run(['git', '-c', 'user.name=Test', '-c', 'user.email=t@example.invalid',
+                    'commit', '-qm', 'Do not rely on DNS resolution'], cwd=checkout, check=True)
+    commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=checkout,
+                                     text=True).strip()
+    tree = tmp_path / 'tree'
+    shutil.copytree(checkout / 'sample', tree / 'sample')
+    patches = tree / 'debian/patches'
+    patches.mkdir(parents=True)
+    (patches / 'series').write_text('offline.patch\n')
+    (patches / 'offline.patch').write_text('''Subject: Mock DNS in the offline image location test
+--- a/sample/test_store.py
++++ b/sample/test_store.py
+@@ -1,3 +1,7 @@
+ class TestImage:
+-    def test_new_image_with_location(self):
++    @mock.patch("glance.common.utils.socket.getaddrinfo")
++    def test_new_image_with_location(self, mock_getaddrinfo):
++        mock_getaddrinfo.return_value = [
++            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 80))]
+         create_image()
+''')
+
+    result = superseded_upstream_patches(
+        tree, checkout, {'commits': [{'sha': commit, 'subject': 'Do not rely on DNS resolution'}]})
+
+    assert result[0]['action'] == 'omit-upstream-superseded-patch'
+    assert result[0]['upstream_commit']['sha'] == commit
+    assert result[0]['current_overlap'] >= 0.7
+    assert (patches / 'series').read_text().startswith('# Superseded by verified upstream commit')
+
+
+def test_unrelated_upstream_change_does_not_supersede_failed_patch(tmp_path):
+    from packagetest.nightly_source import superseded_upstream_patches
+    checkout = tmp_path / 'checkout'
+    checkout.mkdir()
+    subprocess.run(['git', 'init', '-q', '-b', 'master'], cwd=checkout, check=True)
+    target = checkout / 'sample/service.py'
+    target.parent.mkdir()
+    target.write_text('def launch_service():\n    return legacy_backend()\n')
+    subprocess.run(['git', 'add', '.'], cwd=checkout, check=True)
+    subprocess.run(['git', '-c', 'user.name=Test', '-c', 'user.email=t@example.invalid',
+                    'commit', '-qm', 'unrelated documentation change'], cwd=checkout, check=True)
+    commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=checkout,
+                                     text=True).strip()
+    tree = tmp_path / 'tree'
+    shutil.copytree(checkout / 'sample', tree / 'sample')
+    patches = tree / 'debian/patches'
+    patches.mkdir(parents=True)
+    (patches / 'series').write_text('feature.patch\n')
+    (patches / 'feature.patch').write_text('''--- a/sample/service.py
++++ b/sample/service.py
+@@ -1,2 +1,3 @@
++@retry_on_transport_failure
+ def launch_service():
+-    return legacy_backend()
++    return resilient_cluster_backend()
+''')
+
+    result = superseded_upstream_patches(
+        tree, checkout, {'commits': [{'sha': commit, 'subject': 'unrelated'}]})
+
+    assert result == []
+    assert (patches / 'series').read_text() == 'feature.patch\n'
 
 
 def test_packaging_proposal_is_git_patch_with_unselected_human_review_target(tmp_path):
