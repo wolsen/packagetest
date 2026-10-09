@@ -29,6 +29,17 @@ def test_relations_preserve_alternatives_and_versions():
     assert groups[1][0]['version'] == '13'
 
 
+def test_debian_substvar_versions_do_not_reach_dpkg(monkeypatch):
+    relation = relation_groups('python3-demo (= ${binary:Version})')[0][0]
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError('dpkg must not compare an unresolved Debian substvar')
+
+    monkeypatch.setattr('packagetest.prepared_plan.subprocess.run', unexpected)
+    from packagetest.prepared_plan import satisfies
+    assert satisfies('2.0-1', relation)
+
+
 def test_exact_graph_uses_build_test_and_runtime_candidate_providers():
     catalog = {'packages': [
         {'source': 'a', 'archive_version': '1.0-1', 'binaries': ['python3-a']},
@@ -53,6 +64,8 @@ def test_exact_graph_uses_build_test_and_runtime_candidate_providers():
                item['binary'] == 'python3-external' for item in external)
     assert any(item['decision'] == 'system-archive-resolution' and
                'debhelper-compat' in item['binaries'] for item in external)
+    assert all(isinstance(item.get('binaries', []), list) for item in external)
+    json.dumps(external)
     assert {item['phase'] for item in reasons[('b', 'a')]} == {'build'}
     assert {item['phase'] for item in reasons[('b', 'c')]} == {'test'}
     assert {item['phase'] for item in reasons[('c', 'a')]} == {'runtime'}

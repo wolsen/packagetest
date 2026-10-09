@@ -105,6 +105,11 @@ def satisfies(version: str | None, relation: dict) -> bool:
         return False
     if not relation.get('operator'):
         return True
+    # Debian substvars are expanded by dpkg during the binary build.  They are
+    # not versions and passing one to dpkg --compare-versions both emits a
+    # confusing diagnostic and cannot improve the pre-build graph decision.
+    if '${' in relation['version']:
+        return True
     return subprocess.run(['dpkg', '--compare-versions', version,
                            relation['operator'], relation['version']]).returncode == 0
 
@@ -185,7 +190,7 @@ def exact_dependencies(catalog: dict, manifests: dict[str, dict]) -> tuple[dict,
                                    'candidate_sources': candidate_names,
                                    'error': 'Prepared candidate and known Ubuntu versions do not satisfy the relation'})
                 else:
-                    names = dependency_names(alternatives[0]['group'])
+                    names = sorted(dependency_names(alternatives[0]['group']))
                     external.append({'consumer': source, 'phase': phase, 'location': location,
                                      'decision': 'system-archive-resolution',
                                      'relation': alternatives[0]['group'], 'binaries': names})
