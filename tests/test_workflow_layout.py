@@ -76,6 +76,16 @@ def test_main_push_exercises_heat_candidate_closure():
                for edge in policy)
 
 
+def test_snapshot_plan_generates_fresh_catalog_instead_of_using_committed_output():
+    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    assert 'scripts/generate-nightly-catalog.py' in workflow
+    assert 'uses: actions/setup-python@v5' in workflow
+    assert 'run: python3 -m pip install .' in workflow
+    assert '--output "$RUNNER_TEMP/catalog-input.json"' in workflow
+    assert '--catalog "$RUNNER_TEMP/catalog-input.json"' in workflow
+    assert not Path('config/hibiscus-catalog.json').exists()
+
+
 def test_model_contract_is_focused_and_does_not_duplicate_snapshot_orchestration():
     workflow = Path('.github/workflows/model-contract.yml').read_text()
     reusable = Path('.github/workflows/build-dependency-level.yml').read_text()

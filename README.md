@@ -45,6 +45,13 @@ use those candidate edges together with the effective Debian `Build-Depends` met
 The generated `nightly-plan/summary.md` records the requested roots, every
 automatically added source, and the packages in each dependency level.
 
+The plan job generates its catalog from the current Resolute, updates, and
+security `Sources` indexes and the current OpenStack releases metadata. It
+preflights every selected Ubuntu source file, then freezes the resolved catalog
+and upstream commits into the `nightly-plan` artifact consumed by all parallel
+jobs. Generated catalogs are run artifacts and are not committed to this
+repository.
+
 One daily preparation job updates the target schroot and resolves the Ubuntu
 24.04 host tools needed to operate it. The resulting cache contains the updated
 schroot tarball and checksum-pinned host-tool `.deb` files. Package jobs install

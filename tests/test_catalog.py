@@ -1,9 +1,13 @@
 import json
 from pathlib import Path
 import subprocess
+from urllib.error import HTTPError
+
+import pytest
 
 from packagetest.catalog import (archive_python_packages, dependency_names, make_catalog,
-                                package_record, paragraphs, source_name)
+                                package_record, paragraphs, source_name,
+                                ubuntu_source_indexes, validate_archive_sources)
 
 
 def archive(name, binaries=None, depends=''):
@@ -42,6 +46,12 @@ def test_branch_selection_uses_release_metadata():
     record = package_record('glance', metadata, archive('glance'), series='2026.2', membership='cycle')
     assert record['upstream_ref'] == 'stable/2026.2'
     assert record['archive_source']['sha256'] == 'a' * 64
+    assert record['archive_source']['files'] == [{
+        'name': 'glance_2.0-0ubuntu1.dsc',
+        'url': 'https://archive.ubuntu.com/ubuntu/pool/main/p/glance/glance_2.0-0ubuntu1.dsc',
+        'sha256': 'a' * 64,
+        'size': 123,
+    }]
     assert record['archive_version'].startswith('1:')
 
 
@@ -77,15 +87,44 @@ def test_continuation_fields():
     assert paragraphs('Package: sample\nBuild-Depends: python3-a,\n python3-b\n\n')[0]['Build-Depends'] == 'python3-a,\npython3-b'
 
 
-def test_checked_in_catalog_is_comprehensive_and_unique():
-    data = json.loads(Path('config/hibiscus-catalog.json').read_text())
-    packages = data['packages']
-    assert len(packages) >= 190
-    assert len({p['source'] for p in packages}) == len(packages)
-    assert {'nova', 'glance', 'neutron', 'horizon', 'python-pbr', 'python-oslo.i18n', 'puppet-module-nova'} <= {p['source'] for p in packages}
-    assert all(p['upstream_repository'] and p['archive_source']['sha256'] for p in packages)
-    assert {p['source'] for p in packages if p['membership'] == 'cycle'}
-    assert data['exclusions']
+def test_live_indexes_cover_release_updates_and_security():
+    indexes = ubuntu_source_indexes('resolute')
+    assert len(indexes) == 6
+    assert indexes[0]['url'].endswith('/dists/resolute/main/source/Sources.xz')
+    assert any('/dists/resolute-updates/universe/' in item['url'] for item in indexes)
+    assert any(item['url'].startswith('https://security.ubuntu.com/ubuntu/dists/resolute-security/')
+               for item in indexes)
+
+
+def test_archive_preflight_checks_every_source_file_and_rejects_missing():
+    requested = []
+
+    class Response:
+        headers = {'Content-Length': '123'}
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+
+    def opener(request, timeout):
+        requested.append((request.full_url, request.method, timeout))
+        if request.full_url.endswith('missing.tar.gz'):
+            raise HTTPError(request.full_url, 404, 'missing', {}, None)
+        return Response()
+
+    data = {'packages': [{'source': 'example', 'archive_source': {
+        'url': 'https://archive.example/example.dsc', 'sha256': 'a' * 64,
+        'files': [
+            {'url': 'https://archive.example/example.dsc', 'size': 123},
+            {'url': 'https://archive.example/missing.tar.gz', 'size': 123},
+        ],
+    }}]}
+    with pytest.raises(ValueError, match='missing.tar.gz'):
+        validate_archive_sources(data, opener=opener, max_workers=1)
+    assert requested == [
+        ('https://archive.example/example.dsc', 'HEAD', 30),
+        ('https://archive.example/missing.tar.gz', 'HEAD', 30),
+    ]
 
 
 def test_unrelated_name_collisions_are_rejected():

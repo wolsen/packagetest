@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "OpenStack Ubuntu packaging automation prototype"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["packaging>=24"]
+dependencies = ["packaging>=24", "PyYAML>=6"]
 
 [project.scripts]
 packaging = "packagetest.cli:main"

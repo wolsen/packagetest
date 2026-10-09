@@ -12,7 +12,10 @@ import lzma
 from pathlib import Path
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
+from urllib.error import HTTPError
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 ALIASES = {'keystoneauth': 'python-keystoneauth1',
            'puppet-openstack_extras': 'puppet-module-openstack-extras'}
@@ -30,6 +33,80 @@ UPSTREAM_OVERRIDES = {
         'branch_policy': 'last-source-commit-before-upstream-retirement',
     },
 }
+
+ARCHIVE_COMPONENTS = ('main', 'universe')
+
+
+def ubuntu_source_indexes(suite: str) -> list[dict[str, str]]:
+    """Return the live Ubuntu source indexes that define a nightly baseline."""
+    indexes = []
+    for pocket, host in (('', 'https://archive.ubuntu.com/ubuntu'),
+                         ('-updates', 'https://archive.ubuntu.com/ubuntu'),
+                         ('-security', 'https://security.ubuntu.com/ubuntu')):
+        distribution = suite + pocket
+        for component in ARCHIVE_COMPONENTS:
+            indexes.append({
+                'filename': f'packagetest-{distribution}-{component}-Sources.xz',
+                'url': f'{host}/dists/{distribution}/{component}/source/Sources.xz',
+            })
+    return indexes
+
+
+def download_source_indexes(suite: str, destination: Path, *, opener=None) -> list[Path]:
+    """Download current indexes atomically instead of relying on committed output."""
+    opener = opener or urlopen
+    destination.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for spec in ubuntu_source_indexes(suite):
+        path = destination / spec['filename']
+        temporary = path.with_suffix(path.suffix + '.part')
+        request = Request(spec['url'], headers={'User-Agent': 'packagetest-catalog/1'})
+        with opener(request, timeout=90) as response, temporary.open('wb') as target:
+            while chunk := response.read(1024 * 1024):
+                target.write(chunk)
+        temporary.replace(path)
+        paths.append(path)
+    return paths
+
+
+def validate_archive_sources(catalog: dict, *, opener=None, max_workers: int = 24) -> None:
+    """Fail planning when any source file selected from the fresh index is absent."""
+    opener = opener or urlopen
+    files = []
+    for package in catalog['packages']:
+        source = package['archive_source']
+        records = source.get('files') or [{'url': source['url'], 'size': None}]
+        files.extend((package['source'], record['url'], record.get('size')) for record in records)
+
+    def check(item):
+        source, url, expected_size = item
+        request = Request(url, headers={'User-Agent': 'packagetest-catalog/1'}, method='HEAD')
+        try:
+            with opener(request, timeout=30) as response:
+                size = response.headers.get('Content-Length')
+                if expected_size is not None and size is not None and int(size) != expected_size:
+                    raise ValueError(f'expected {expected_size} bytes, archive reports {size}')
+        except HTTPError as exc:
+            if exc.code not in {405, 501}:
+                raise
+            request = Request(url, headers={'User-Agent': 'packagetest-catalog/1',
+                                            'Range': 'bytes=0-0'})
+            with opener(request, timeout=30):
+                pass
+        return source, url
+
+    failures = []
+    with ThreadPoolExecutor(max_workers=max_workers) as workers:
+        futures = {workers.submit(check, item): item for item in files}
+        for future, item in futures.items():
+            try:
+                future.result()
+            except Exception as exc:
+                failures.append(f'{item[0]}: {item[1]}: {exc}')
+    if failures:
+        details = '\n'.join(failures[:20])
+        suffix = f'\n... and {len(failures) - 20} more' if len(failures) > 20 else ''
+        raise ValueError(f'{len(failures)} Ubuntu source files failed preflight:\n{details}{suffix}')
 
 
 def paragraphs(text: str) -> list[dict[str, str]]:
@@ -107,7 +184,10 @@ def package_record(name: str, metadata: dict, archive: dict, *, series: str, mem
     branches = {branch['name'] for branch in metadata.get('branches', [])}
     branch = f'stable/{series}' if f'stable/{series}' in branches else 'master'
     checksums = [line.split() for line in archive['Checksums-Sha256'].splitlines() if line.strip()]
-    dsc = next((row for row in checksums if row[2].endswith('.dsc')), None)
+    base_url = 'https://archive.ubuntu.com/ubuntu/' + archive['Directory'] + '/'
+    archive_files = [{'name': row[2], 'url': base_url + row[2],
+                      'sha256': row[0], 'size': int(row[1])} for row in checksums]
+    dsc = next((row for row in archive_files if row['name'].endswith('.dsc')), None)
     if dsc is None:
         raise ValueError(f'No .dsc checksum for {archive["Package"]}')
     return {
@@ -125,7 +205,8 @@ def package_record(name: str, metadata: dict, archive: dict, *, series: str, mem
         'archive_packaging_repository': archive.get('Vcs-Git'),
         'packaging_repository': f'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/{archive["Package"]}',
         'packaging_branch_candidates': [f'stable/{series}', 'master'],
-        'archive_source': {'url': 'https://archive.ubuntu.com/ubuntu/' + archive['Directory'] + '/' + dsc[2], 'sha256': dsc[0]},
+        'archive_source': {'url': dsc['url'], 'sha256': dsc['sha256'],
+                           'files': archive_files},
         'snapshot_backend': 'git-archive' if name.startswith('puppet-') else 'python-sdist',
         'discovery_error': None if repo else 'Multiple or missing upstream repositories require explicit mapping',
     }

@@ -443,7 +443,8 @@ def test_missing_import_adds_relevant_candidate_producer_context(tmp_path):
     (tmp_path / "config/patches/python-client").mkdir(parents=True)
     (tmp_path / "config/patches/consumer/adjustments.json").write_text('{"consumer": true}\n')
     (tmp_path / "config/patches/python-client/adjustments.json").write_text('{"producer": true}\n')
-    (tmp_path / "config/hibiscus-catalog.json").write_text(json.dumps({"packages": [{
+    (tmp_path / "nightly-plan").mkdir()
+    (tmp_path / "nightly-plan/catalog.json").write_text(json.dumps({"packages": [{
         "source": "python-client", "binaries": ["python3-client"]}]}))
     context = repository_context(tmp_path, "consumer", "ModuleNotFoundError: No module named 'client.v1'")
     assert '"consumer": true' in context

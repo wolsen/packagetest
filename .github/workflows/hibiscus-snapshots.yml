@@ -38,16 +38,30 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install catalog and planning dependencies
+        run: python3 -m pip install .
       - name: Stop superseded snapshot pipeline runs
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/cancel-superseded-runs.py
+      - name: Generate and preflight the current Resolute catalog
+        run: >-
+          PYTHONPATH=src python3 scripts/generate-nightly-catalog.py
+          --output "$RUNNER_TEMP/catalog-input.json"
+          --workspace "$RUNNER_TEMP/catalog-discovery"
       - id: plan
         env:
           # Pushes validate a representative dependency closure. Scheduled runs
           # and an empty manual dispatch select the complete catalog.
           SOURCES: ${{ github.event_name == 'push' && 'python-neutron-lib,python-oslo.versionedobjects,heat,watcher' || inputs.sources }}
-        run: python3 scripts/nightly-plan.py --sources "$SOURCES"
+        run: >-
+          python3 scripts/nightly-plan.py
+          --catalog "$RUNNER_TEMP/catalog-input.json"
+          --sources "$SOURCES"
       - uses: actions/upload-artifact@v4
         with:
           name: nightly-plan

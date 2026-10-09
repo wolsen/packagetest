@@ -609,7 +609,7 @@ def repository_context(repository: Path, source: str, evidence: str = "", *, lim
     """Include the failed source and producers implicated by missing imports."""
     sources = [source]
     missing_modules = {item.split(".")[0] for item in re.findall(r"No module named ['\"]([^'\"]+)", evidence)}
-    catalog_path = repository / "config" / "hibiscus-catalog.json"
+    catalog_path = repository / "nightly-plan" / "catalog.json"
     if missing_modules and catalog_path.is_file():
         try:
             packages = json.loads(catalog_path.read_text())["packages"]
