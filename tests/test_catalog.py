@@ -64,6 +64,10 @@ def test_branch_selection_uses_release_metadata():
     assert record['archive_source']['sha256'] == 'a' * 64
     assert record['packaging_repository'].startswith(
         'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/')
+    assert record['ubuntu_importer_repository'] == (
+        'https://git.launchpad.net/ubuntu/+source/glance')
+    assert record['ubuntu_importer_branch_candidates'] == [
+        'ubuntu/resolute', 'ubuntu/resolute-devel']
     assert record['packaging_upstream_branch_candidates'][0] == 'upstream-hibiscus'
     assert record['packaging_pristine_tar_branch'] == 'pristine-tar'
     assert record['archive_source']['files'] == [{
@@ -105,6 +109,16 @@ def test_development_series_without_stable_branch_tracks_master():
     assert record['upstream_ref'] == 'master'
     assert record['branch_policy'] == 'release-metadata-development-branch'
     assert record['packaging_upstream_branch_candidates'][0] == 'upstream-indri'
+
+
+def test_importer_branches_follow_target_ubuntu_suite():
+    metadata = {'repository-settings': {'openstack/service': {}}}
+    record = package_record(
+        'service', metadata, archive('service'), series='2027.1',
+        membership='cycle', series_status='development', codename='indri',
+        suite='singing-squid')
+    assert record['ubuntu_importer_branch_candidates'] == [
+        'ubuntu/singing-squid', 'ubuntu/singing-squid-devel']
 
 
 def test_independent_release_history_is_not_mistaken_for_target_series():

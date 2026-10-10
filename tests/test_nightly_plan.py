@@ -114,6 +114,42 @@ def test_packaging_resolution_uses_archive_vcs_when_launchpad_tree_is_absent(mon
     assert entry['packaging_sha'] == revision
 
 
+def test_packaging_resolution_uses_ubuntu_importer_before_archive_vcs(monkeypatch):
+    revision = '6' * 40
+
+    def run(command, **kwargs):
+        repository = command[3]
+        if '~ubuntu-openstack-dev' in repository:
+            return SimpleNamespace(stdout='', stderr='repository does not exist', returncode=128)
+        if repository == 'https://git.launchpad.net/ubuntu/+source/demo':
+            return SimpleNamespace(
+                stdout=f'{revision}\trefs/heads/ubuntu/resolute\n',
+                stderr='', returncode=0)
+        raise AssertionError(f'archive VCS should not be queried: {repository}')
+
+    monkeypatch.setattr(module.subprocess, 'run', run)
+    entry = module.freeze_packaging({
+        'source': 'demo',
+        'packaging_repository':
+            'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/demo',
+        'packaging_branch_candidates': ['stable/2026.2', 'master'],
+        'ubuntu_importer_repository':
+            'https://git.launchpad.net/ubuntu/+source/demo',
+        'ubuntu_importer_branch_candidates': ['ubuntu/resolute', 'ubuntu/resolute-devel'],
+        'packaging_upstream_branch_candidates': ['upstream-hibiscus', 'upstream'],
+        'packaging_pristine_tar_branch': 'pristine-tar',
+        'archive_packaging_repository': 'https://salsa.example/openstack/demo.git',
+        'archive_packaging_branch': 'debian/hibiscus',
+    })
+
+    assert entry['packaging_source_kind'] == 'git'
+    assert entry['packaging_source_role'] == 'ubuntu-importer'
+    assert entry['packaging_source_repository'] == (
+        'https://git.launchpad.net/ubuntu/+source/demo')
+    assert entry['packaging_branch'] == 'ubuntu/resolute'
+    assert entry['packaging_sha'] == revision
+
+
 def test_mandatory_candidate_restores_one_direction_of_cycle():
     policy = [{'source': 'a', 'dependency': 'b', 'reason': 'new API'}]
     frozen, plan = module.plan_catalog(catalog(), candidate_dependencies=policy)

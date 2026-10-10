@@ -312,10 +312,13 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
     fallbacks = plan.get('packaging_source_fallbacks', [])
     ubuntu_git = sum(1 for source in plan['sources']
                      if entries[source].get('packaging_source_role') == 'ubuntu-openstack')
+    importer_git = sum(1 for source in plan['sources']
+                       if entries[source].get('packaging_source_role') == 'ubuntu-importer')
     archive_git = sum(1 for source in plan['sources']
                       if entries[source].get('packaging_source_role') == 'archive-vcs')
     lines.extend(['', '## Packaging source', '',
                   f'{ubuntu_git} selected packages use plan-pinned Ubuntu OpenStack Launchpad Git trees. '
+                  f'{importer_git} use plan-pinned Ubuntu importer Git trees. '
                   f'{archive_git} use their archive VCS repository because Launchpad has no corresponding tree.'])
     if fallbacks:
         lines.append(
@@ -357,7 +360,7 @@ def render_discovery_summary(catalog: dict, sources: list[str], roots: list[str]
 
 
 def freeze_packaging(entry):
-    """Prefer Ubuntu OpenStack Git, then archive VCS, then published source."""
+    """Prefer team Git, then Ubuntu importer Git, archive VCS, and source."""
     ubuntu_repository = entry.get('packaging_repository')
     ubuntu_branches = entry.get('packaging_branch_candidates') or []
     upstream_branches = entry.get('packaging_upstream_branch_candidates') or []
@@ -401,8 +404,16 @@ def freeze_packaging(entry):
         return entry
     except Exception as exc:
         errors.append(f'Ubuntu OpenStack Git: {exc}')
+    importer_repository = entry.get('ubuntu_importer_repository')
+    importer_branches = entry.get('ubuntu_importer_branch_candidates') or []
+    if importer_repository and importer_repository != ubuntu_repository:
+        try:
+            resolve(importer_repository, importer_branches, 'ubuntu-importer')
+            return entry
+        except Exception as exc:
+            errors.append(f'Ubuntu importer Git: {exc}')
     archive_repository = entry.get('archive_packaging_repository')
-    if archive_repository and archive_repository != ubuntu_repository:
+    if archive_repository and archive_repository not in {ubuntu_repository, importer_repository}:
         archive_branches = list(dict.fromkeys(filter(None, [
             entry.get('archive_packaging_branch'), 'debian/hibiscus',
             'debian/unstable', 'master'])))

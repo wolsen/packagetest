@@ -34,6 +34,51 @@ def test_resolution_error_not_retried_as_master(tmp_path):
                         'dependency metadata unavailable'}, tmp_path / 'dependency-result')
 
 
+def importer_packaging_repository(tmp_path, *, version='1.0-1', binary='python3-demo'):
+    repository = tmp_path / 'repository'
+    (repository / 'debian').mkdir(parents=True)
+    (repository / 'debian/control').write_text(
+        'Source: demo\nMaintainer: Test <test@example.invalid>\n\n'
+        f'Package: {binary}\nArchitecture: all\nDescription: test\n')
+    (repository / 'debian/changelog').write_text(
+        f'demo ({version}) unstable; urgency=medium\n\n  * Test.\n\n'
+        ' -- Test <test@example.invalid>  Thu, 01 Jan 2026 00:00:00 +0000\n')
+    subprocess.run(['git', 'init', '-q', '-b', 'ubuntu/resolute'], cwd=repository, check=True)
+    subprocess.run(['git', 'add', '.'], cwd=repository, check=True)
+    subprocess.run(['git', '-c', 'user.name=Test', '-c', 'user.email=t@example.invalid',
+                    'commit', '-qm', 'packaging'], cwd=repository, check=True)
+    revision = subprocess.check_output(
+        ['git', 'rev-parse', 'HEAD'], cwd=repository, text=True).strip()
+    return repository, revision
+
+
+def test_ubuntu_importer_checkout_matches_archive_identity(tmp_path):
+    from packagetest.nightly_source import Preparation, checkout_packaging_tree
+    repository, revision = importer_packaging_repository(tmp_path)
+    build = Preparation(tmp_path / 'result')
+    checkout, metadata = checkout_packaging_tree(build, {
+        'source': 'demo', 'archive_version': '1.0-1', 'binaries': ['python3-demo'],
+        'packaging_source_kind': 'git', 'packaging_source_role': 'ubuntu-importer',
+        'packaging_source_repository': str(repository),
+        'packaging_branch': 'ubuntu/resolute', 'packaging_sha': revision,
+    })
+    assert checkout.is_dir()
+    assert metadata['role'] == 'ubuntu-importer'
+
+
+def test_ubuntu_importer_checkout_rejects_archive_version_mismatch(tmp_path):
+    from packagetest.nightly_source import Preparation, checkout_packaging_tree
+    repository, revision = importer_packaging_repository(tmp_path, version='0.9-1')
+    build = Preparation(tmp_path / 'result')
+    with pytest.raises(ValueError, match='differs from archive'):
+        checkout_packaging_tree(build, {
+            'source': 'demo', 'archive_version': '1.0-1', 'binaries': ['python3-demo'],
+            'packaging_source_kind': 'git', 'packaging_source_role': 'ubuntu-importer',
+            'packaging_source_repository': str(repository),
+            'packaging_branch': 'ubuntu/resolute', 'packaging_sha': revision,
+        })
+
+
 def test_archive_extraction_rejects_path_traversal(tmp_path):
     archive = tmp_path / 'source.tar.gz'
     with tarfile.open(archive, 'w:gz') as out:
@@ -448,6 +493,7 @@ def test_packaging_proposal_is_git_patch_with_unselected_human_review_target(tmp
         'archive_version': '1.0-1',
         'archive_source': {'url': 'https://archive.example/demo.dsc', 'sha256': 'a' * 64},
         'packaging_repository': 'https://git.example/ubuntu/demo',
+        'ubuntu_importer_repository': 'https://git.example/ubuntu-importer/demo',
         'archive_packaging_repository': 'https://git.example/debian/demo',
         'packaging_branch_candidates': ['stable/2026.2', 'master'],
     }
@@ -458,7 +504,8 @@ def test_packaging_proposal_is_git_patch_with_unselected_human_review_target(tmp
     assert proposal['status'] == 'candidate'
     assert proposal['human_review_required'] is True
     assert proposal['selected_target'] is None
-    assert {item['role'] for item in proposal['destination_candidates']} == {'ubuntu', 'archive'}
+    assert {item['role'] for item in proposal['destination_candidates']} == {
+        'ubuntu-openstack', 'ubuntu-importer', 'archive'}
     patch = (output / 'packaging-proposal.patch').read_text()
     assert 'diff --git a/debian/control b/debian/control' in patch
     assert 'new file mode 100755' in patch

@@ -216,7 +216,7 @@ def _upstream_selection(metadata: dict, repository: str | None, *, series: str,
 
 def package_record(name: str, metadata: dict, archive: dict, *, series: str,
                    membership: str, series_status: str = 'unknown',
-                   codename: str | None = None) -> dict:
+                   codename: str | None = None, suite: str = 'resolute') -> dict:
     repos = repository_names(metadata)
     # Multi-repository deliverables need an explicit mapping; never guess that
     # a deliverable filename is necessarily the source repository name.
@@ -252,6 +252,8 @@ def package_record(name: str, metadata: dict, archive: dict, *, series: str,
         'archive_packaging_branch': archive_packaging_branch,
         'packaging_repository': f'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/{archive["Package"]}',
         'packaging_branch_candidates': [f'stable/{series}', 'master'],
+        'ubuntu_importer_repository': f'https://git.launchpad.net/ubuntu/+source/{archive["Package"]}',
+        'ubuntu_importer_branch_candidates': [f'ubuntu/{suite}', f'ubuntu/{suite}-devel'],
         'packaging_upstream_branch_candidates': [f'upstream-{codename or series_name(series)}', 'upstream'],
         'packaging_pristine_tar_branch': 'pristine-tar',
         'archive_source': {'url': dsc['url'], 'sha256': dsc['sha256'],
@@ -325,7 +327,7 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
         if source:
             packages[source] = package_record(
                 name, metadata, sources[source], series=series, membership='cycle',
-                series_status=target_status, codename=codename)
+                series_status=target_status, codename=codename, suite=suite)
         else:
             exclusions.append({'deliverable': name, 'release_type': metadata.get('type'),
                                'repositories': repository_names(metadata),
@@ -337,7 +339,7 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
             candidates[source] = package_record(
                 name, metadata, sources[source], series=series,
                 membership='independent-build-dependency',
-                series_status=target_status, codename=codename)
+                series_status=target_status, codename=codename, suite=suite)
     binary_sources = {binary: source for source, item in {**candidates, **packages}.items() for binary in item['binaries']}
     while True:
         required = {binary_sources[binary] for item in packages.values() for binary in dependency_names(item['build_depends']) if binary in binary_sources}

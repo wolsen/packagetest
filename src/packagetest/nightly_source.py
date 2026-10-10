@@ -403,7 +403,9 @@ def write_packaging_proposal(entry: dict, baseline: Path, tree: Path, output: Pa
     if not actions:
         return None
     repositories = []
-    for role, key in [('ubuntu', 'packaging_repository'), ('archive', 'archive_packaging_repository')]:
+    for role, key in [('ubuntu-openstack', 'packaging_repository'),
+                      ('ubuntu-importer', 'ubuntu_importer_repository'),
+                      ('archive', 'archive_packaging_repository')]:
         repository = entry.get(key)
         if repository and repository not in {item['repository'] for item in repositories}:
             repositories.append({'role': role, 'repository': repository})
@@ -714,6 +716,17 @@ def checkout_packaging_tree(build: Preparation, entry: dict) -> tuple[Path, dict
     changelog_source = build.command('dpkg-parsechangelog', '-S', 'Source', cwd=checkout)
     if changelog_source != entry['source']:
         raise ValueError('Launchpad packaging debian/changelog source mismatch')
+    if entry.get('packaging_source_role') == 'ubuntu-importer':
+        version = build.command('dpkg-parsechangelog', '-S', 'Version', cwd=checkout)
+        if version != entry['archive_version']:
+            raise ValueError(
+                f'Ubuntu importer packaging version {version} differs from archive '
+                f'{entry["archive_version"]}')
+        binaries = sorted(re.findall(r'^Package:\s*(\S+)', control.read_text(), re.M))
+        if binaries != sorted(entry['binaries']):
+            raise ValueError(
+                f'Ubuntu importer binary set differs from archive: {binaries} != '
+                f'{sorted(entry["binaries"])}')
     return checkout, {
         'kind': 'git', 'role': entry.get('packaging_source_role'),
         'repository': repository, 'branch': branch, 'sha': revision,
