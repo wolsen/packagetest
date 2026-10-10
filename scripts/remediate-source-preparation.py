@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -56,6 +57,33 @@ def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2) + '\n')
 
 
+def failed_quilt_patches(tree: Path, evidence: str) -> list[str]:
+    """Return active patches followed closely by an application failure."""
+    series = tree / 'debian/patches/series'
+    if not series.is_file():
+        return []
+    active = {line.split()[0] for line in series.read_text().splitlines()
+              if line.split() and not line.lstrip().startswith('#')}
+    selected = []
+    # dpkg-source includes the failing patch in its final command error. Prefer
+    # that authoritative name over earlier "applying" progress lines.
+    for name in re.findall(
+            r'(?:debian/patches/|[.]pc/)([A-Za-z0-9][A-Za-z0-9_.+~-]*[.]patch)', evidence):
+        if name in active and name not in selected:
+            selected.append(name)
+    if selected:
+        return selected
+    # Older dpkg-source output may only show progress followed by a hunk error.
+    # Associate each error with the nearest preceding patch application.
+    for failure in re.finditer(r'Hunk #\d+ FAILED|does not apply', evidence, re.I):
+        applications = re.findall(
+            r'applying\s+([A-Za-z0-9][A-Za-z0-9_.+~-]*[.]patch)',
+            evidence[max(0, failure.start() - 2000):failure.start()], re.I)
+        if applications and applications[-1] in active and applications[-1] not in selected:
+            selected.append(applications[-1])
+    return selected
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', required=True)
@@ -81,7 +109,55 @@ def main() -> int:
     (args.report / 'failure-evidence.txt').write_text(evidence + '\n')
     decisions, attempts, selected = [], [], None
     feedback = ''
-    for number in range(1, args.max_model_calls + 1):
+    failed_patches = failed_quilt_patches(tree, evidence)
+    if failed_patches:
+        attempt = args.report / 'attempt-0'
+        attempt.mkdir()
+        decision = {
+            'action': 'refresh_quilt_patch', 'subject': failed_patches[0],
+            'replacement': '', 'evidence': 'deterministic failed-patch classification',
+        }
+        record = {'number': 0, 'result': 'DETERMINISTIC_ERROR', 'decision': decision,
+                  'inference': {'backend': 'deterministic-quilt-refresh'}}
+        try:
+            decisions.append(decision)
+            patch = helper.render_cumulative_repair(decisions, tree)
+            patch_path = attempt / 'proposal.patch'
+            patch_path.write_text(patch)
+            patch_validation = validate_source_patch(patch, tree)
+            write_json(attempt / 'patch-validation.json', patch_validation)
+            if patch_validation['result'] != 'APPLIES':
+                raise ValueError(patch_validation['error'])
+            candidate_work = args.work / 'attempt-0-work'
+            candidate_output = args.work / 'attempt-0-source'
+            log = attempt / 'source-preparation.log'
+            command = [sys.executable, 'scripts/prepare-nightly-source.py',
+                       '--catalog', str(args.catalog), '--source', args.source,
+                       '--work', str(candidate_work), '--output', str(candidate_output),
+                       '--run-id', args.run_id, '--run-attempt', args.run_attempt,
+                       '--remediation-patch', str(patch_path)]
+            with log.open('w') as stream:
+                completed = subprocess.run(
+                    command, stdout=stream, stderr=subprocess.STDOUT, text=True,
+                    env={**os.environ, 'PYTHONPATH': 'src'}, timeout=3600)
+            record.update(result='REPAIRED' if completed.returncode == 0 else 'PREPARATION_FAILED',
+                          patch_validation=patch_validation,
+                          preparation_returncode=completed.returncode)
+            attempts.append(record)
+            if completed.returncode == 0 and (candidate_output / 'prepared-source.json').is_file():
+                selected = 0
+                shutil.rmtree(args.output)
+                shutil.move(str(candidate_output), args.output)
+            else:
+                evidence = (failure_evidence(candidate_work, candidate_output)
+                            + '\n' + log.read_text(errors='replace')[-8000:])
+                feedback = json.dumps(record, indent=2)
+        except Exception as exc:
+            decisions.clear()
+            record['error'] = str(exc)
+            attempts.append(record)
+            feedback = json.dumps(record, indent=2)
+    for number in range(1, args.max_model_calls + 1) if selected is None else []:
         attempt = args.report / f'attempt-{number}'
         attempt.mkdir()
         prompt = helper.prompt(args.source, 'source-preparation', evidence,
@@ -142,7 +218,7 @@ def main() -> int:
             feedback = json.dumps(record, indent=2)
     report = {
         'schema_version': 1, 'source': args.source,
-        'result': 'REPAIRED' if selected else 'UNRESOLVED',
+        'result': 'REPAIRED' if selected is not None else 'UNRESOLVED',
         'selected_attempt': selected, 'attempts': attempts,
         'model': {'name': helper.MODEL_NAME, 'sha256': args.model_sha256},
         'ci': {'run_id': args.run_id, 'run_attempt': args.run_attempt,
@@ -166,7 +242,7 @@ def main() -> int:
     if destination.exists():
         shutil.rmtree(destination)
     shutil.copytree(args.report, destination)
-    return 0 if selected else 1
+    return 0 if selected is not None else 1
 
 
 if __name__ == '__main__':

@@ -183,6 +183,45 @@ def _replace_file_patch(path: str, before: str, after: str) -> str:
     return f"diff --git a/{path} b/{path}\n{body}"
 
 
+def _normalized_context(value: str) -> str:
+    return re.sub(r"[ \t]+", " ", value.strip())
+
+
+def _apply_hunks_with_normalized_context(path: Path, section: str) -> bool:
+    """Apply hunks only when their old side has one whitespace-normalized match."""
+    headers = list(re.finditer(r"^@@\s+[^\n]+@@[^\n]*(?:\n|$)", section, re.M))
+    if not headers:
+        return False
+    lines = path.read_text(errors="replace").splitlines(keepends=True)
+    for index, header in enumerate(headers):
+        end = headers[index + 1].start() if index + 1 < len(headers) else len(section)
+        payload = section[header.end():end].splitlines(keepends=True)
+        operations = [(line[0], line[1:]) for line in payload
+                      if line and line[0] in {" ", "+", "-"}]
+        old = [value for operation, value in operations if operation in {" ", "-"}]
+        if not old:
+            return False
+        needle = [_normalized_context(value) for value in old]
+        width = len(needle)
+        positions = [start for start in range(len(lines) - width + 1)
+                     if [_normalized_context(value) for value in lines[start:start + width]] == needle]
+        if len(positions) != 1:
+            return False
+        cursor = positions[0]
+        replacement = []
+        for operation, value in operations:
+            if operation == " ":
+                replacement.append(lines[cursor])
+                cursor += 1
+            elif operation == "-":
+                cursor += 1
+            else:
+                replacement.append(value)
+        lines[positions[0]:cursor] = replacement
+    path.write_text("".join(lines))
+    return True
+
+
 def _refresh_quilt_patch(tree: Path, name: str) -> str:
     """Refresh applicable sections and omit sections already present upstream."""
     patch_path = tree / "debian/patches" / name
@@ -238,9 +277,18 @@ def _refresh_quilt_patch(tree: Path, name: str) -> str:
         for index, (target, section) in enumerate(parsed):
             section_path = Path(temp) / f"section-{index}.patch"
             section_path.write_text(section)
-            command = ["patch", "--batch", "--forward", "--fuzz=2", f"-p{strip}", "-i", str(section_path)]
-            completed = subprocess.run(command, cwd=working, text=True, capture_output=True, timeout=30)
+            command = ["patch", "--batch", "--forward", "--fuzz=2",
+                       f"-p{strip}", "-i", str(section_path)]
+            completed = subprocess.run(
+                command[:1] + ["--dry-run"] + command[1:], cwd=working,
+                text=True, capture_output=True, timeout=30)
             if completed.returncode == 0:
+                applied_result = subprocess.run(
+                    command, cwd=working, text=True, capture_output=True, timeout=30)
+                if applied_result.returncode:
+                    raise ValueError(
+                        f"validated patch section failed to apply for {target}: "
+                        + (applied_result.stdout + applied_result.stderr).strip()[-2000:])
                 applied.append(target)
                 continue
             reverse = subprocess.run(
@@ -249,6 +297,9 @@ def _refresh_quilt_patch(tree: Path, name: str) -> str:
                 cwd=working, text=True, capture_output=True, timeout=30,
             )
             if reverse.returncode == 0:
+                continue
+            if _apply_hunks_with_normalized_context(working / target, section):
+                applied.append(target)
                 continue
             # Context can drift enough that reverse application also fails.
             # Compare the hunk payload itself: every added line must already

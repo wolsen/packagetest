@@ -234,7 +234,10 @@ def render_cumulative_repair(decisions: list[dict], tree: Path) -> str:
     """Render every accepted decision as one patch against the original tree."""
     with tempfile.TemporaryDirectory(prefix="packagetest-repair-") as temp:
         working = Path(temp) / "source"
-        shutil.copytree(tree / "debian", working / "debian", symlinks=True)
+        # Quilt refresh needs the upstream targets as well as debian/patches.
+        # Copy the complete failed source tree so the trusted renderer can
+        # relocate hunks against the exact snapshot that failed preparation.
+        shutil.copytree(tree, working, symlinks=True)
         changed = set()
         for decision in decisions:
             patch = render_source_repair(decision, working)
