@@ -81,6 +81,17 @@ def test_branch_selection_uses_release_metadata():
     assert record['archive_version'].startswith('1:')
 
 
+def test_package_record_accepts_sha512_only_ubuntu_source_index():
+    item = archive('heat')
+    item.pop('Checksums-Sha256')
+    item['Checksums-Sha512'] = 'b' * 128 + ' 456 heat_27.0.0-0ubuntu1.dsc'
+    record = package_record(
+        'heat', {'repository-settings': {'openstack/heat': {}}}, item,
+        series='2026.2', membership='cycle', suite='stonking')
+    assert record['archive_source']['sha512'] == 'b' * 128
+    assert record['archive_source']['files'][0]['sha512'] == 'b' * 128
+
+
 def test_maintained_series_without_branch_uses_latest_series_release_commit():
     metadata = {
         'repository-settings': {'openstack/tempest-plugin': {}},
@@ -263,3 +274,34 @@ def test_latest_archive_version_wins_independent_of_index_order(tmp_path):
     assert result['packages'][0]['archive_pocket'] == 'updates'
     assert result['packages'][0]['ubuntu_importer_branch_candidates'][0] == (
         'ubuntu/resolute-updates')
+
+
+def test_uca_overlay_is_the_comparison_baseline_when_newer(tmp_path):
+    root = tmp_path / 'releases'
+    (root / 'deliverables' / 'hibiscus').mkdir(parents=True)
+    (root / 'deliverables' / 'hibiscus' / 'heat.yaml').write_text(json.dumps({
+        'repository-settings': {'openstack/heat': {}},
+    }))
+    subprocess.run(['git', 'init', '-q', str(root)], check=True)
+    subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test',
+                    '-c', 'user.email=t@example.invalid', 'commit', '--allow-empty',
+                    '-qm', 'fixture'], check=True)
+    ubuntu = archive('heat')
+    ubuntu['Version'] = '1:26.0.0-0ubuntu1.2'
+    cloud = archive('heat')
+    cloud['Version'] = '1:27.0.0-0ubuntu1~cloud1'
+    base = tmp_path / 'packagetest-resolute-main-Sources'
+    overlay = tmp_path / 'packagetest-resolute-updates-hibiscus-main-Sources'
+    for path, row in ((base, ubuntu), (overlay, cloud)):
+        path.write_text('\n'.join(f'{key}: {value}' for key, value in row.items()))
+    result = make_catalog(
+        root, [base, overlay],
+        index_metadata={overlay.name: {
+            'pocket': 'uca-hibiscus',
+            'archive_root': 'https://ubuntu-cloud.archive.canonical.com/ubuntu/',
+        }})
+    heat = result['packages'][0]
+    assert heat['archive_version'] == '1:27.0.0-0ubuntu1~cloud1'
+    assert heat['archive_pocket'] == 'uca-hibiscus'
+    assert heat['archive_source']['url'].startswith(
+        'https://ubuntu-cloud.archive.canonical.com/ubuntu/pool/')

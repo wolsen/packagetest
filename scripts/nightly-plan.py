@@ -486,12 +486,16 @@ def main():
     parser.add_argument('--summary-inputs', type=Path)
     args = parser.parse_args()
     if args.summary_inputs:
-        sources = [p['source'] for p in json.loads(args.catalog.read_text())['packages']]
+        catalog = json.loads(args.catalog.read_text())
+        sources = [p['source'] for p in catalog['packages']]
+        prefix = catalog.get('target', {}).get('id')
+        prefix = f'{prefix}-' if prefix else ''
         rows = []
         for source in sources:
             row = {'source': source}
             for phase in ('build', 'autopkgtest'):
-                paths = list((args.summary_inputs / f'status-{phase}-{source}').rglob('result.json'))
+                paths = list((args.summary_inputs /
+                              f'status-{prefix}{phase}-{source}').rglob('result.json'))
                 row[phase] = json.loads(paths[0].read_text()) if len(paths) == 1 else {'result': 'MISSING', 'error': 'Job produced no unique status report'}
             rows.append(row)
         args.output.mkdir(parents=True, exist_ok=True)
@@ -512,7 +516,10 @@ def main():
         print(table)
         return
     if args.dependency_pattern:
-        entries = {p['source']: p for p in json.loads(args.catalog.read_text())['packages']}
+        catalog = json.loads(args.catalog.read_text())
+        entries = {p['source']: p for p in catalog['packages']}
+        prefix = catalog.get('target', {}).get('id')
+        prefix = f'{prefix}-' if prefix else ''
         needed = set()
         def add(source):
             for dep in entries[source].get('run_dependencies', []):
@@ -522,7 +529,7 @@ def main():
         add(args.dependency_pattern)
         if args.include_self:
             needed.add(args.dependency_pattern)
-        names = ['build-' + source for source in sorted(needed)]
+        names = [f'build-{prefix}{source}' for source in sorted(needed)]
         pattern = names[0] if len(names) == 1 else '{' + ','.join(names) + '}' if names else '__no_dependencies__'
         if os.getenv('GITHUB_OUTPUT'):
             with open(os.environ['GITHUB_OUTPUT'], 'a') as handle:

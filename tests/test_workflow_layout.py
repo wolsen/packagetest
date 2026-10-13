@@ -5,7 +5,7 @@ import subprocess
 
 
 def test_each_build_matrix_runs_its_own_autopkgtest():
-    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    workflow = Path('.github/workflows/openstack-snapshot-target.yml').read_text()
     reusable = Path('.github/workflows/build-dependency-level.yml').read_text()
     action = 'uses: ./.github/actions/build-test-remediate'
 
@@ -22,13 +22,13 @@ def test_each_build_matrix_runs_its_own_autopkgtest():
 
 
 def test_summary_artifact_contains_browsable_results_and_packaging_proposals():
-    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
-    assert 'pattern: packaging-proposal-*' in workflow
+    workflow = Path('.github/workflows/openstack-snapshot-target.yml').read_text()
+    assert 'pattern: packaging-proposal-${{ inputs.target-id }}-*' in workflow
     assert 'python3 scripts/render-pipeline-report.py' in workflow
     assert '--plan nightly-plan/plan.json' in workflow
     assert '--results summary/results.json' in workflow
     assert '--proposals proposals' in workflow
-    assert 'name: pipeline-summary' in workflow
+    assert 'name: ${{ inputs.target-id }}-pipeline-summary' in workflow
     assert 'open `index.html`' in workflow
 
 
@@ -43,19 +43,21 @@ def test_child_jobs_keep_direct_package_build_names():
 
 
 def test_local_ai_repairs_inside_each_package_job_before_publication():
-    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    workflow = Path('.github/workflows/openstack-snapshot-target.yml').read_text()
     reusable = Path('.github/workflows/build-dependency-level.yml').read_text()
     action = Path('.github/actions/build-test-remediate/action.yml').read_text()
     assert 'failure_analysis_plan:' not in workflow
     assert 'analyze_failure:' not in workflow
     assert reusable.count('uses: ./.github/actions/build-test-remediate') == 1
-    assert 'needs: [finalize_plan, prepare_autopkgtest_image, prepare_sbuild_rootfs, prepare_local_ai]' in workflow
+    assert ('needs: [plan, finalize_plan, prepare_autopkgtest_image, '
+            'prepare_sbuild_rootfs, prepare_local_ai]') in workflow
     assert 'scripts/remediate-package.py' in action
     assert action.index('id: initial_test') < action.index('id: ai_cache')
     assert action.index('id: ai_cache') < action.index('id: remediation')
-    assert action.index('scripts/remediate-package.py') < action.index('name: build-${{ inputs.source }}')
-    assert 'name: ai-remediation-${{ inputs.source }}' in action
-    assert 'name: packaging-proposal-${{ inputs.source }}' in action
+    assert action.index('scripts/remediate-package.py') < action.index(
+        'name: build-${{ inputs.target-id }}-${{ inputs.source }}')
+    assert 'name: ai-remediation-${{ inputs.target-id }}-${{ inputs.source }}' in action
+    assert 'name: packaging-proposal-${{ inputs.target-id }}-${{ inputs.source }}' in action
     assert 'human review and target selection are required' in action
     assert 'scripts/final-package-verdict.py' in action
     assert 'qwen2.5-coder-7b-instruct-q4_k_m.gguf' in workflow
@@ -70,7 +72,8 @@ def test_main_push_exercises_heat_candidate_closure():
     assert ("github.event_name == 'push' && "
             "'python-neutron-lib,python-oslo.versionedobjects,heat,watcher,glance'") in workflow
     assert '[full-snapshot]' not in workflow
-    assert "and an empty manual dispatch select the complete catalog" in workflow
+    assert "type: choice" in workflow
+    assert "options: [all, hibiscus-stonking, hibiscus-resolute-uca]" in workflow
     assert any(edge['source'] == 'heat' and edge['dependency'] == 'python-neutron-lib'
                for edge in policy)
     assert any(edge['source'] == 'heat' and edge['dependency'] == 'python-oslo.versionedobjects'
@@ -80,7 +83,7 @@ def test_main_push_exercises_heat_candidate_closure():
 
 
 def test_snapshot_plan_generates_fresh_catalog_instead_of_using_committed_output():
-    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    workflow = Path('.github/workflows/openstack-snapshot-target.yml').read_text()
     assert 'scripts/generate-nightly-catalog.py' in workflow
     assert 'uses: actions/setup-python@v5' in workflow
     assert 'run: python3 -m pip install .' in workflow
@@ -90,7 +93,7 @@ def test_snapshot_plan_generates_fresh_catalog_instead_of_using_committed_output
 
 
 def test_source_preparation_can_remediate_quilt_drift_before_planning():
-    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    workflow = Path('.github/workflows/openstack-snapshot-target.yml').read_text()
     assert 'id: initial_source' in workflow
     assert 'scripts/remediate-source-preparation.py' in workflow
     assert workflow.index('id: initial_source') < workflow.index(
@@ -113,9 +116,10 @@ def test_model_contract_is_focused_and_does_not_duplicate_snapshot_orchestration
 
 def test_workflows_restore_one_checksum_keyed_autopkgtest_image_per_package():
     action = Path('.github/actions/build-test-remediate/action.yml').read_text()
-    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    workflow = Path('.github/workflows/openstack-snapshot-target.yml').read_text()
     assert workflow.count('prepare_autopkgtest_image:') == 1
-    assert workflow.count('scripts/autopkgtest-cache-key.sh resolute amd64') == 1
+    assert workflow.count(
+        'scripts/autopkgtest-cache-key.sh "${{ needs.plan.outputs.suite }}" amd64') == 1
     assert workflow.count('autopkgtest-cache-key: ${{ needs.prepare_autopkgtest_image.outputs.cache_key }}') == 1
     assert workflow.count('uses: actions/cache@v4') >= 1
     assert 'uses: actions/cache/restore@v4' in action
@@ -128,9 +132,10 @@ def test_workflows_restore_one_daily_updated_sbuild_rootfs_per_package():
     reusable = Path('.github/workflows/build-dependency-level.yml').read_text()
     builder = Path('scripts/prepare-builder.sh').read_text()
     action = Path('.github/actions/build-test-remediate/action.yml').read_text()
-    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    workflow = Path('.github/workflows/openstack-snapshot-target.yml').read_text()
     assert workflow.count('prepare_sbuild_rootfs:') == 1
-    assert workflow.count('scripts/sbuild-cache-key.sh resolute amd64') == 1
+    assert workflow.count(
+        'scripts/sbuild-cache-key.sh "${{ needs.plan.outputs.builder_profile }}" amd64') == 1
     assert workflow.count('sbuild-cache-key: ${{ needs.prepare_sbuild_rootfs.outputs.cache_key }}') == 1
     assert 'uses: actions/cache/restore@v4' in reusable
     assert 'SBUILD_ROOTFS_CACHE:' in reusable

@@ -5,6 +5,7 @@
 set -uo pipefail
 
 source_name=${1:?source package is required}
+suite=$(python3 -c 'import json; print(json.load(open("nightly-plan/catalog.json"))["target"]["suite"])')
 result_root=test-results/result
 mkdir -p test-results
 test_rc=0
@@ -35,7 +36,7 @@ PY
 
 if [[ "$build_ready" == true ]]; then
   set +e
-  test_image=$(bash scripts/prepare-autopkgtest.sh resolute "$RUNNER_TEMP/autopkgtest-image")
+  test_image=$(bash scripts/prepare-autopkgtest.sh "$suite" "$RUNNER_TEMP/autopkgtest-image")
   prepare_rc=$?
   set -e
   if [[ $prepare_rc -eq 0 ]]; then

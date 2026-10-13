@@ -11,6 +11,7 @@ import configparser
 from datetime import datetime, timezone
 import fnmatch
 import gzip
+import hashlib
 import io
 import json
 import os
@@ -269,18 +270,33 @@ class Preparation:
         return (self.runner.log_path.parent / f'{self.runner.sequence:04d}.stdout.log').read_text().strip()
 
 
-def download_verified(url: str, destination: Path, digest: str) -> None:
+def download_verified(url: str, destination: Path, digest: str,
+                      algorithm: str = 'sha256') -> None:
     if urlparse(url).scheme != 'https':
         raise ValueError('Pinned source downloads require HTTPS')
     with urlopen(url, timeout=120) as response, destination.open('wb') as output:
         shutil.copyfileobj(response, output)
-    if sha256(destination) != digest:
+    if algorithm not in {'sha256', 'sha512'}:
+        raise ValueError(f'Unsupported source checksum: {algorithm}')
+    with destination.open('rb') as stream:
+        actual = hashlib.file_digest(stream, algorithm).hexdigest()
+    if actual != digest:
         raise ValueError(f'Source checksum mismatch: {destination.name}')
 
 
-def snapshot_debian_version(archive_version: str, upstream: str) -> str:
+def source_digest(record: dict) -> tuple[str, str]:
+    for algorithm in ('sha256', 'sha512'):
+        if record.get(algorithm):
+            return algorithm, record[algorithm]
+    raise ValueError('Pinned source record has no strong checksum')
+
+
+def snapshot_debian_version(archive_version: str, upstream: str,
+                            revision_suffix: str = '-0ubuntu1~hibiscus1') -> str:
     epoch = archive_version.split(':', 1)[0] + ':' if ':' in archive_version else ''
-    return epoch + upstream + '-0ubuntu1~hibiscus1'
+    if not re.fullmatch(r'-[0-9A-Za-z.+~]+', revision_suffix):
+        raise ValueError('Invalid snapshot Debian revision suffix')
+    return epoch + upstream + revision_suffix
 
 
 
@@ -442,6 +458,7 @@ def write_packaging_proposal(entry: dict, baseline: Path, tree: Path, output: Pa
             return None
         patch_path.write_text(result.stdout)
 
+    archive_algorithm, archive_digest = source_digest(entry['archive_source'])
     proposal = {
         'schema_version': 1,
         'source': entry['source'],
@@ -460,7 +477,7 @@ def write_packaging_proposal(entry: dict, baseline: Path, tree: Path, output: Pa
         'archive_base': {
             'version': entry['archive_version'],
             'url': entry['archive_source']['url'],
-            'sha256': entry['archive_source']['sha256'],
+            archive_algorithm: archive_digest,
             'generic_normalization_before_diff': ['ubuntu-maintainer'],
         },
         'patch': {'file': patch_path.name, 'sha256': sha256(patch_path)},
@@ -679,7 +696,8 @@ def preserve_catalog_orig_components(build: Preparation, entry: dict, upstream: 
         component, compression = match.groups()
         directory.mkdir(exist_ok=True)
         archive = directory / filename
-        download_verified(record['url'], archive, record['sha256'])
+        algorithm, digest = source_digest(record)
+        download_verified(record['url'], archive, digest, algorithm)
         if archive.stat().st_size != record['size']:
             raise ValueError('Supplementary orig size mismatch: ' + filename)
         destination = output / f'{source}_{upstream}.orig-{component}.tar.{compression}'
@@ -690,7 +708,7 @@ def preserve_catalog_orig_components(build: Preparation, entry: dict, upstream: 
         shutil.copyfile(archive, destination)
         components.append({'component': component, 'archive_file': filename,
                            'snapshot_file': destination.name,
-                           'sha256': record['sha256']})
+                           algorithm: digest})
     return components
 
 
@@ -757,14 +775,15 @@ def extract_archive_packaging(build: Preparation, entry: dict) -> tuple[Path, Pa
     baseline_dir.mkdir()
     spec = entry['archive_source']
     baseline_dsc = baseline_dir / Path(urlparse(spec['url']).path).name
-    download_verified(spec['url'], baseline_dsc, spec['sha256'])
+    algorithm, source_checksum = source_digest(spec)
+    download_verified(spec['url'], baseline_dsc, source_checksum, algorithm)
     for digest, _, filename in checksum_entries(fields(baseline_dsc)):
         download_verified(urljoin(spec['url'], filename), baseline_dir / filename, digest)
     verify_source(baseline_dsc, source, entry['archive_version'])
     packaging_tree = build.work / 'packaging'
     build.command('dpkg-source', '--skip-patches', '-x', str(baseline_dsc), str(packaging_tree))
     return packaging_tree, baseline_dsc, {
-        'kind': 'archive', 'url': spec['url'], 'sha256': spec['sha256'],
+        'kind': 'archive', 'url': spec['url'], algorithm: source_checksum,
         'reason': entry.get('packaging_resolution_error'),
     }
 
@@ -788,7 +807,8 @@ def git_archive(build: Preparation, checkout: Path, selected: dict, destination:
 
 
 def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
-                   remediation_patch: Path | None = None) -> dict:
+                   remediation_patch: Path | None = None,
+                   target: dict | None = None) -> dict:
     """Resolve and prepare one source; never overwrite an earlier generation.
 
     Return absolute ``dsc`` and ``lock`` paths plus metadata. Failure leaves
@@ -822,7 +842,12 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
         if selected['sha'] != entry['upstream_sha']:
             raise ValueError('Source preparation changed the plan-pinned upstream SHA')
         upstream = selected['upstream_version']
-        version = snapshot_debian_version(entry['archive_version'], upstream)
+        target = target or {}
+        revision_suffix = target.get('debian_revision_suffix', '-0ubuntu1~hibiscus1')
+        distribution = target.get('distribution', 'resolute')
+        openstack_series = target.get('openstack_series', '2026.2')
+        version = snapshot_debian_version(entry['archive_version'], upstream,
+                                          revision_suffix)
         build.command('dpkg', '--compare-versions', version, 'gt', entry['archive_version'])
         orig = build.root / f'{source}_{upstream}.orig.tar.gz'
         if entry.get('snapshot_backend') == 'git-archive':
@@ -876,8 +901,10 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
             report['packaging_adjustments'])
         if proposal:
             report['packaging_proposal'] = proposal
-        build.command('dch', '--newversion', version, '--distribution', 'resolute', '--force-distribution',
-                      'Nightly OpenStack 2026.2 snapshot from pinned upstream commit ' + selected['sha'] + '.',
+        build.command('dch', '--newversion', version, '--distribution', distribution,
+                      '--force-distribution',
+                      f'Nightly OpenStack {openstack_series} snapshot from pinned upstream commit '
+                      + selected['sha'] + '.',
                       cwd=tree, env={'DEBFULLNAME': 'Packaging Build Agent', 'DEBEMAIL': 'packaging-agent@example.invalid'})
         build.command('dpkg-buildpackage', '-S', '-d', '-nc', '-us', '-uc', cwd=tree,
                       env={'SOURCE_DATE_EPOCH': selected['commit_timestamp']})

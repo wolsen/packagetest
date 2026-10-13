@@ -7,8 +7,9 @@ if [[ $(. /etc/os-release; echo "$ID:$VERSION_ID") != ubuntu:24.04 ]]; then
 fi
 profile=${1:-noble}
 suite=$profile
-case "$profile" in noble|resolute|stonking|noble-uca-epoxy) ;; *) echo 'Supported targets: noble, resolute, stonking, noble-uca-epoxy' >&2; exit 2 ;; esac
+case "$profile" in noble|resolute|stonking|noble-uca-epoxy|resolute-uca-hibiscus) ;; *) echo 'Supported targets: noble, resolute, stonking, noble-uca-epoxy, resolute-uca-hibiscus' >&2; exit 2 ;; esac
 if [[ "$profile" == noble-uca-epoxy ]]; then suite=noble; fi
+if [[ "$profile" == resolute-uca-hibiscus ]]; then suite=resolute; fi
 chroot_name="$profile-amd64-sbuild"
 cache=${SBUILD_ROOTFS_CACHE:-}
 host_cache=${SBUILD_HOST_APT_CACHE:-}
@@ -116,6 +117,10 @@ EOF
         if [[ "$profile" == noble-uca-epoxy ]]; then
             includes+=(--include=ubuntu-cloud-keyring)
             repositories+=(--extra-repository='deb [signed-by=/usr/share/keyrings/ubuntu-cloud-keyring.gpg] http://ubuntu-cloud.archive.canonical.com/ubuntu noble-updates/epoxy main')
+        fi
+        if [[ "$profile" == resolute-uca-hibiscus ]]; then
+            includes+=(--include=ubuntu-cloud-keyring)
+            repositories+=(--extra-repository='deb [signed-by=/usr/share/keyrings/ubuntu-cloud-keyring.gpg] http://ubuntu-cloud.archive.canonical.com/ubuntu resolute-updates/hibiscus main')
         fi
         # Ubuntu suites share this debootstrap implementation; explicitly select it
         # when the Noble host predates a development suite's alias.

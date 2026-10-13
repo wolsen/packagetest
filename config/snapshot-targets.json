@@ -1,0 +1,10 @@
+{
+  "ubuntu_suites": {
+    "24.04": "noble",
+    "26.04": "resolute",
+    "26.10": "stonking"
+  },
+  "openstack_releases": {
+    "2026.2": "hibiscus"
+  }
+}

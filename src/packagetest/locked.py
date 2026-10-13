@@ -208,10 +208,12 @@ class LockedBuild:
         self.command('schroot', '-c', target['chroot'], '--directory', '/', '--', 'true')
         self.manifest['apt_sources'] = self.command('schroot', '-c', target['chroot'], '--directory', '/', '--',
             'sh', '-c', 'cat /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null; true')
-        if target.get('profile') == 'noble-uca-epoxy':
-            required = 'deb [signed-by=/usr/share/keyrings/ubuntu-cloud-keyring.gpg] http://ubuntu-cloud.archive.canonical.com/ubuntu noble-updates/epoxy main'
+        if target.get('cloud_archive'):
+            cloud = target['cloud_archive']
+            required = (f"deb [signed-by={cloud['keyring']}] {cloud['repository']} "
+                        f"{cloud['distribution']} {cloud['component']}")
             if required not in self.manifest['apt_sources'] or 'trusted=yes' in self.manifest['apt_sources']:
-                raise StageFailure('UCA chroot is missing its signed Epoxy repository')
+                raise StageFailure('UCA chroot is missing its signed Cloud Archive repository')
         self.save()
 
     def archive_source(self, package: dict, source_dir: Path) -> Path:
@@ -402,7 +404,7 @@ class LockedBuild:
                         raise StageFailure(f'Build did not use required dependency {dep}={version}')
                 self.enter('lintian')
                 lintian_args = []
-                if target.get('profile') == 'noble-uca-epoxy' or target['suite'] == 'resolute':
+                if target.get('cloud_archive') or target['suite'] == 'resolute':
                     # Noble's Lintian knows Ubuntu suites but not UCA pocket
                     # names. Extend its distribution data; disable no checks.
                     overlay = self.root / 'lintian'

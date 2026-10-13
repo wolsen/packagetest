@@ -13,6 +13,7 @@ import traceback
 from packagetest.artifacts import checksum_entries, fields, sha256, verify_source
 from packagetest.catalog import paragraphs
 from packagetest.nightly_source import prepare_source
+from packagetest.snapshot_targets import catalog_target
 
 
 def digest(value: object) -> str:
@@ -112,6 +113,7 @@ def main() -> int:
     parser.add_argument('--remediation-patch', type=Path)
     args = parser.parse_args()
     catalog = json.loads(args.catalog.read_text())
+    target = catalog_target(catalog)
     identity = {'run_id': str(args.run_id), 'run_attempt': str(args.run_attempt)}
     if catalog.get('ci') != identity:
         raise ValueError('Frozen catalog belongs to another pipeline run or attempt')
@@ -120,7 +122,8 @@ def main() -> int:
         raise ValueError(f'Unknown frozen source: {args.source}')
     try:
         prepared = prepare_source(entries[args.source], args.work,
-                                  remediation_patch=args.remediation_patch)
+                                  remediation_patch=args.remediation_patch,
+                                  target=target)
         manifest = export_prepared(prepared, entries[args.source], catalog, args.output)
         print(json.dumps({'result': 'PREPARED', 'source': args.source,
                           'version': manifest['version'], 'binaries': manifest['binaries']}))

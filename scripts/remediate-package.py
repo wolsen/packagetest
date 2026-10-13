@@ -444,7 +444,8 @@ def build_attempt(args, patch_path: Path, destination: Path, log: Path) -> int:
 
 
 def test_attempt(args, candidate: Path, destination: Path, log: Path) -> tuple[int, dict]:
-    image_command = ["bash", "scripts/prepare-autopkgtest.sh", "resolute",
+    suite = json.loads(args.catalog.read_text())["target"]["suite"]
+    image_command = ["bash", "scripts/prepare-autopkgtest.sh", suite,
                      str(Path(os.environ["RUNNER_TEMP"]) / "autopkgtest-image")]
     image = subprocess.check_output(
         image_command, text=True, timeout=bounded_timeout(args, 1800)).strip().splitlines()[-1]

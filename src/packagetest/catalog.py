@@ -7,6 +7,7 @@ when Ubuntu has no source package for a deliverable.
 from __future__ import annotations
 
 import hashlib
+import gzip
 import json
 import lzma
 from pathlib import Path
@@ -59,12 +60,13 @@ def ubuntu_source_indexes(suite: str) -> list[dict[str, str]]:
     return indexes
 
 
-def download_source_indexes(suite: str, destination: Path, *, opener=None) -> list[Path]:
+def download_source_indexes(suite: str, destination: Path, *, opener=None,
+                            extra_indexes: list[dict] | None = None) -> list[Path]:
     """Download current indexes atomically instead of relying on committed output."""
     opener = opener or urlopen
     destination.mkdir(parents=True, exist_ok=True)
     paths = []
-    for spec in ubuntu_source_indexes(suite):
+    for spec in [*ubuntu_source_indexes(suite), *(extra_indexes or [])]:
         path = destination / spec['filename']
         temporary = path.with_suffix(path.suffix + '.part')
         request = Request(spec['url'], headers={'User-Agent': 'packagetest-catalog/1'})
@@ -224,10 +226,17 @@ def package_record(name: str, metadata: dict, archive: dict, *, series: str,
     repo = exact[0] if len(exact) == 1 else repos[0] if len(repos) == 1 else None
     upstream_ref, branch_policy, upstream_release = _upstream_selection(
         metadata, repo, series=series, membership=membership, status=series_status)
-    checksums = [line.split() for line in archive['Checksums-Sha256'].splitlines() if line.strip()]
-    base_url = 'https://archive.ubuntu.com/ubuntu/' + archive['Directory'] + '/'
+    checksum_field = ('Checksums-Sha256' if archive.get('Checksums-Sha256')
+                      else 'Checksums-Sha512')
+    if not archive.get(checksum_field):
+        raise ValueError(f'{archive["Package"]} source index has no strong checksums')
+    algorithm = 'sha256' if checksum_field == 'Checksums-Sha256' else 'sha512'
+    checksums = [line.split() for line in archive[checksum_field].splitlines() if line.strip()]
+    base_url = archive.get(
+        '_packagetest_archive_root', 'https://archive.ubuntu.com/ubuntu/')
+    base_url = base_url.rstrip('/') + '/' + archive['Directory'] + '/'
     archive_files = [{'name': row[2], 'url': base_url + row[2],
-                      'sha256': row[0], 'size': int(row[1])} for row in checksums]
+                      algorithm: row[0], 'size': int(row[1])} for row in checksums]
     dsc = next((row for row in archive_files if row['name'].endswith('.dsc')), None)
     if dsc is None:
         raise ValueError(f'No .dsc checksum for {archive["Package"]}')
@@ -267,7 +276,7 @@ def package_record(name: str, metadata: dict, archive: dict, *, series: str,
         ])),
         'packaging_upstream_branch_candidates': [f'upstream-{codename or series_name(series)}', 'upstream'],
         'packaging_pristine_tar_branch': 'pristine-tar',
-        'archive_source': {'url': dsc['url'], 'sha256': dsc['sha256'],
+        'archive_source': {'url': dsc['url'], algorithm: dsc[algorithm],
                            'files': archive_files},
         'snapshot_backend': 'git-archive' if name.startswith('puppet-') else 'python-sdist',
         'discovery_error': None if repo else 'Multiple or missing upstream repositories require explicit mapping',
@@ -307,7 +316,9 @@ def archive_python_packages(sources: dict[str, dict]) -> list[dict]:
     return records
 
 
-def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2', codename='hibiscus', suite='resolute') -> dict:
+def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
+                 codename='hibiscus', suite='resolute', target: dict | None = None,
+                 index_metadata: dict[str, dict] | None = None) -> dict:
     # YAML is needed only for refreshing the catalog, not for consuming it.
     import yaml
     sources = {}
@@ -315,16 +326,20 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
     for path in source_indexes:
         data = path.read_bytes()
         indexes.append({'filename': path.name, 'sha256': hashlib.sha256(data).hexdigest()})
-        text = lzma.decompress(data).decode() if path.suffix == '.xz' else data.decode()
+        text = (lzma.decompress(data).decode() if path.suffix == '.xz' else
+                gzip.decompress(data).decode() if path.suffix == '.gz' else data.decode())
+        metadata = (index_metadata or {}).get(path.name, {})
         for source in paragraphs(text):
             if 'Package' in source:
                 source = dict(source)
                 filename = path.name
-                source['_packagetest_archive_pocket'] = (
+                source['_packagetest_archive_pocket'] = metadata.get('pocket') or (
                     'security' if f'{suite}-security-' in filename else
                     'updates' if f'{suite}-updates-' in filename else
                     'release'
                 )
+                source['_packagetest_archive_root'] = metadata.get(
+                    'archive_root', 'https://archive.ubuntu.com/ubuntu/')
                 previous = sources.get(source['Package'])
                 if previous is None or subprocess.run(['dpkg', '--compare-versions', source['Version'], 'gt', previous['Version']]).returncode == 0:
                     sources[source['Package']] = source
@@ -371,6 +386,7 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
     revision = subprocess.check_output(['git', '-C', str(releases), 'rev-parse', 'HEAD'], text=True).strip()
     return {'schema_version': 1, 'series': series, 'codename': codename,
             'series_status': target_status, 'suite': suite,
+            'target': target,
             'release_metadata': {'repository': 'https://opendev.org/openstack/releases', 'sha': revision},
             'archive_indexes': indexes,
             'archive_python_indexes': indexes,

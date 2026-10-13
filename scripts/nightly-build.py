@@ -11,9 +11,7 @@ from packagetest.catalog import dependency_names
 from packagetest.handoff import build_repository, collect_producers, stamp_generation
 from packagetest.locked import LockedBuild
 from packagetest.nightly_source import prepare_source
-
-TARGET = {'suite': 'resolute', 'architecture': 'amd64', 'backend': 'schroot',
-          'chroot': 'resolute-amd64-sbuild', 'openstack_series': '2026.2'}
+from packagetest.snapshot_targets import build_target, catalog_target
 
 
 def dependencies(entries, source):
@@ -61,6 +59,8 @@ def main():
     state = {'source': args.source, 'result': 'PREPARING', 'stage': 'dependency-handoff'}
     try:
         catalog = json.loads(args.catalog.read_text())
+        snapshot_target = catalog_target(catalog)
+        target = build_target(snapshot_target)
         identity = {'run_id': args.run_id, 'run_attempt': args.run_attempt}
         if catalog.get('ci') != identity:
             raise ValueError('Frozen catalog belongs to another pipeline run or attempt')
@@ -81,7 +81,7 @@ def main():
             state['result'] = 'BLOCKED'
             raise ValueError(f'Missing dependency builds: {sorted(required - locks.keys())}')
         producers = collect_producers(args.inputs, locks, run_id=args.run_id,
-                                      run_attempt=args.run_attempt, target=TARGET)
+                                      run_attempt=args.run_attempt, target=target)
         if args.check_dependencies_only:
             state['result'] = 'READY'
             return 0
@@ -109,7 +109,8 @@ def main():
                         'metadata': json.loads(resolution.read_text()) if resolution.is_file() else {}}
         else:
             prepared = prepare_source(entry, args.output / 'source-preparation',
-                                      remediation_patch=args.remediation_patch)
+                                      remediation_patch=args.remediation_patch,
+                                      target=snapshot_target)
             dsc = Path(prepared['dsc'])
         source_fields = fields(dsc)
         version = source_fields['Version']
@@ -126,7 +127,7 @@ def main():
                              'upstream_sha': entry['upstream_sha']}}
         if prepared['metadata'].get('remediation'):
             package['input']['remediation'] = prepared['metadata']['remediation']
-        lock = {'schema_version': 1, 'target': TARGET, 'catalog_entry': entry,
+        lock = {'schema_version': 1, 'target': target, 'catalog_entry': entry,
                 'maintainer': {'name': 'Packaging Build Agent', 'email': 'packaging-agent@example.invalid'},
                 'packages': [package]}
         state['stage'] = 'binary-build'

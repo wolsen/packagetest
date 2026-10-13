@@ -1,4 +1,5 @@
 import io
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -13,6 +14,30 @@ from packagetest.nightly_source import extract_snapshot, prepare_source, snapsho
 def test_preserve_debian_epoch():
     assert snapshot_debian_version('2:32.0.0-0ubuntu1', '33.0.0~rc1+git20260920.0.abcdef0') == '2:33.0.0~rc1+git20260920.0.abcdef0-0ubuntu1~hibiscus1'
     assert snapshot_debian_version('1.0-1', '1.1+git20260920.2.abcdef0') == '1.1+git20260920.2.abcdef0-0ubuntu1~hibiscus1'
+
+
+def test_snapshot_version_uses_target_revision_policy():
+    assert snapshot_debian_version(
+        '1:27.0.0-0ubuntu1', '27.0.1+git20261013.1.abcdef0',
+        '-0ubuntu1~cloud1') == '1:27.0.1+git20261013.1.abcdef0-0ubuntu1~cloud1'
+
+
+def test_download_verified_accepts_sha512(tmp_path, monkeypatch):
+    from packagetest.nightly_source import download_verified
+    payload = b'published source descriptor'
+
+    class Response(io.BytesIO):
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            pass
+
+    monkeypatch.setattr('packagetest.nightly_source.urlopen',
+                        lambda *_args, **_kwargs: Response(payload))
+    output = tmp_path / 'source.dsc'
+    download_verified('https://archive.example/source.dsc', output,
+                      hashlib.sha512(payload).hexdigest(), 'sha512')
+    assert output.read_bytes() == payload
 
 
 def test_missing_pin_fails_with_persistent_evidence(tmp_path):

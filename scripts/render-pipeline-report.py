@@ -397,22 +397,33 @@ def main() -> int:
     parser.add_argument('--proposals', type=Path)
     parser.add_argument('--functional-results', type=Path)
     parser.add_argument('--output', type=Path, default=Path('summary'))
-    parser.add_argument('--target-id', default='ubuntu-development')
-    parser.add_argument('--target-kind', choices=('development', 'uca'), default='development')
+    parser.add_argument('--target-id')
+    parser.add_argument('--target-kind', choices=('development', 'uca'))
     parser.add_argument('--base-series')
     parser.add_argument('--suite')
     parser.add_argument('--architecture', default='amd64')
     args = parser.parse_args()
     catalog, plan, results = read_json(args.catalog), read_json(args.plan), read_json(args.results)
-    suite = args.suite or catalog.get('suite', 'unknown')
-    target = {
-        'id': args.target_id,
-        'kind': args.target_kind,
-        'label': ('Ubuntu development release' if args.target_kind == 'development'
-                  else 'Ubuntu Cloud Archive'),
-        'base_series': args.base_series or suite,
-        'suite': suite,
+    frozen = catalog.get('target') or {}
+    supplied = {
+        'id': args.target_id, 'kind': args.target_kind,
+        'base_series': args.base_series, 'suite': args.suite,
         'architecture': args.architecture,
+    }
+    for key, value in supplied.items():
+        if frozen and value is not None and frozen.get(key) != value:
+            raise ValueError(f'Report target {key} differs from frozen catalog target')
+    suite = frozen.get('suite') or args.suite or catalog.get('suite', 'unknown')
+    kind = frozen.get('kind') or args.target_kind or 'development'
+    target = {
+        'id': frozen.get('id') or args.target_id or 'ubuntu-development',
+        'kind': kind,
+        'label': frozen.get('label') or ('Ubuntu development release'
+                                        if kind == 'development'
+                                        else 'Ubuntu Cloud Archive'),
+        'base_series': frozen.get('base_series') or args.base_series or suite,
+        'suite': suite,
+        'architecture': frozen.get('architecture') or args.architecture,
         'openstack_series': catalog.get('series', 'unknown'),
     }
     functional = read_json(args.functional_results) if args.functional_results else None

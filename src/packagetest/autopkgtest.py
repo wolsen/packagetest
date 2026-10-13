@@ -153,11 +153,22 @@ def run(manifest_path: Path, source: str, output: Path, *, backend: str, image: 
             pin.append(f'Package: {name}\nPin: version {version}\nPin-Priority: 1001\n')
         (repo / 'preferences').write_text('\n'.join(pin))
         (repo / 'verify-installed.py').write_text(candidate_check_script(versions))
+        cloud = manifest['target'].get('cloud_archive')
+        cloud_setup = ''
+        if cloud:
+            source = (f"deb [signed-by={cloud['keyring']}] {cloud['repository']} "
+                      f"{cloud['distribution']} {cloud['component']}")
+            cloud_setup = (
+                'DEBIAN_FRONTEND=noninteractive apt-get install -y ubuntu-cloud-keyring\n'
+                + "printf '%s\\n' " + shlex.quote(source)
+                + ' > /etc/apt/sources.list.d/ubuntu-cloud-archive.list\n')
         setup = output / 'setup.sh'
         setup.write_text('set -eu\n'
                          'test "$(. /etc/os-release; echo "$VERSION_CODENAME")" = ' + shlex.quote(manifest['target']['suite']) + '\n'
                          "printf '%s\\n' 'deb [trusted=yes] file:/opt/packagetest-candidate ./' > /etc/apt/sources.list.d/packagetest.list\n"
                          'cp /opt/packagetest-candidate/preferences /etc/apt/preferences.d/packagetest\n'
+                         'apt-get update\n'
+                         + cloud_setup +
                          'apt-get update\n'
                          'DEBIAN_FRONTEND=noninteractive apt-get install -y apt-utils\n'
                          'command -v python3\n'

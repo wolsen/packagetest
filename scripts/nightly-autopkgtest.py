@@ -6,6 +6,7 @@ from pathlib import Path
 
 from packagetest.autopkgtest import exit_status, run
 from packagetest.handoff import build_repository, collect_producers
+from packagetest.snapshot_targets import build_target, catalog_target
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--catalog', type=Path, required=True)
@@ -52,9 +53,10 @@ try:
     if args.source not in locks:
         report.update(result='BLOCKED', error='No successful same-run build for requested source')
     else:
+        expected_target = build_target(catalog_target(catalog))
         target = locks[args.source]['target']
-        if target.get('suite') != 'resolute' or target.get('openstack_series') != '2026.2':
-            raise ValueError('Unexpected nightly target')
+        if target != expected_target:
+            raise ValueError('Build target differs from frozen catalog target')
         producers = {}
         for root in roots:
             expected = {name: lock for name, lock in locks.items()

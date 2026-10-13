@@ -1,12 +1,36 @@
 # OpenStack 2026.2 snapshot pipeline reference
 
-Target: Ubuntu 26.04 (Resolute), amd64. The workflow builds candidate packages; it does not publish to Ubuntu Cloud Archive or execute regress-stack.
+Targets: Ubuntu 26.10 (Stonking) development and the Hibiscus Ubuntu Cloud
+Archive for Ubuntu 26.04 LTS (Resolute), both amd64. The workflow builds
+candidate packages; it does not publish to Ubuntu or the Ubuntu Cloud Archive,
+and it does not execute regress-stack.
+
+## Release and comparison policy
+
+The target pair is derived from the OpenStack release number. OpenStack
+`YYYY.1` maps to Ubuntu `YY.04`, and `YYYY.2` maps to Ubuntu `YY.10`. An
+even-year April Ubuntu release is an LTS. Its Cloud Archive receives the next
+four OpenStack releases: the `.2` release from that year, both releases from
+the following year, and the next even year's `.1` release. Consequently,
+Hibiscus `2026.2` maps to Ubuntu 26.10 and the Resolute 26.04 UCA. Indri
+`2027.1` will map to Ubuntu 27.04 and the same Resolute UCA.
+
+Each target downloads its own live source indexes at the beginning of the run.
+Source-evolution commit lists start at the upstream version represented by the
+package selected from that target. Stonking therefore compares with its
+published Hibiscus package. The Resolute target overlays
+`resolute-updates/hibiscus` on the base Resolute indexes and compares with the
+latest version actually published in that UCA pocket. If a UCA package has not
+yet advanced from its seeded version, the longer commit delta remains visible
+rather than being mislabeled as current Hibiscus packaging.
 
 ## Scope and inputs
 
 At the start of each run, `scripts/generate-nightly-catalog.py` joins current
-OpenStack release metadata with the live Resolute, updates, and security source
-indexes. It records explicit exclusions, checksums the input indexes, and
+OpenStack release metadata with the selected Ubuntu target's live release,
+updates, and security source indexes. UCA targets add their signed Cloud Archive
+source index at higher version precedence. The catalog records explicit
+exclusions, checksums the input indexes, and
 preflights every selected Ubuntu source file. The resulting catalog is frozen
 inside the `nightly-plan` artifact rather than committed to the repository.
 The same planning pass pins source-package Git commits, preferring Ubuntu
@@ -35,17 +59,19 @@ The initial 197-source coverage audit found 108 sources with explicit tests, 44 
 
 Autopkgtest selects compatible binaries through each test’s dependency declarations. The runner does not install every binary simultaneously: Nova and Neutron contain conflicting alternatives. Exact candidate versions are pinned, and a dpkg hook checks the currently installed candidate subset after package operations, including variant switches performed by tests.
 
-Artifacts `build-SOURCE` and `autopkgtest-SOURCE` contain tar bundles of results and logs. Small `status-*` artifacts feed `pipeline-summary`. Retention is 14 days.
+Artifacts `build-TARGET-SOURCE` and `autopkgtest-TARGET-SOURCE` contain tar
+bundles of results and logs. Target-qualified `status-*` artifacts feed one
+static pipeline report per target. Retention is 14 days.
 
 ## Experimental local AI failure analysis
 
-The pinned local model is prepared and smoke-tested after planning and before the first package level starts. Each package job first finishes its build and autopkgtest processes. When either gate fails, that same job restores the model cache and makes up to three bounded Debian-packaging patch attempts. The `llama-cli` process exits before each rebuild starts, so model inference and sbuild or autopkgtest do not occupy memory at the same time on a runner. Every applicable patch is rebuilt from a fresh prepared source and rerun through autopkgtest. Only an attempt that passes both gates replaces the job's canonical build and test artifacts, so later dependency levels consume the repaired packages. Prompts, raw model output, proposed patches, validation results, rebuild logs, and test logs are uploaded as `ai-remediation-<source>`.
+The pinned local model is prepared and smoke-tested after planning and before the first package level starts. Each package job first finishes its build and autopkgtest processes. When either gate fails, that same job restores the model cache and makes up to three bounded Debian-packaging patch attempts. The `llama-cli` process exits before each rebuild starts, so model inference and sbuild or autopkgtest do not occupy memory at the same time on a runner. Every applicable patch is rebuilt from a fresh prepared source and rerun through autopkgtest. Only an attempt that passes both gates replaces the job's canonical build and test artifacts, so later dependency levels consume the repaired packages. Prompts, raw model output, proposed patches, validation results, rebuild logs, and test logs are uploaded as `ai-remediation-TARGET-SOURCE`.
 
 Inference stays on the GitHub runner. The experiment uses the CPU build of llama.cpp `b10964` and the official Apache-2.0 Qwen2.5-Coder-7B-Instruct Q4_K_M model. Both downloads have pinned revisions and SHA256 values. The production pipeline verifies the cached files and performs a smoke inference; a separate focused model-contract workflow exercises response parsing and patch validation whenever the repair implementation changes. Prompts are bounded to selected error logs and the failed package's prepared source and Debian packaging; the model does not receive GitHub credentials.
 
 Each repair makes up to three attempts. Later attempts receive the preceding validation or build/test result and retain earlier accepted changes when a rebuild exposes another missing dependency. Model output is treated as untrusted data: free-form commands are never executed, changes are restricted to `debian/`, `debian/changelog` and test-bypass changes are rejected, and a proposed diff must apply cleanly to the prepared source. An accepted diff is then applied during a fresh source preparation and must complete the real sbuild and autopkgtest gates.
 
-Every failed `Build SOURCE` job writes its repair table to the GitHub job summary. Its downloadable `ai-remediation-SOURCE` artifact contains both prompts, raw model responses, proposed patches, validation JSON, rebuild and autopkgtest logs, and a machine-readable result. A successful repair replaces the failed candidate before the `build-SOURCE` and `autopkgtest-SOURCE` artifacts are uploaded. An unresolved package retains its original failure evidence and fails its package job.
+Every failed `Build SOURCE` job writes its repair table to the GitHub job summary. Its downloadable `ai-remediation-TARGET-SOURCE` artifact contains both prompts, raw model responses, proposed patches, validation JSON, rebuild and autopkgtest logs, and a machine-readable result. A successful repair replaces the failed candidate before the `build-TARGET-SOURCE` and `autopkgtest-TARGET-SOURCE` artifacts are uploaded. An unresolved package retains its original failure evidence and fails its package job.
 
 An initial local sanity check used the larger Qwen3.5 4.7B Q4_K_M model on the retained Heat failure. It found the `heatclient.v1` and `magnumclient.v1` import symptoms, but it did not identify the confirmed producer-package discovery defect or produce a complete patch in either attempt. Inference took 133–273 seconds per attempt on the local CPU. The in-job experiment now measures the smaller coding-specific model by the outcome that matters: whether its patch produces a package that rebuilds and passes the installed-package gate.
 

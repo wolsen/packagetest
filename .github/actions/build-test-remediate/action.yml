@@ -4,8 +4,14 @@ inputs:
   source:
     description: Source package to build
     required: true
+  target-id:
+    description: Frozen snapshot target identifier used to isolate artifacts
+    required: true
+  suite:
+    description: Ubuntu suite used by the autopkgtest image
+    required: true
   autopkgtest-cache-key:
-    description: Immutable Actions cache key for the prepared Resolute QEMU image
+    description: Immutable Actions cache key for the target suite's prepared QEMU image
     required: true
   builder-ready:
     description: Whether host provisioning and cached chroot registration succeeded
@@ -15,11 +21,11 @@ runs:
   using: composite
   steps:
     - id: autopkgtest_image
-      name: Restore prepared Resolute autopkgtest image
+      name: Restore prepared ${{ inputs.suite }} autopkgtest image
       if: inputs.builder-ready == 'true'
       uses: actions/cache/restore@v4
       with:
-        path: ${{ github.workspace }}/.cache/autopkgtest/resolute-amd64
+        path: ${{ github.workspace }}/.cache/autopkgtest/${{ inputs.suite }}-amd64
         key: ${{ inputs.autopkgtest-cache-key }}
         fail-on-cache-miss: true
 
@@ -28,7 +34,7 @@ runs:
       shell: bash
       run: |
         test "${{ steps.autopkgtest_image.outputs.cache-hit }}" = true
-        echo "AUTOPKGTEST_IMAGE_CACHE=${{ github.workspace }}/.cache/autopkgtest/resolute-amd64" >> "$GITHUB_ENV"
+        echo "AUTOPKGTEST_IMAGE_CACHE=${{ github.workspace }}/.cache/autopkgtest/${{ inputs.suite }}-amd64" >> "$GITHUB_ENV"
 
     - id: initial_build
       name: Build snapshot against this run's producers
@@ -140,28 +146,28 @@ runs:
     - uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: build-${{ inputs.source }}
+        name: build-${{ inputs.target-id }}-${{ inputs.source }}
         path: bundles/*.tar.gz
         retention-days: 14
         if-no-files-found: error
     - uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: status-build-${{ inputs.source }}
+        name: status-${{ inputs.target-id }}-build-${{ inputs.source }}
         path: outputs/result.json
         retention-days: 14
         if-no-files-found: error
     - uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: status-autopkgtest-${{ inputs.source }}
+        name: status-${{ inputs.target-id }}-autopkgtest-${{ inputs.source }}
         path: test-results/result/result.json
         retention-days: 14
         if-no-files-found: error
     - uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: autopkgtest-${{ inputs.source }}
+        name: autopkgtest-${{ inputs.target-id }}-${{ inputs.source }}
         path: test-bundles/*.tar.gz
         retention-days: 14
         if-no-files-found: error
@@ -170,7 +176,7 @@ runs:
       uses: actions/upload-artifact@v4
       if: always() && hashFiles('outputs/source-preparation/packaging-proposal/*') != ''
       with:
-        name: packaging-proposal-${{ inputs.source }}
+        name: packaging-proposal-${{ inputs.target-id }}-${{ inputs.source }}
         path: outputs/source-preparation/packaging-proposal/
         retention-days: 14
         if-no-files-found: error
@@ -186,7 +192,7 @@ runs:
       uses: actions/upload-artifact@v4
       if: always() && inputs.builder-ready == 'true' && (steps.initial_build.outcome == 'failure' || steps.initial_test.outcome == 'failure')
       with:
-        name: ai-remediation-${{ inputs.source }}
+        name: ai-remediation-${{ inputs.target-id }}-${{ inputs.source }}
         path: ai-remediation/${{ inputs.source }}/
         retention-days: 14
         if-no-files-found: warn

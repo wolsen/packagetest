@@ -4,7 +4,7 @@ set -euo pipefail
 
 suite=${1:-resolute}
 arch=${2:-amd64}
-case "$suite" in noble|resolute|stonking|noble-uca-epoxy) ;; *) echo "Unsupported suite: $suite" >&2; exit 2;; esac
+case "$suite" in noble|resolute|stonking|noble-uca-epoxy|resolute-uca-hibiscus) ;; *) echo "Unsupported suite: $suite" >&2; exit 2;; esac
 case "$arch" in amd64) ;; *) echo "Unsupported architecture: $arch" >&2; exit 2;; esac
 
 script_digest=$(sha256sum scripts/prepare-builder.sh | cut -d' ' -f1)
