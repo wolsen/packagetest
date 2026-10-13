@@ -66,6 +66,33 @@ def test_ubuntu_importer_checkout_matches_archive_identity(tmp_path):
     assert metadata['role'] == 'ubuntu-importer'
 
 
+def test_packaging_checkout_retries_transient_git_fetch(tmp_path, monkeypatch):
+    import packagetest.nightly_source as nightly_source
+    repository, revision = importer_packaging_repository(tmp_path)
+    build = nightly_source.Preparation(tmp_path / 'result')
+    command = build.command
+    attempts = []
+
+    def flaky_command(*args, **kwargs):
+        if 'fetch' in args:
+            attempts.append(args)
+            if len(attempts) < 3:
+                raise RuntimeError('transient HTTP 504')
+        return command(*args, **kwargs)
+
+    build.command = flaky_command
+    monkeypatch.setattr(nightly_source.time, 'sleep', lambda _seconds: None)
+    checkout, _metadata = nightly_source.checkout_packaging_tree(build, {
+        'source': 'demo', 'archive_version': '1.0-1', 'binaries': ['python3-demo'],
+        'packaging_source_kind': 'git', 'packaging_source_role': 'ubuntu-importer',
+        'packaging_source_repository': str(repository),
+        'packaging_branch': 'ubuntu/resolute', 'packaging_sha': revision,
+    })
+    assert checkout.is_dir()
+    assert len(attempts) == 3
+    assert all('http.lowSpeedTime=60' in attempt for attempt in attempts)
+
+
 def test_ubuntu_importer_checkout_rejects_archive_version_mismatch(tmp_path):
     from packagetest.nightly_source import Preparation, checkout_packaging_tree
     repository, revision = importer_packaging_repository(tmp_path, version='0.9-1')

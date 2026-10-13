@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
 import tomllib
 from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
@@ -705,7 +706,20 @@ def checkout_packaging_tree(build: Preparation, entry: dict) -> tuple[Path, dict
     checkout = build.work / 'packaging'
     build.command('git', 'init', '--quiet', str(checkout))
     build.command('git', 'remote', 'add', 'origin', repository, cwd=checkout)
-    build.command('git', 'fetch', '--no-tags', '--depth=1', 'origin', revision, cwd=checkout)
+    fetch_error = None
+    for attempt in range(1, 4):
+        try:
+            build.command('git', '-c', 'http.lowSpeedLimit=1000',
+                          '-c', 'http.lowSpeedTime=60', 'fetch', '--no-tags',
+                          '--depth=1', 'origin', revision, cwd=checkout)
+            fetch_error = None
+            break
+        except RuntimeError as exc:
+            fetch_error = exc
+            if attempt < 3:
+                time.sleep(attempt * 2)
+    if fetch_error is not None:
+        raise fetch_error
     build.command('git', 'checkout', '--detach', revision, cwd=checkout)
     actual = build.command('git', 'rev-parse', 'HEAD', cwd=checkout)
     if actual != revision:

@@ -222,6 +222,109 @@ def _apply_hunks_with_normalized_context(path: Path, section: str) -> bool:
     return True
 
 
+def _line_indent(value: str) -> int:
+    return len(value) - len(value.lstrip(" \t"))
+
+
+def _remove_python_declaration(lines: list[str], removed: list[str]) -> bool:
+    """Remove one uniquely named Python declaration from a drifted test file."""
+    declarations = []
+    for value in removed:
+        match = re.match(r"^(\s*)(?:async\s+def|def|class)\s+([A-Za-z_][A-Za-z0-9_]*)\b", value)
+        if match:
+            declarations.append((len(match.group(1)), match.group(2)))
+    if len(declarations) != 1:
+        return False
+    indent, name = declarations[0]
+    pattern = re.compile(
+        rf"^\s{{{indent}}}(?:async\s+def|def|class)\s+{re.escape(name)}\b")
+    matches = [index for index, value in enumerate(lines) if pattern.match(value.rstrip("\r\n"))]
+    if len(matches) != 1:
+        return False
+    start = matches[0]
+    while start and lines[start - 1].strip().startswith("@") \
+            and _line_indent(lines[start - 1]) == indent:
+        start -= 1
+    end = matches[0] + 1
+    while end < len(lines):
+        value = lines[end]
+        if value.strip() and _line_indent(value) <= indent:
+            break
+        end += 1
+    del lines[start:end]
+    return True
+
+
+def _remove_python_assignment(lines: list[str], removed: list[str]) -> bool:
+    """Remove one parenthesized assignment despite formatting-only drift."""
+    assignments = []
+    for value in removed:
+        match = re.match(r"^(\s*)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\($", value.rstrip())
+        if match:
+            assignments.append((len(match.group(1)), match.group(2)))
+    if len(assignments) != 1:
+        return False
+    indent, name = assignments[0]
+    pattern = re.compile(rf"^\s{{{indent}}}{re.escape(name)}\s*=\s*\(")
+    matches = [index for index, value in enumerate(lines) if pattern.match(value.rstrip("\r\n"))]
+    if len(matches) != 1:
+        return False
+    start = matches[0]
+    balance = lines[start].count("(") - lines[start].count(")")
+    end = start + 1
+    while balance > 0 and end < len(lines):
+        balance += lines[end].count("(") - lines[end].count(")")
+        end += 1
+    if balance != 0:
+        return False
+    del lines[start:end]
+    return True
+
+
+def _apply_independent_change_groups(path: Path, section: str) -> bool:
+    """Apply separated hunk edits when unchanged context has moved."""
+    lines = path.read_text(errors="replace").splitlines(keepends=True)
+    changed = False
+    headers = list(re.finditer(r"^@@\s+[^\n]+@@[^\n]*(?:\n|$)", section, re.M))
+    for index, header in enumerate(headers):
+        end = headers[index + 1].start() if index + 1 < len(headers) else len(section)
+        payload = section[header.end():end].splitlines(keepends=True)
+        groups, current = [], []
+        for value in payload:
+            if value and value[0] in {"+", "-"} and not value.startswith(("+++", "---")):
+                current.append((value[0], value[1:]))
+            elif current:
+                groups.append(current)
+                current = []
+        if current:
+            groups.append(current)
+        for group in groups:
+            removed = [value for operation, value in group if operation == "-"]
+            added = [value for operation, value in group if operation == "+"]
+            normalized_added = Counter(_normalized_context(value) for value in added if value.strip())
+            normalized_content = Counter(_normalized_context(value) for value in lines if value.strip())
+            if normalized_added and all(
+                    normalized_content[value] >= count
+                    for value, count in normalized_added.items()):
+                continue
+            needle = [_normalized_context(value) for value in removed]
+            positions = [start for start in range(len(lines) - len(needle) + 1)
+                         if needle and [_normalized_context(value)
+                                        for value in lines[start:start + len(needle)]] == needle]
+            if len(positions) == 1:
+                lines[positions[0]:positions[0] + len(removed)] = added
+                changed = True
+                continue
+            if not added and (_remove_python_declaration(lines, removed)
+                              or _remove_python_assignment(lines, removed)):
+                changed = True
+                continue
+            return False
+    if changed:
+        path.write_text("".join(lines))
+    return changed
+
+
 class QuiltPatchSuperseded(ValueError):
     """The failed patch's old side or target has disappeared upstream."""
 
@@ -241,6 +344,10 @@ def _refresh_quilt_patch(tree: Path, name: str) -> str:
         if re.fullmatch(r"-p[0-9]", option):
             strip = int(option[2:])
     original_patch = patch_path.read_text(errors="replace")
+    upstream_provenance = bool(re.search(
+        r"(?mi)^(?:Origin:\s*upstream(?:,|\s|$)|Applied-Upstream:|Change-Id:)",
+        original_patch,
+    ))
     starts = [match.start() for match in re.finditer(r"^diff --git ", original_patch, re.M)]
     if not starts:
         starts = [match.start() for match in re.finditer(
@@ -327,6 +434,16 @@ def _refresh_quilt_patch(tree: Path, name: str) -> str:
             if additions and all(content[line] >= count for line, count in additions.items()):
                 omitted.append((target, "patch additions are already present upstream"))
                 continue
+            addition_total = sum(additions.values())
+            addition_matches = sum(min(content[line], count)
+                                   for line, count in additions.items())
+            if (upstream_provenance and addition_total >= 5
+                    and addition_matches / addition_total >= 0.8):
+                omitted.append((
+                    target,
+                    "most patch additions are already present in the upstream implementation",
+                ))
+                continue
             # When none of the old payload remains, upstream has removed or
             # independently replaced the behavior. Keeping a replacement line
             # that upstream also removed would recreate obsolete code.
@@ -334,6 +451,9 @@ def _refresh_quilt_patch(tree: Path, name: str) -> str:
                 omitted.append((target, "old patch payload no longer exists upstream"))
                 continue
             if _apply_hunks_with_normalized_context(target_path, section):
+                applied.append(target)
+                continue
+            if _apply_independent_change_groups(target_path, section):
                 applied.append(target)
                 continue
             reverse = subprocess.run(

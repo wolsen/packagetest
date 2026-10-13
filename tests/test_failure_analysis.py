@@ -345,6 +345,108 @@ def test_quilt_refresh_omits_drifted_test_section_after_runtime_is_upstream(tmp_
         render_source_repair(decision, tmp_path)
 
 
+def test_quilt_refresh_removes_drifted_python_test_function(tmp_path):
+    (tmp_path / "debian/patches").mkdir(parents=True)
+    (tmp_path / "debian/patches/series").write_text("broken-test.patch\n")
+    (tmp_path / "debian/patches/broken-test.patch").write_text("""Description: remove broken test
+--- a/tests/test_trace.py
++++ b/tests/test_trace.py
+@@ -1,7 +1 @@
+-    @mock.patch('service.helper')
+-    def test_trace(self):
+-        payload = old_wrapper(stream.read())
+-        result = trace(payload)
+-        self.assertEqual(0, result)
+-
+     def test_retained(self):
+""")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/test_trace.py").write_text("""class TestTrace:
+    @mock.patch('service.helper')
+    def test_trace(self):
+        payload = bytes(stream.read())
+        result = trace(payload)
+        self.assertEqual(0, result)
+
+    def test_retained(self):
+        pass
+""")
+    decision = {
+        "action": "refresh_quilt_patch", "subject": "broken-test.patch",
+        "replacement": "", "evidence": "broken-test.patch Hunk #1 FAILED",
+    }
+    patch = render_source_repair(decision, tmp_path)
+    assert validate_source_patch(patch, tmp_path, apply=True)["result"] == "APPLIED"
+    refreshed = (tmp_path / "debian/patches/broken-test.patch").read_text()
+    assert "def test_trace" in refreshed
+    assert "-        payload = bytes(stream.read())" in refreshed
+    assert " def test_retained" in refreshed
+
+
+def test_quilt_refresh_applies_independent_groups_in_drifted_function(tmp_path):
+    (tmp_path / "debian/patches").mkdir(parents=True)
+    (tmp_path / "debian/patches/series").write_text("assets.patch\n")
+    (tmp_path / "debian/patches/assets.patch").write_text("""Description: use packaged assets
+--- a/module.py
++++ b/module.py
+@@ -1,14 +1,5 @@
+ def copy_assets(app):
+-    fonts = (
+-        'old.ttf'
+-    )
+-    dirtree = app.output / 'fonts'
+-    dirtree.mkdir()
+     for asset in assets:
+-        source = package_dir / asset
+-        copyfile(source, app.output / asset)
+-    for font in fonts:
+-        copyfile(package_dir / font, app.output / font)
++        symlink(shared_dir / asset, app.output / asset)
+""")
+    (tmp_path / "module.py").write_text("""def copy_assets(app: Builder) -> None:
+    fonts = (
+        'old.ttf',
+    )
+    dirtree = app.output / 'fonts'
+    dirtree.mkdir()
+    for asset in assets:
+        source = package_dir / asset
+        copyfile(source, app.output / asset)
+    for font in fonts:
+        copyfile(package_dir / font, app.output / font)
+""")
+    decision = {
+        "action": "refresh_quilt_patch", "subject": "assets.patch",
+        "replacement": "", "evidence": "assets.patch Hunk #1 FAILED",
+    }
+    patch = render_source_repair(decision, tmp_path)
+    assert validate_source_patch(patch, tmp_path, apply=True)["result"] == "APPLIED"
+    refreshed = (tmp_path / "debian/patches/assets.patch").read_text()
+    assert "symlink(shared_dir / asset" in refreshed
+    assert "-    fonts = (" in refreshed
+    assert "-        'old.ttf'," in refreshed
+    assert "def copy_assets(app: Builder)" in refreshed
+
+
+def test_quilt_refresh_classifies_substantially_upstream_section(tmp_path):
+    (tmp_path / "debian/patches").mkdir(parents=True)
+    (tmp_path / "debian/patches/series").write_text("security.patch\n")
+    additions = "".join(f"+secure_{number} = True\n" for number in range(1, 11))
+    (tmp_path / "debian/patches/security.patch").write_text(
+        "Description: secure defaults\nOrigin: upstream, https://example.test/change\n"
+        "--- a/service.py\n+++ b/service.py\n"
+        "@@ -1,2 +1,11 @@\n-old = True\n+old = False\n" + additions)
+    (tmp_path / "service.py").write_text(
+        "old = False\n" + "".join(f"secure_{number} = True\n" for number in range(1, 10))
+        + "secure_10 = policy.default_secure\n")
+    decision = {
+        "action": "refresh_quilt_patch", "subject": "security.patch",
+        "replacement": "", "evidence": "security.patch Hunk #1 FAILED",
+    }
+    with pytest.raises(QuiltPatchSuperseded, match="most patch additions"):
+        render_source_repair(decision, tmp_path)
+
+
 def test_replaces_missing_upstream_path_only_when_candidate_exists(tmp_path):
     (tmp_path / "debian").mkdir()
     (tmp_path / "debian/rules").write_text(
