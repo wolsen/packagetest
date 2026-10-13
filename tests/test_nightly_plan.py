@@ -71,7 +71,7 @@ def test_freeze_pins_launchpad_packaging_and_related_source_branches(monkeypatch
         'upstream_repository': 'https://opendev.org/openstack/demo',
         'upstream_ref': 'stable/2026.2',
         'packaging_repository':
-            'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/demo',
+            'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/demo/+git/demo',
         'packaging_branch_candidates': ['stable/2026.2', 'master'],
         'packaging_upstream_branch_candidates': ['upstream-hibiscus', 'upstream'],
         'packaging_pristine_tar_branch': 'pristine-tar',
@@ -99,7 +99,7 @@ def test_packaging_resolution_uses_archive_vcs_when_launchpad_tree_is_absent(mon
     entry = module.freeze_packaging({
         'source': 'demo',
         'packaging_repository':
-            'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/demo',
+            'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/demo/+git/demo',
         'packaging_branch_candidates': ['stable/2026.2', 'master'],
         'packaging_upstream_branch_candidates': ['upstream-hibiscus', 'upstream'],
         'packaging_pristine_tar_branch': 'pristine-tar',
@@ -108,13 +108,13 @@ def test_packaging_resolution_uses_archive_vcs_when_launchpad_tree_is_absent(mon
     })
 
     assert entry['packaging_source_kind'] == 'git'
-    assert entry['packaging_source_role'] == 'archive-vcs'
+    assert entry['packaging_source_role'] == 'series-archive-vcs'
     assert entry['packaging_source_repository'] == 'https://salsa.example/openstack/demo.git'
     assert entry['packaging_branch'] == 'debian/hibiscus'
     assert entry['packaging_sha'] == revision
 
 
-def test_packaging_resolution_uses_ubuntu_importer_before_archive_vcs(monkeypatch):
+def test_packaging_resolution_uses_importer_before_series_archive_vcs(monkeypatch):
     revision = '6' * 40
 
     def run(command, **kwargs):
@@ -131,7 +131,7 @@ def test_packaging_resolution_uses_ubuntu_importer_before_archive_vcs(monkeypatc
     entry = module.freeze_packaging({
         'source': 'demo',
         'packaging_repository':
-            'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/demo',
+            'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/demo/+git/demo',
         'packaging_branch_candidates': ['stable/2026.2', 'master'],
         'ubuntu_importer_repository':
             'https://git.launchpad.net/ubuntu/+source/demo',
@@ -140,6 +140,7 @@ def test_packaging_resolution_uses_ubuntu_importer_before_archive_vcs(monkeypatc
         'packaging_pristine_tar_branch': 'pristine-tar',
         'archive_packaging_repository': 'https://salsa.example/openstack/demo.git',
         'archive_packaging_branch': 'debian/hibiscus',
+        'archive_packaging_series_branch': 'debian/hibiscus',
     })
 
     assert entry['packaging_source_kind'] == 'git'
@@ -148,6 +149,45 @@ def test_packaging_resolution_uses_ubuntu_importer_before_archive_vcs(monkeypatc
         'https://git.launchpad.net/ubuntu/+source/demo')
     assert entry['packaging_branch'] == 'ubuntu/resolute'
     assert entry['packaging_sha'] == revision
+
+
+def test_packaging_resolution_uses_series_archive_vcs_when_importer_is_absent(monkeypatch):
+    revision = '7' * 40
+
+    def run(command, **kwargs):
+        repository = command[3]
+        if '~ubuntu-openstack-dev' in repository:
+            return SimpleNamespace(stdout='', stderr='repository does not exist', returncode=128)
+        if repository == 'https://salsa.example/openstack/demo.git':
+            requested = set(command[4:])
+            if 'refs/heads/debian/hibiscus' in requested:
+                return SimpleNamespace(
+                    stdout=f'{revision}\trefs/heads/debian/hibiscus\n',
+                    stderr='', returncode=0)
+            raise AssertionError('generic archive VCS should not be queried')
+        if repository == 'https://git.launchpad.net/ubuntu/+source/demo':
+            return SimpleNamespace(stdout='', stderr='repository does not exist',
+                                   returncode=128)
+        raise AssertionError(repository)
+
+    monkeypatch.setattr(module.subprocess, 'run', run)
+    entry = module.freeze_packaging({
+        'source': 'demo',
+        'packaging_repository':
+            'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/demo/+git/demo',
+        'packaging_branch_candidates': ['stable/2026.2', 'master'],
+        'ubuntu_importer_repository':
+            'https://git.launchpad.net/ubuntu/+source/demo',
+        'ubuntu_importer_branch_candidates': ['ubuntu/resolute', 'ubuntu/resolute-devel'],
+        'packaging_upstream_branch_candidates': ['upstream-hibiscus', 'upstream'],
+        'packaging_pristine_tar_branch': 'pristine-tar',
+        'archive_packaging_repository': 'https://salsa.example/openstack/demo.git',
+        'archive_packaging_branch': 'debian/unstable',
+        'archive_packaging_series_branch': 'debian/hibiscus',
+    })
+
+    assert entry['packaging_source_role'] == 'series-archive-vcs'
+    assert entry['packaging_branch'] == 'debian/hibiscus'
 
 
 def test_mandatory_candidate_restores_one_direction_of_cycle():

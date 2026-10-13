@@ -315,7 +315,8 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
     importer_git = sum(1 for source in plan['sources']
                        if entries[source].get('packaging_source_role') == 'ubuntu-importer')
     archive_git = sum(1 for source in plan['sources']
-                      if entries[source].get('packaging_source_role') == 'archive-vcs')
+                      if entries[source].get('packaging_source_role') in {
+                          'series-archive-vcs', 'archive-vcs'})
     lines.extend(['', '## Packaging source', '',
                   f'{ubuntu_git} selected packages use plan-pinned Ubuntu OpenStack Launchpad Git trees. '
                   f'{importer_git} use plan-pinned Ubuntu importer Git trees. '
@@ -360,7 +361,7 @@ def render_discovery_summary(catalog: dict, sources: list[str], roots: list[str]
 
 
 def freeze_packaging(entry):
-    """Prefer team Git, then Ubuntu importer Git, archive VCS, and source."""
+    """Prefer team Git, Ubuntu importer, series packaging, then source."""
     ubuntu_repository = entry.get('packaging_repository')
     ubuntu_branches = entry.get('packaging_branch_candidates') or []
     upstream_branches = entry.get('packaging_upstream_branch_candidates') or []
@@ -413,9 +414,21 @@ def freeze_packaging(entry):
         except Exception as exc:
             errors.append(f'Ubuntu importer Git: {exc}')
     archive_repository = entry.get('archive_packaging_repository')
+    # When Ubuntu has no usable packaging tree, prefer the Debian branch for
+    # the exact OpenStack series before considering moving generic branches.
+    series_archive_branches = [entry.get(
+        'archive_packaging_series_branch', 'debian/hibiscus')]
+    if archive_repository and archive_repository not in {
+            ubuntu_repository, importer_repository}:
+        try:
+            resolve(archive_repository, series_archive_branches,
+                    'series-archive-vcs')
+            return entry
+        except Exception as exc:
+            errors.append(f'Series archive VCS: {exc}')
     if archive_repository and archive_repository not in {ubuntu_repository, importer_repository}:
         archive_branches = list(dict.fromkeys(filter(None, [
-            entry.get('archive_packaging_branch'), 'debian/hibiscus',
+            entry.get('archive_packaging_branch'),
             'debian/unstable', 'master'])))
         try:
             resolve(archive_repository, archive_branches, 'archive-vcs')

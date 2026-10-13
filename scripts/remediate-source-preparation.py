@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import importlib.util
 import json
 import os
@@ -67,6 +68,15 @@ def failed_quilt_patches(tree: Path, evidence: str) -> list[str]:
     selected = []
     # dpkg-source includes the failing patch in its final command error. Prefer
     # that authoritative name over earlier "applying" progress lines.
+    command_failures = re.findall(
+        r"(?m)^dpkg-source: error:.*(?:debian/patches/|[.]pc/)([A-Za-z0-9][A-Za-z0-9_.+~-]*[.]patch)",
+        evidence,
+    )
+    for name in reversed(command_failures):
+        if name in active and name not in selected:
+            selected.append(name)
+    if selected:
+        return selected
     for name in re.findall(
             r'(?:debian/patches/|[.]pc/)([A-Za-z0-9][A-Za-z0-9_.+~-]*[.]patch)', evidence):
         if name in active and name not in selected:
@@ -109,27 +119,56 @@ def main() -> int:
     (args.report / 'failure-evidence.txt').write_text(evidence + '\n')
     decisions, attempts, selected = [], [], None
     feedback = ''
-    failed_patches = failed_quilt_patches(tree, evidence)
-    if failed_patches:
-        attempt = args.report / 'attempt-0'
+    current_tree = tree
+    active_series = current_tree / 'debian/patches/series'
+    deterministic_limit = sum(
+        1 for line in active_series.read_text().splitlines()
+        if line.split() and not line.lstrip().startswith('#')
+    ) if active_series.is_file() else 0
+    deterministic_seen = set()
+    for deterministic_number in range(1, deterministic_limit + 1):
+        failed_patches = failed_quilt_patches(current_tree, evidence)
+        if not failed_patches:
+            break
+        subject = failed_patches[0]
+        signature = (subject, hashlib.sha256(evidence.encode()).hexdigest())
+        if signature in deterministic_seen:
+            break
+        deterministic_seen.add(signature)
+        attempt = args.report / f'attempt-d{deterministic_number}'
         attempt.mkdir()
         decision = {
-            'action': 'refresh_quilt_patch', 'subject': failed_patches[0],
+            'action': 'refresh_quilt_patch', 'subject': subject,
             'replacement': '', 'evidence': 'deterministic failed-patch classification',
         }
-        record = {'number': 0, 'result': 'DETERMINISTIC_ERROR', 'decision': decision,
+        record = {'number': f'D{deterministic_number}', 'result': 'DETERMINISTIC_ERROR',
+                  'decision': decision,
                   'inference': {'backend': 'deterministic-quilt-refresh'}}
+        decision_count = len(decisions)
         try:
             decisions.append(decision)
-            patch = helper.render_cumulative_repair(decisions, tree)
+            try:
+                patch = helper.render_cumulative_repair(decisions, tree)
+            except helper.QuiltPatchSuperseded as exc:
+                decision = {
+                    'action': 'drop_quilt_patch', 'subject': subject,
+                    'replacement': '', 'evidence': str(exc),
+                }
+                decisions[-1] = decision
+                record.update(
+                    decision=decision,
+                    classification='superseded-upstream',
+                    classification_evidence=str(exc),
+                )
+                patch = helper.render_cumulative_repair(decisions, tree)
             patch_path = attempt / 'proposal.patch'
             patch_path.write_text(patch)
             patch_validation = validate_source_patch(patch, tree)
             write_json(attempt / 'patch-validation.json', patch_validation)
             if patch_validation['result'] != 'APPLIES':
                 raise ValueError(patch_validation['error'])
-            candidate_work = args.work / 'attempt-0-work'
-            candidate_output = args.work / 'attempt-0-source'
+            candidate_work = args.work / f'attempt-d{deterministic_number}-work'
+            candidate_output = args.work / f'attempt-d{deterministic_number}-source'
             log = attempt / 'source-preparation.log'
             command = [sys.executable, 'scripts/prepare-nightly-source.py',
                        '--catalog', str(args.catalog), '--source', args.source,
@@ -145,18 +184,24 @@ def main() -> int:
                           preparation_returncode=completed.returncode)
             attempts.append(record)
             if completed.returncode == 0 and (candidate_output / 'prepared-source.json').is_file():
-                selected = 0
+                selected = f'D{deterministic_number}'
                 shutil.rmtree(args.output)
                 shutil.move(str(candidate_output), args.output)
+                break
             else:
                 evidence = (failure_evidence(candidate_work, candidate_output)
                             + '\n' + log.read_text(errors='replace')[-8000:])
+                try:
+                    current_tree = failed_tree(candidate_work, args.source)
+                except ValueError:
+                    current_tree = tree
                 feedback = json.dumps(record, indent=2)
         except Exception as exc:
-            decisions.clear()
+            del decisions[decision_count:]
             record['error'] = str(exc)
             attempts.append(record)
             feedback = json.dumps(record, indent=2)
+            break
     for number in range(1, args.max_model_calls + 1) if selected is None else []:
         attempt = args.report / f'attempt-{number}'
         attempt.mkdir()

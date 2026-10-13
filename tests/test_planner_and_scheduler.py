@@ -146,5 +146,5 @@ def test_vertical_slice_config_uses_explicit_pbr_packaging_repo():
     repo_root = Path(__file__).resolve().parents[1]
     definitions = load_package_definitions(repo_root / "config" / "vertical_slice.json")
 
-    assert definitions["python-pbr"].packaging_repo == "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-pbr"
+    assert definitions["python-pbr"].packaging_repo == "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-pbr/+git/python-pbr"
     assert definitions["python-pbr"].packaging_branch is None

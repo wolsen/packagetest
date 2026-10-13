@@ -186,6 +186,13 @@ def test_llama_timeout_retains_partial_output_and_uses_small_budget(tmp_path, mo
     assert captured["command"][captured["command"].index("-n") + 1] == "128"
 
 
+def test_prompt_escapes_git_log_nul_separators():
+    module = load_script()
+    value = module.prompt("sample", "source-preparation", "sha\x00subject", "")
+    assert "\x00" not in value
+    assert "sha\\0subject" in value
+
+
 def test_successful_attempt_promotes_rebuilt_and_retested_candidate(tmp_path, monkeypatch):
     module = load_script()
     outputs = tmp_path / "outputs"

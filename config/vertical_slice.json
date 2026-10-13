@@ -6,7 +6,7 @@
         "python3-pbr"
       ],
       "upstream_repo": "https://opendev.org/openstack/pbr",
-      "packaging_repo": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-pbr",
+      "packaging_repo": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-pbr/+git/python-pbr",
       "build_depends_on_sources": [],
       "source_creation_method": "opendev-tarball-or-sdist-snapshot"
     },
@@ -16,7 +16,7 @@
         "python3-oslo.i18n"
       ],
       "upstream_repo": "https://opendev.org/openstack/oslo.i18n",
-      "packaging_repo": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.i18n",
+      "packaging_repo": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.i18n/+git/python-oslo.i18n",
       "build_depends_on_sources": [
         "python-pbr"
       ],
@@ -28,7 +28,7 @@
         "python3-oslo.serialization"
       ],
       "upstream_repo": "https://opendev.org/openstack/oslo.serialization",
-      "packaging_repo": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.serialization",
+      "packaging_repo": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.serialization/+git/python-oslo.serialization",
       "build_depends_on_sources": [
         "python-pbr"
       ],
@@ -42,7 +42,7 @@
         "glance-common"
       ],
       "upstream_repo": "https://opendev.org/openstack/glance",
-      "packaging_repo": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/glance",
+      "packaging_repo": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/glance/+git/glance",
       "build_depends_on_sources": [
         "python-oslo.i18n",
         "python-oslo.serialization"

@@ -244,16 +244,27 @@ def package_record(name: str, metadata: dict, archive: dict, *, series: str,
         'series_status': series_status,
         'all_upstream_repositories': repos,
         'archive_version': archive['Version'],
+        'archive_pocket': archive.get('_packagetest_archive_pocket', 'release'),
         'archive_identity_evidence': identity_evidence(archive),
         'binaries': sorted(x.strip() for x in archive.get('Binary', '').split(',') if x.strip()),
         'build_depends': ', '.join(archive.get(k, '') for k in ('Build-Depends', 'Build-Depends-Indep', 'Build-Depends-Arch') if archive.get(k)),
         'testsuite': archive.get('Testsuite', ''),
         'archive_packaging_repository': archive_packaging_repository,
         'archive_packaging_branch': archive_packaging_branch,
-        'packaging_repository': f'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/{archive["Package"]}',
+        'archive_packaging_series_branch': (
+            f'debian/{codename or series_name(series)}'),
+        'packaging_repository': (
+            'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/'
+            f'{archive["Package"]}/+git/{archive["Package"]}'),
         'packaging_branch_candidates': [f'stable/{series}', 'master'],
         'ubuntu_importer_repository': f'https://git.launchpad.net/ubuntu/+source/{archive["Package"]}',
-        'ubuntu_importer_branch_candidates': [f'ubuntu/{suite}', f'ubuntu/{suite}-devel'],
+        'ubuntu_importer_branch_candidates': list(dict.fromkeys([
+            *([f'ubuntu/{suite}-security', f'ubuntu/{suite}-updates']
+              if archive.get('_packagetest_archive_pocket') == 'security' else []),
+            *([f'ubuntu/{suite}-updates']
+              if archive.get('_packagetest_archive_pocket') == 'updates' else []),
+            f'ubuntu/{suite}', f'ubuntu/{suite}-devel',
+        ])),
         'packaging_upstream_branch_candidates': [f'upstream-{codename or series_name(series)}', 'upstream'],
         'packaging_pristine_tar_branch': 'pristine-tar',
         'archive_source': {'url': dsc['url'], 'sha256': dsc['sha256'],
@@ -307,6 +318,13 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
         text = lzma.decompress(data).decode() if path.suffix == '.xz' else data.decode()
         for source in paragraphs(text):
             if 'Package' in source:
+                source = dict(source)
+                filename = path.name
+                source['_packagetest_archive_pocket'] = (
+                    'security' if f'{suite}-security-' in filename else
+                    'updates' if f'{suite}-updates-' in filename else
+                    'release'
+                )
                 previous = sources.get(source['Package'])
                 if previous is None or subprocess.run(['dpkg', '--compare-versions', source['Version'], 'gt', previous['Version']]).returncode == 0:
                     sources[source['Package']] = source

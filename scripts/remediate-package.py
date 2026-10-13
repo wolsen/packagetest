@@ -19,6 +19,7 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from packagetest.failure_analysis import (
+    QuiltPatchSuperseded,
     normalize_repair_decision,
     parse_repair_decision,
     render_source_repair,
@@ -379,6 +380,10 @@ RELEVANT PACKAGING CONTENT:
 {context}
 {retry}
 """
+    # Git commands in preparation logs use NUL separators for unambiguous
+    # fields. argv cannot contain NUL bytes, so retain the boundary as visible
+    # evidence before passing the prompt to llama-cli.
+    value = value.replace("\x00", "\\0")
     # Code and logs tokenize less efficiently than prose. Stay comfortably
     # below the 16k model context, including room for the generated patch.
     if len(value) > 24_000:

@@ -5,7 +5,10 @@ from pathlib import Path
 import subprocess
 import tarfile
 
+import pytest
+
 from packagetest.failure_analysis import (
+    QuiltPatchSuperseded,
     normalize_repair_decision,
     parse_repair_decision,
     parse_model_response,
@@ -240,6 +243,106 @@ diff --git a/upstream.txt b/upstream.txt
     refreshed = (tmp_path / "debian/patches/mixed.patch").read_text()
     assert "diff --git a/needed.txt b/needed.txt" in refreshed
     assert "diff --git a/upstream.txt b/upstream.txt" not in refreshed
+
+
+def test_quilt_refresh_preserves_debian_created_upstream_file(tmp_path):
+    (tmp_path / "debian/patches").mkdir(parents=True)
+    (tmp_path / "debian/patches/series").write_text("debian-file.patch\n")
+    (tmp_path / "debian/patches/debian-file.patch").write_text("""Description: add Debian settings
+--- a/manifests/init.pp
++++ b/manifests/init.pp
+@@ -1,2 +1,3 @@
+ class horizon {
++  include debian::settings
+ }
+--- /dev/null
++++ b/templates/debian_settings.py.erb
+@@ -0,0 +1,2 @@
++# Managed by Puppet
++DEBUG = false
+""")
+    (tmp_path / "manifests").mkdir()
+    (tmp_path / "manifests/init.pp").write_text(
+        "class horizon {\n  # Upstream comment\n}\n")
+    decision = {
+        "action": "refresh_quilt_patch", "subject": "debian-file.patch",
+        "replacement": "", "evidence": "debian-file.patch Hunk #1 FAILED",
+    }
+    patch = render_source_repair(decision, tmp_path)
+    assert validate_source_patch(patch, tmp_path, apply=True)["result"] == "APPLIED"
+    refreshed = (tmp_path / "debian/patches/debian-file.patch").read_text()
+    assert "--- /dev/null" in refreshed
+    assert "+++ b/templates/debian_settings.py.erb" in refreshed
+
+
+def test_quilt_refresh_classifies_removed_target_as_superseded(tmp_path):
+    (tmp_path / "debian/patches").mkdir(parents=True)
+    (tmp_path / "debian/patches/series").write_text("retired-service.patch\n")
+    (tmp_path / "debian/patches/retired-service.patch").write_text("""Description: disable retired service policy
+--- a/manifests/retired.pp
++++ b/manifests/retired.pp
+@@ -1 +1 @@
+-include retired::policy
++# include retired::policy
+""")
+    decision = {
+        "action": "refresh_quilt_patch", "subject": "retired-service.patch",
+        "replacement": "", "evidence": "retired-service.patch does not apply",
+    }
+    with pytest.raises(QuiltPatchSuperseded, match="target was removed"):
+        render_source_repair(decision, tmp_path)
+
+
+def test_quilt_refresh_does_not_drop_partially_drifted_deletion(tmp_path):
+    (tmp_path / "debian/patches").mkdir(parents=True)
+    (tmp_path / "debian/patches/series").write_text("broken-test.patch\n")
+    (tmp_path / "debian/patches/broken-test.patch").write_text("""Description: remove broken test
+--- a/tests/test_service.py
++++ b/tests/test_service.py
+@@ -1,3 +1 @@
+-def test_broken():
+-    old_helper()
+-    assert result
++# other tests remain
+""")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/test_service.py").write_text(
+        "def test_broken():\n    new_helper()\n    assert result\n")
+    decision = {
+        "action": "refresh_quilt_patch", "subject": "broken-test.patch",
+        "replacement": "", "evidence": "broken-test.patch Hunk #1 FAILED",
+    }
+    with pytest.raises(ValueError, match="cannot be refreshed"):
+        render_source_repair(decision, tmp_path)
+
+
+def test_quilt_refresh_omits_drifted_test_section_after_runtime_is_upstream(tmp_path):
+    (tmp_path / "debian/patches").mkdir(parents=True)
+    (tmp_path / "debian/patches/series").write_text("security-fix.patch\n")
+    (tmp_path / "debian/patches/security-fix.patch").write_text("""Description: security fix and tests
+--- a/service/policy.py
++++ b/service/policy.py
+@@ -1 +1 @@
+-ALLOW_ALL = True
++ALLOW_ALL = False
+--- a/service/tests/base.py
++++ b/service/tests/base.py
+@@ -1,2 +1,2 @@
+-class OldFixture:
+-    pass
++class SecureFixture:
++    enabled = True
+""")
+    (tmp_path / "service/tests").mkdir(parents=True)
+    (tmp_path / "service/policy.py").write_text("ALLOW_ALL = False\n")
+    (tmp_path / "service/tests/base.py").write_text(
+        "class OldFixture:\n    secure_by_default = True\n")
+    decision = {
+        "action": "refresh_quilt_patch", "subject": "security-fix.patch",
+        "replacement": "", "evidence": "security-fix.patch Hunk #1 FAILED",
+    }
+    with pytest.raises(QuiltPatchSuperseded, match="runtime sections were incorporated"):
+        render_source_repair(decision, tmp_path)
 
 
 def test_replaces_missing_upstream_path_only_when_candidate_exists(tmp_path):

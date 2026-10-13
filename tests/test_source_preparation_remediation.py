@@ -44,6 +44,19 @@ def test_failed_quilt_patch_is_selected_for_deterministic_refresh(tmp_path):
     assert module.failed_quilt_patches(tmp_path, evidence) == ['entry-point.patch']
 
 
+def test_failed_quilt_patch_prefers_final_dpkg_source_error(tmp_path):
+    patches = tmp_path / 'debian/patches'
+    patches.mkdir(parents=True)
+    (patches / 'series').write_text('first.patch\nsecond.patch\n')
+    evidence = (
+        'dpkg-source: info: applying first.patch\n'
+        '.pc/first.patch/file contains an earlier backup\n'
+        'dpkg-source: info: applying second.patch\n'
+        'Hunk #1 FAILED\n'
+        'dpkg-source: error: patch < debian/patches/second.patch subprocess returned exit status 1\n')
+    assert module.failed_quilt_patches(tmp_path, evidence) == ['second.patch']
+
+
 def test_cumulative_refresh_uses_upstream_tree_and_normalized_context(tmp_path):
     helper = module.remediation_module()
     patches = tmp_path / 'debian/patches'

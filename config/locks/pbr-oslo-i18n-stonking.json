@@ -28,7 +28,7 @@
       ],
       "input": {
         "kind": "gbp",
-        "repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-pbr",
+        "repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-pbr/+git/python-pbr",
         "packaging_branch": "master",
         "packaging_sha": "ac017dfccc3f74dc090da03a7173e2c045c8a43d",
         "upstream_branch": "upstream-hibiscus",
@@ -53,7 +53,7 @@
       ],
       "input": {
         "kind": "gbp",
-        "repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.i18n",
+        "repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.i18n/+git/python-oslo.i18n",
         "packaging_branch": "master",
         "packaging_sha": "051e314cd8679650f3e7fc2986d99235fbe67eb5",
         "upstream_branch": "upstream-hibiscus",

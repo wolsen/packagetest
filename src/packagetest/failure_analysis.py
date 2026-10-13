@@ -222,6 +222,10 @@ def _apply_hunks_with_normalized_context(path: Path, section: str) -> bool:
     return True
 
 
+class QuiltPatchSuperseded(ValueError):
+    """The failed patch's old side or target has disappeared upstream."""
+
+
 def _refresh_quilt_patch(tree: Path, name: str) -> str:
     """Refresh applicable sections and omit sections already present upstream."""
     patch_path = tree / "debian/patches" / name
@@ -250,10 +254,12 @@ def _refresh_quilt_patch(tree: Path, name: str) -> str:
     targets = []
     parsed = []
     for section in sections:
-        matches = re.findall(r"^\+\+\+\s+([^\t\n ]+)", section, re.M)
-        if len(matches) != 1:
+        old_matches = re.findall(r"^---\s+([^\t\n ]+)", section, re.M)
+        new_matches = re.findall(r"^\+\+\+\s+([^\t\n ]+)", section, re.M)
+        if len(old_matches) != 1 or len(new_matches) != 1:
             raise ValueError("automatic quilt refresh requires one target per patch section")
-        patch_target = matches[0]
+        old_target, patch_target = old_matches[0], new_matches[0]
+        created = old_target == "/dev/null"
         patch_path_parts = PurePosixPath(patch_target)
         if (patch_target == "/dev/null" or patch_path_parts.is_absolute()
                 or ".." in patch_path_parts.parts or len(patch_path_parts.parts) <= strip):
@@ -263,22 +269,40 @@ def _refresh_quilt_patch(tree: Path, name: str) -> str:
         if not path.parts or path.parts[0] == "debian":
             raise ValueError(f"automatic quilt refresh does not support target: {patch_target}")
         targets.append(value)
-        parsed.append((value, section))
-    if len(set(targets)) != len(targets) or len(targets) > 8:
-        raise ValueError("automatic quilt refresh requires 1-8 unique existing upstream targets")
+        parsed.append((value, section, created))
+    if len(set(targets)) != len(targets) or len(targets) > 32:
+        raise ValueError("automatic quilt refresh requires 1-32 unique upstream targets")
     with tempfile.TemporaryDirectory(prefix="packagetest-quilt-refresh-") as temp:
         working = Path(temp) / "source"
         shutil.copytree(tree, working, symlinks=True)
-        before = {name: (working / name).read_text(errors="replace") for name in targets
-                  if (working / name).is_file() and not (working / name).is_symlink()}
-        if len(before) != len(targets):
-            raise ValueError("automatic quilt refresh requires every target to exist as a regular file")
+        before = {
+            target: ((working / target).read_text(errors="replace")
+                     if (working / target).is_file() and not (working / target).is_symlink()
+                     else None)
+            for target in targets
+        }
         applied = []
-        for index, (target, section) in enumerate(parsed):
+        omitted = []
+        for index, (target, section, created) in enumerate(parsed):
+            target_path = working / target
             section_path = Path(temp) / f"section-{index}.patch"
             section_path.write_text(section)
             command = ["patch", "--batch", "--forward", "--fuzz=2",
                        f"-p{strip}", "-i", str(section_path)]
+            if not created and not target_path.exists():
+                omitted.append((target, "upstream target was removed"))
+                continue
+            if target_path.exists() and (not target_path.is_file() or target_path.is_symlink()):
+                raise ValueError(f"automatic quilt refresh requires a regular target: {target}")
+            if created and target_path.exists():
+                content = Counter(target_path.read_text(errors="replace").splitlines())
+                additions = Counter(line[1:] for line in section.splitlines()
+                                    if line.startswith("+") and not line.startswith("+++"))
+                if additions and all(content[line] >= count for line, count in additions.items()):
+                    omitted.append((target, "created file is already present upstream"))
+                else:
+                    omitted.append((target, "upstream now owns the formerly packaging-created file"))
+                continue
             completed = subprocess.run(
                 command[:1] + ["--dry-run"] + command[1:], cwd=working,
                 text=True, capture_output=True, timeout=30)
@@ -291,40 +315,58 @@ def _refresh_quilt_patch(tree: Path, name: str) -> str:
                         + (applied_result.stdout + applied_result.stderr).strip()[-2000:])
                 applied.append(target)
                 continue
-            reverse = subprocess.run(
-                ["patch", "--dry-run", "--batch", "--force", "--reverse", "--fuzz=2",
-                 f"-p{strip}", "-i", str(section_path)],
-                cwd=working, text=True, capture_output=True, timeout=30,
-            )
-            if reverse.returncode == 0:
-                continue
-            if _apply_hunks_with_normalized_context(working / target, section):
-                applied.append(target)
-                continue
-            # Context can drift enough that reverse application also fails.
-            # Compare the hunk payload itself: every added line must already
-            # exist and every removed line must be absent. This also handles
-            # pure-deletion hunks such as dependencies removed upstream.
-            content = Counter((working / target).read_text(errors="replace").splitlines())
+            if created:
+                diagnostic = (completed.stdout + completed.stderr).strip()[-2000:]
+                raise ValueError(f"new-file patch section for {target} cannot be refreshed: {diagnostic}")
+            content = Counter(target_path.read_text(errors="replace").splitlines())
             additions = Counter(line[1:] for line in section.splitlines()
                                 if line.startswith("+") and not line.startswith("+++"))
             removals = Counter(line[1:] for line in section.splitlines()
                                if line.startswith("-") and not line.startswith("---"))
             nonempty_removals = Counter({line: count for line, count in removals.items() if line})
+            if additions and all(content[line] >= count for line, count in additions.items()):
+                omitted.append((target, "patch additions are already present upstream"))
+                continue
+            # When none of the old payload remains, upstream has removed or
+            # independently replaced the behavior. Keeping a replacement line
+            # that upstream also removed would recreate obsolete code.
+            if nonempty_removals and all(content[line] == 0 for line in nonempty_removals):
+                omitted.append((target, "old patch payload no longer exists upstream"))
+                continue
+            if _apply_hunks_with_normalized_context(target_path, section):
+                applied.append(target)
+                continue
+            reverse = subprocess.run(
+                ["patch", "--dry-run", "--batch", "--force", "--reverse", "--fuzz=0",
+                 f"-p{strip}", "-i", str(section_path)],
+                cwd=working, text=True, capture_output=True, timeout=30,
+            )
+            if reverse.returncode == 0:
+                omitted.append((target, "patch is already present upstream"))
+                continue
+            # Context can drift enough that reverse application also fails.
+            # Compare the hunk payload itself: every added line must already
+            # exist and every removed line must be absent. This also handles
+            # pure-deletion hunks such as dependencies removed upstream.
             if not additions and nonempty_removals \
                     and all(content[line] >= count for line, count in nonempty_removals.items()):
-                lines = (working / target).read_text(errors="replace").splitlines(keepends=True)
+                lines = target_path.read_text(errors="replace").splitlines(keepends=True)
                 for removed, count in nonempty_removals.items():
                     for _ in range(count):
                         index = next(i for i, line in enumerate(lines) if line.rstrip("\r\n") == removed)
                         del lines[index]
-                (working / target).write_text("".join(lines))
+                target_path.write_text("".join(lines))
                 applied.append(target)
                 continue
-            if additions and all(content[line] >= count for line, count in additions.items()) \
-                    and all(content[line] == 0 for line in removals):
-                continue
             if not additions and removals and all(content[line] == 0 for line in removals):
+                omitted.append((target, "deleted payload is already absent upstream"))
+                continue
+            target_parts = PurePosixPath(target).parts
+            if omitted and ("tests" in target_parts or target_parts[:1] == ("releasenotes",)):
+                omitted.append((
+                    target,
+                    "supporting test or release-note section drifted after runtime sections were incorporated",
+                ))
                 continue
             diagnostic = (completed.stdout + completed.stderr + reverse.stdout + reverse.stderr).strip()[-2000:]
             raise ValueError(f"patch section for {target} cannot be refreshed or identified upstream: {diagnostic}")
@@ -332,15 +374,21 @@ def _refresh_quilt_patch(tree: Path, name: str) -> str:
         refreshed = [header + "\n" if header else ""]
         for target in applied:
             after = (working / target).read_text(errors="replace")
+            original = before[target]
             diff = "".join(difflib.unified_diff(
-                before[target].splitlines(keepends=True), after.splitlines(keepends=True),
-                fromfile=f"a/{target}", tofile=f"b/{target}", n=3,
+                original.splitlines(keepends=True) if original is not None else [],
+                after.splitlines(keepends=True),
+                fromfile=f"a/{target}" if original is not None else "/dev/null",
+                tofile=f"b/{target}", n=3,
             ))
             if diff:
                 refreshed.append(diff)
         revised = "".join(refreshed)
-        if not any(block.startswith("--- a/") for block in refreshed):
-            raise ValueError("mechanical quilt refresh produced no upstream change")
+        if len(refreshed) == 1:
+            reasons = "; ".join(f"{target}: {reason}" for target, reason in omitted)
+            raise QuiltPatchSuperseded(
+                "mechanical quilt refresh found the complete patch superseded upstream"
+                + (f": {reasons}" if reasons else ""))
         return _replace_file_patch(f"debian/patches/{name}", original_patch, revised)
 
 

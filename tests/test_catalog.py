@@ -62,8 +62,10 @@ def test_branch_selection_uses_release_metadata():
     record = package_record('glance', metadata, archive('glance'), series='2026.2', membership='cycle')
     assert record['upstream_ref'] == 'stable/2026.2'
     assert record['archive_source']['sha256'] == 'a' * 64
-    assert record['packaging_repository'].startswith(
-        'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/')
+    assert record['archive_packaging_series_branch'] == 'debian/hibiscus'
+    assert record['packaging_repository'] == (
+        'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/'
+        'glance/+git/glance')
     assert record['ubuntu_importer_repository'] == (
         'https://git.launchpad.net/ubuntu/+source/glance')
     assert record['ubuntu_importer_branch_candidates'] == [
@@ -119,6 +121,24 @@ def test_importer_branches_follow_target_ubuntu_suite():
         suite='singing-squid')
     assert record['ubuntu_importer_branch_candidates'] == [
         'ubuntu/singing-squid', 'ubuntu/singing-squid-devel']
+
+
+def test_importer_branches_prefer_selected_archive_pocket():
+    metadata = {'repository-settings': {'openstack/service': {}}}
+    item = archive('service')
+    item['_packagetest_archive_pocket'] = 'updates'
+    record = package_record(
+        'service', metadata, item, series='2026.2', membership='cycle')
+    assert record['archive_pocket'] == 'updates'
+    assert record['ubuntu_importer_branch_candidates'] == [
+        'ubuntu/resolute-updates', 'ubuntu/resolute', 'ubuntu/resolute-devel']
+
+    item['_packagetest_archive_pocket'] = 'security'
+    record = package_record(
+        'service', metadata, item, series='2026.2', membership='cycle')
+    assert record['ubuntu_importer_branch_candidates'] == [
+        'ubuntu/resolute-security', 'ubuntu/resolute-updates',
+        'ubuntu/resolute', 'ubuntu/resolute-devel']
 
 
 def test_independent_release_history_is_not_mistaken_for_target_series():
@@ -226,11 +246,20 @@ def test_latest_archive_version_wins_independent_of_index_order(tmp_path):
     subprocess.run(['git', 'init', '-q', str(root)], check=True)
     subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c', 'user.email=t@example.invalid', 'commit', '--allow-empty', '-qm', 'fixture'], check=True)
     indexes = []
-    for index, version in enumerate(['1:2.0-0ubuntu2', '1:2.0-0ubuntu1', '1:2.0-0ubuntu1.1']):
+    names = [
+        'packagetest-resolute-updates-main-Sources',
+        'packagetest-resolute-main-Sources',
+        'packagetest-resolute-security-main-Sources',
+    ]
+    for filename, version in zip(names, ['1:2.0-0ubuntu2', '1:2.0-0ubuntu1',
+                                          '1:2.0-0ubuntu1.1']):
         row = archive('example')
         row['Version'] = version
-        path = tmp_path / f'Sources{index}'
+        path = tmp_path / filename
         path.write_text('\n'.join(f'{key}: {value}' for key, value in row.items()))
         indexes.append(path)
     result = make_catalog(root, indexes)
     assert result['packages'][0]['archive_version'] == '1:2.0-0ubuntu2'
+    assert result['packages'][0]['archive_pocket'] == 'updates'
+    assert result['packages'][0]['ubuntu_importer_branch_candidates'][0] == (
+        'ubuntu/resolute-updates')

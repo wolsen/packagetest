@@ -30,7 +30,7 @@
       ],
       "input": {
         "kind": "gbp",
-        "repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.i18n",
+        "repository": "https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/python-oslo.i18n/+git/python-oslo.i18n",
         "packaging_branch": "stable/2024.1",
         "packaging_sha": "5e582a2d7b32eb8eae5e7f8a513baeed1e7403ad",
         "upstream_branch": "upstream",
