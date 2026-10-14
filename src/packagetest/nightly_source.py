@@ -15,6 +15,7 @@ import hashlib
 import io
 import json
 import os
+import random
 import re
 from pathlib import Path
 import shutil
@@ -45,6 +46,31 @@ SCM_REQUIREMENTS = [
 
 class PackagingIdentityMismatch(ValueError):
     """A generic packaging Git branch does not describe the archive package."""
+
+
+LAUNCHPAD_FETCH_ATTEMPTS = 5
+LAUNCHPAD_FETCH_BACKOFF = (10, 20, 40, 80)
+_PERMANENT_LAUNCHPAD_FETCH_ERRORS = (
+    'authentication failed',
+    'could not read username',
+    "couldn't find remote ref",
+    'does not appear to be a git repository',
+    'not our ref',
+    'repository not found',
+    'requested url returned error: 401',
+    'requested url returned error: 403',
+    'requested url returned error: 404',
+    'server does not allow request for unadvertised object',
+)
+
+
+def _is_launchpad_git(repository: str) -> bool:
+    return urlparse(repository).hostname == 'git.launchpad.net'
+
+
+def _is_permanent_launchpad_fetch_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return any(fragment in message for fragment in _PERMANENT_LAUNCHPAD_FETCH_ERRORS)
 
 
 def _entry_points_from_text(setup_cfg: str | None, pyproject: str | None) -> list[dict]:
@@ -784,8 +810,10 @@ def checkout_packaging_tree(build: Preparation, entry: dict) -> tuple[Path, dict
     checkout = build.work / 'packaging'
     build.command('git', 'init', '--quiet', str(checkout))
     build.command('git', 'remote', 'add', 'origin', repository, cwd=checkout)
+    launchpad = _is_launchpad_git(repository)
+    attempts = LAUNCHPAD_FETCH_ATTEMPTS if launchpad else 3
     fetch_error = None
-    for attempt in range(1, 4):
+    for attempt in range(1, attempts + 1):
         try:
             build.command('git', '-c', 'http.lowSpeedLimit=1000',
                           '-c', 'http.lowSpeedTime=60', 'fetch', '--no-tags',
@@ -794,8 +822,20 @@ def checkout_packaging_tree(build: Preparation, entry: dict) -> tuple[Path, dict
             break
         except RuntimeError as exc:
             fetch_error = exc
-            if attempt < 3:
-                time.sleep(attempt * 2)
+            if launchpad and _is_permanent_launchpad_fetch_error(exc):
+                break
+            if attempt < attempts:
+                if launchpad:
+                    # Jitter prevents a large dependency level from retrying
+                    # against Launchpad in lockstep after a shared outage.
+                    delay = LAUNCHPAD_FETCH_BACKOFF[attempt - 1] + random.uniform(0, 5)
+                    label = 'Launchpad Git'
+                else:
+                    delay = attempt * 2
+                    label = 'Git'
+                print(f'{label} fetch attempt {attempt}/{attempts} failed; '
+                      f'retrying in {delay:.1f}s: {exc}', flush=True)
+                time.sleep(delay)
     if fetch_error is not None:
         raise fetch_error
     build.command('git', 'checkout', '--detach', revision, cwd=checkout)

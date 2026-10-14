@@ -157,6 +157,73 @@ def test_packaging_checkout_retries_transient_git_fetch(tmp_path, monkeypatch):
     assert all('http.lowSpeedTime=60' in attempt for attempt in attempts)
 
 
+def test_launchpad_packaging_checkout_uses_long_backoff_for_transient_failures(
+        tmp_path, monkeypatch):
+    import packagetest.nightly_source as nightly_source
+    repository, revision = importer_packaging_repository(tmp_path)
+    launchpad = ('https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/'
+                 '+source/demo/+git/demo')
+    build = nightly_source.Preparation(tmp_path / 'result')
+    command = build.command
+    attempts = []
+    sleeps = []
+    failures = [
+        'Operation too slow. Less than 1000 bytes/sec transferred',
+        "fatal: expected 'packfile'",
+        'The requested URL returned error: 502',
+        'RPC failed; curl 56 Recv failure',
+    ]
+
+    def flaky_command(*args, **kwargs):
+        if args[:4] == ('git', 'remote', 'add', 'origin'):
+            args = (*args[:4], str(repository))
+        if 'fetch' in args:
+            attempts.append(args)
+            if failures:
+                raise RuntimeError(failures.pop(0))
+        return command(*args, **kwargs)
+
+    build.command = flaky_command
+    monkeypatch.setattr(nightly_source.random, 'uniform', lambda _start, _end: 0)
+    monkeypatch.setattr(nightly_source.time, 'sleep', sleeps.append)
+    checkout, _metadata = nightly_source.checkout_packaging_tree(build, {
+        'source': 'demo', 'archive_version': '1.0-1', 'binaries': ['python3-demo'],
+        'packaging_source_kind': 'git', 'packaging_source_role': 'ubuntu-importer',
+        'packaging_source_repository': launchpad,
+        'packaging_branch': 'ubuntu/resolute', 'packaging_sha': revision,
+    })
+
+    assert checkout.is_dir()
+    assert len(attempts) == 5
+    assert sleeps == [10, 20, 40, 80]
+
+
+def test_launchpad_packaging_checkout_does_not_retry_permanent_failure(
+        tmp_path, monkeypatch):
+    import packagetest.nightly_source as nightly_source
+    build = nightly_source.Preparation(tmp_path / 'result')
+    attempts = []
+
+    def missing_repository(*args, **_kwargs):
+        if 'fetch' in args:
+            attempts.append(args)
+            raise RuntimeError('fatal: repository not found')
+        return ''
+
+    build.command = missing_repository
+    monkeypatch.setattr(
+        nightly_source.time, 'sleep',
+        lambda _seconds: pytest.fail('permanent failures must not sleep'))
+    with pytest.raises(RuntimeError, match='repository not found'):
+        nightly_source.checkout_packaging_tree(build, {
+            'source': 'demo', 'archive_version': '1.0-1', 'binaries': ['python3-demo'],
+            'packaging_source_kind': 'git', 'packaging_source_role': 'ubuntu-importer',
+            'packaging_source_repository': 'https://git.launchpad.net/ubuntu/+source/demo',
+            'packaging_branch': 'ubuntu/resolute', 'packaging_sha': 'a' * 40,
+        })
+    assert len(attempts) == 1
+
+
 def test_ubuntu_importer_checkout_rejects_archive_version_mismatch(tmp_path):
     from packagetest.nightly_source import Preparation, checkout_packaging_tree
     repository, revision = importer_packaging_repository(tmp_path, version='0.9-1')
