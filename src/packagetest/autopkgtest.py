@@ -48,6 +48,23 @@ def exit_status(result: str) -> int:
     return 0 if result in {'PASS', 'SKIP', 'NO_TESTS', 'SUPERFICIAL'} else 1
 
 
+def diagnostic_message(report: dict, *, limit: int = 2000) -> str:
+    """Return the useful failure evidence hidden behind autopkgtest's exit code."""
+    details = []
+    for test in report.get('tests', []):
+        if test.get('result') in {'FAIL', 'SKIP', 'FLAKY'}:
+            text = f"{test.get('name', 'unknown')} {test['result']}"
+            if test.get('detail'):
+                text += f": {test['detail']}"
+            details.append(text)
+    if report.get('error'):
+        details.append(str(report['error']))
+    if not details and report.get('summary'):
+        details.extend(line for line in str(report['summary']).splitlines() if line.strip())
+    message = '; '.join(details) or 'No test-level diagnostic was recorded; inspect console.log'
+    return message if len(message) <= limit else message[:limit - 3] + '...'
+
+
 def candidate_check_script(versions: dict[str, str]) -> str:
     """Check candidates after dpkg operations, allowing mutually exclusive binaries.
 
@@ -194,7 +211,8 @@ def run(manifest_path: Path, source: str, output: Path, *, backend: str, image: 
                     process.wait()
                     raise
         summary_path = output / 'summary'
-        report.update(classify(returncode, summary_path.read_text() if summary_path.exists() else ''))
+        summary = summary_path.read_text() if summary_path.exists() else ''
+        report.update(summary=summary, **classify(returncode, summary))
     except (OSError, ValueError, KeyError, StopIteration, subprocess.SubprocessError) as error:
         report.update(result='INFRA_ERROR', error=str(error))
     finally:

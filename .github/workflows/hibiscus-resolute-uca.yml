@@ -1,0 +1,38 @@
+name: OpenStack 2026.2 Resolute UCA snapshots
+on:
+  schedule:
+    - cron: '0 10 * * *' # 03:00 America/Phoenix; active on the default branch.
+  push:
+    branches: [main]
+    paths:
+      - '.github/actions/build-test-remediate/**'
+      - '.github/workflows/build-dependency-level.yml'
+      - '.github/workflows/openstack-snapshot-target.yml'
+      - '.github/workflows/hibiscus-resolute-uca.yml'
+      - 'config/**'
+      - 'scripts/**'
+      - 'src/**'
+      - 'pyproject.toml'
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: Comma-separated pilot sources, empty builds the complete catalog
+        type: string
+        default: ''
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: hibiscus-resolute-uca-v1-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  resolute_uca:
+    name: Resolute UCA Hibiscus
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/openstack-snapshot-target.yml
+    with:
+      target-id: hibiscus-resolute-uca
+      target-label: Resolute UCA Hibiscus
+      sources: ${{ github.event_name == 'push' && 'python-neutron-lib,python-oslo.versionedobjects,heat,watcher,glance' || inputs.sources }}

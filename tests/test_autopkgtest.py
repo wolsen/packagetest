@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from packagetest.autopkgtest import checked_file, classify, exit_status, run
+from packagetest.autopkgtest import checked_file, classify, diagnostic_message, exit_status, run
 
 
 @pytest.mark.parametrize('code,summary,result', [
@@ -33,6 +33,17 @@ def test_result_categories(code, summary, result):
 def test_summary_preserves_skip_reason():
     report = classify(2, 'mysql SKIP isolation-machine required\n')
     assert report['tests'] == [{'name': 'mysql', 'result': 'SKIP', 'detail': 'isolation-machine required'}]
+
+
+def test_diagnostic_message_explains_failed_test_behind_return_code():
+    report = classify(4, 'debtcollector-import FAIL python exited with status 1\n')
+    assert diagnostic_message(report) == (
+        'debtcollector-import FAIL: python exited with status 1'
+    )
+
+
+def test_diagnostic_message_preserves_infrastructure_error():
+    assert diagnostic_message({'error': 'testbed setup timed out'}) == 'testbed setup timed out'
 
 
 def test_rejects_corrupt_or_traversing_artifact(tmp_path):

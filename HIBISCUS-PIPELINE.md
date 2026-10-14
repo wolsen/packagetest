@@ -1,7 +1,7 @@
 # OpenStack 2026.2 snapshot pipeline reference
 
 Targets: Ubuntu 26.10 (Stonking) development and the Hibiscus Ubuntu Cloud
-Archive for Ubuntu 26.04 LTS (Resolute), both amd64. The workflow builds
+Archive for Ubuntu 26.04 LTS (Resolute), both amd64. Separate workflows build
 candidate packages; it does not publish to Ubuntu or the Ubuntu Cloud Archive,
 and it does not execute regress-stack.
 
@@ -75,4 +75,10 @@ Every failed `Build SOURCE` job writes its repair table to the GitHub job summar
 
 An initial local sanity check used the larger Qwen3.5 4.7B Q4_K_M model on the retained Heat failure. It found the `heatclient.v1` and `magnumclient.v1` import symptoms, but it did not identify the confirmed producer-package discovery defect or produce a complete patch in either attempt. Inference took 133–273 seconds per attempt on the local CPU. The in-job experiment now measures the smaller coding-specific model by the outcome that matters: whether its patch produces a package that rebuilds and passes the installed-package gate.
 
-The workflow runs nightly from `main`, on relevant pushes to `main`, and by manual dispatch. Pushes select a representative dependency closure. An empty manual `sources` value selects the complete catalog; a comma-separated list selects exactly those packages and records outside dependencies as archive bootstrap inputs. Its nightly schedule is 09:00 UTC (02:00 America/Phoenix).
+The targets cannot be combined in one GitHub Actions run. Ubuntu Stonking runs
+nightly at 09:00 UTC and Resolute UCA runs at 10:00 UTC, which keeps each run's
+job graph small enough to inspect. Both workflows also run on relevant pushes
+to `main` and by manual dispatch. Pushes select a representative dependency
+closure. An empty manual `sources` value selects the complete catalog; a
+comma-separated list selects exactly those packages and records outside
+dependencies as archive bootstrap inputs.

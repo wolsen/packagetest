@@ -1,4 +1,4 @@
-name: OpenStack 2026.2 snapshot pipeline
+name: OpenStack 2026.2 Ubuntu Stonking snapshots
 on:
   schedule:
     - cron: '0 9 * * *' # 02:00 America/Phoenix; active on the default branch.
@@ -19,21 +19,15 @@ on:
         description: Comma-separated pilot sources, empty builds the complete catalog
         type: string
         default: ''
-      target:
-        description: Snapshot target to run
-        type: choice
-        options: [all, hibiscus-stonking, hibiscus-resolute-uca]
-        default: all
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: hibiscus-snapshots-v3-${{ github.ref }}
+  group: hibiscus-stonking-v1-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   stonking:
     name: Ubuntu Stonking development
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'hibiscus-stonking' }}
     permissions:
       contents: read
       actions: write
@@ -41,16 +35,4 @@ jobs:
     with:
       target-id: hibiscus-stonking
       target-label: Ubuntu Stonking development
-      sources: ${{ github.event_name == 'push' && 'python-neutron-lib,python-oslo.versionedobjects,heat,watcher,glance' || inputs.sources }}
-
-  resolute_uca:
-    name: Resolute UCA Hibiscus
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'hibiscus-resolute-uca' }}
-    permissions:
-      contents: read
-      actions: write
-    uses: ./.github/workflows/openstack-snapshot-target.yml
-    with:
-      target-id: hibiscus-resolute-uca
-      target-label: Resolute UCA Hibiscus
       sources: ${{ github.event_name == 'push' && 'python-neutron-lib,python-oslo.versionedobjects,heat,watcher,glance' || inputs.sources }}

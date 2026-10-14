@@ -66,20 +66,36 @@ def test_local_ai_repairs_inside_each_package_job_before_publication():
 
 
 def test_main_push_exercises_heat_candidate_closure():
-    workflow = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    stonking = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    uca = Path('.github/workflows/hibiscus-resolute-uca.yml').read_text()
     policy = json.loads(Path('config/hibiscus-candidate-dependencies.json').read_text())
-    assert 'branches: [main]' in workflow
-    assert ("github.event_name == 'push' && "
-            "'python-neutron-lib,python-oslo.versionedobjects,heat,watcher,glance'") in workflow
-    assert '[full-snapshot]' not in workflow
-    assert "type: choice" in workflow
-    assert "options: [all, hibiscus-stonking, hibiscus-resolute-uca]" in workflow
+    for workflow in (stonking, uca):
+        assert 'branches: [main]' in workflow
+        assert ("github.event_name == 'push' && "
+                "'python-neutron-lib,python-oslo.versionedobjects,heat,watcher,glance'") in workflow
+        assert '[full-snapshot]' not in workflow
     assert any(edge['source'] == 'heat' and edge['dependency'] == 'python-neutron-lib'
                for edge in policy)
     assert any(edge['source'] == 'heat' and edge['dependency'] == 'python-oslo.versionedobjects'
                for edge in policy)
     assert any(edge['source'] == 'ironic' and edge['dependency'] == 'python-oslo.versionedobjects'
                for edge in policy)
+
+
+def test_ubuntu_and_uca_targets_are_separate_workflow_runs():
+    stonking = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
+    uca = Path('.github/workflows/hibiscus-resolute-uca.yml').read_text()
+    reusable = 'uses: ./.github/workflows/openstack-snapshot-target.yml'
+
+    assert stonking.count(reusable) == 1
+    assert uca.count(reusable) == 1
+    assert 'target-id: hibiscus-stonking' in stonking
+    assert 'target-id: hibiscus-resolute-uca' not in stonking
+    assert 'target-id: hibiscus-resolute-uca' in uca
+    assert 'target-id: hibiscus-stonking' not in uca
+    assert 'type: choice' not in stonking + uca
+    assert "cron: '0 9 * * *'" in stonking
+    assert "cron: '0 10 * * *'" in uca
 
 
 def test_snapshot_plan_generates_fresh_catalog_instead_of_using_committed_output():

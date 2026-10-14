@@ -5,6 +5,7 @@
 set -uo pipefail
 
 source_name=${1:?source package is required}
+repository_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 suite=$(python3 -c 'import json; print(json.load(open("nightly-plan/catalog.json"))["target"]["suite"])')
 result_root=test-results/result
 mkdir -p test-results
@@ -60,10 +61,12 @@ if [[ -f "$RUNNER_TEMP/autopkgtest-image/prepare.log" ]]; then
   cp "$RUNNER_TEMP/autopkgtest-image/prepare.log" test-results/prepare.log
 fi
 
-SOURCE="$source_name" python3 - <<'PY'
+PYTHONPATH="$repository_root/src" SOURCE="$source_name" python3 - <<'PY'
 import json
 import os
 from pathlib import Path
+
+from packagetest.autopkgtest import diagnostic_message
 
 path = Path('test-results/result/result.json')
 if not path.exists():
@@ -93,8 +96,13 @@ with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
         for test in tests:
             detail = test.get('detail', '').replace('|', '\\|')
             summary.write(f"| {test['name']} | {test['result']} | {detail} |\n")
+    if report.get('error'):
+        summary.write(f"\nDiagnostic: `{report['error']}`\n")
 command = ('error' if result in {'FAIL', 'INFRA_ERROR', 'BLOCKED'} else 'notice')
-print(f'::{command} title=Autopkgtest {result}::{os.environ["SOURCE"]}: raw return code {raw}')
+detail = diagnostic_message(report)
+message = f'{os.environ["SOURCE"]}: raw return code {raw}; {detail}'
+message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+print(f'::{command} title=Autopkgtest {result}::{message}')
 PY
 
 mkdir -p test-bundles
