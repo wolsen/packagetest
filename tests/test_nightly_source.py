@@ -170,6 +170,21 @@ def test_ubuntu_importer_checkout_rejects_archive_version_mismatch(tmp_path):
         })
 
 
+def test_generic_archive_vcs_checkout_rejects_stale_binary_set(tmp_path):
+    from packagetest.nightly_source import (PackagingIdentityMismatch, Preparation,
+                                            checkout_packaging_tree)
+    repository, revision = importer_packaging_repository(tmp_path)
+    build = Preparation(tmp_path / 'result')
+    with pytest.raises(PackagingIdentityMismatch, match='binary set differs'):
+        checkout_packaging_tree(build, {
+            'source': 'demo', 'archive_version': '1.0-1',
+            'binaries': ['python3-demo', 'demo-cli'],
+            'packaging_source_kind': 'git', 'packaging_source_role': 'archive-vcs',
+            'packaging_source_repository': str(repository),
+            'packaging_branch': 'debian/unstable', 'packaging_sha': revision,
+        })
+
+
 def test_archive_extraction_rejects_path_traversal(tmp_path):
     archive = tmp_path / 'source.tar.gz'
     with tarfile.open(archive, 'w:gz') as out:

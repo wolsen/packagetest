@@ -43,6 +43,10 @@ SCM_REQUIREMENTS = [
 ]
 
 
+class PackagingIdentityMismatch(ValueError):
+    """A generic packaging Git branch does not describe the archive package."""
+
+
 def _entry_points_from_text(setup_cfg: str | None, pyproject: str | None) -> list[dict]:
     """Return statically declared Python entry points in a stable form."""
     result = []
@@ -804,7 +808,8 @@ def checkout_packaging_tree(build: Preparation, entry: dict) -> tuple[Path, dict
     changelog_source = build.command('dpkg-parsechangelog', '-S', 'Source', cwd=checkout)
     if changelog_source != entry['source']:
         raise ValueError('Launchpad packaging debian/changelog source mismatch')
-    if entry.get('packaging_source_role') == 'ubuntu-importer':
+    role = entry.get('packaging_source_role')
+    if role == 'ubuntu-importer':
         version = build.command('dpkg-parsechangelog', '-S', 'Version', cwd=checkout)
         if version != entry['archive_version']:
             raise ValueError(
@@ -815,6 +820,13 @@ def checkout_packaging_tree(build: Preparation, entry: dict) -> tuple[Path, dict
             raise ValueError(
                 f'Ubuntu importer binary set differs from archive: {binaries} != '
                 f'{sorted(entry["binaries"])}')
+    elif role == 'archive-vcs':
+        binaries = sorted(re.findall(r'^Package:\s*(\S+)', control.read_text(), re.M))
+        expected = sorted(entry['binaries'])
+        if binaries != expected:
+            raise PackagingIdentityMismatch(
+                f'Generic archive VCS binary set differs from published archive: '
+                f'{binaries} != {expected}')
     return checkout, {
         'kind': 'git', 'role': entry.get('packaging_source_role'),
         'repository': repository, 'branch': branch, 'sha': revision,
@@ -883,7 +895,23 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
         source = entry['source']
         baseline_dsc = None
         if entry.get('packaging_source_kind') == 'git':
-            packaging_tree, packaging_source = checkout_packaging_tree(build, entry)
+            try:
+                packaging_tree, packaging_source = checkout_packaging_tree(build, entry)
+            except PackagingIdentityMismatch as error:
+                if entry.get('packaging_source_role') != 'archive-vcs':
+                    raise
+                rejected = {
+                    'kind': 'git',
+                    'role': entry.get('packaging_source_role'),
+                    'repository': entry.get('packaging_source_repository'),
+                    'branch': entry.get('packaging_branch'),
+                    'sha': entry.get('packaging_sha'),
+                    'reason': str(error),
+                }
+                shutil.rmtree(build.work / 'packaging')
+                packaging_tree, baseline_dsc, packaging_source = extract_archive_packaging(
+                    build, entry)
+                packaging_source['rejected_git_source'] = rejected
         else:
             packaging_tree, baseline_dsc, packaging_source = extract_archive_packaging(build, entry)
         report['packaging_source'] = packaging_source
