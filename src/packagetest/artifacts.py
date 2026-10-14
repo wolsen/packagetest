@@ -21,6 +21,10 @@ def fields(path: Path) -> dict[str, str]:
     result: dict[str, str] = {}
     key = None
     for line in text.splitlines():
+        # deb822 permits whole-line comments.  They do not terminate a
+        # paragraph or become part of the preceding folded field.
+        if line.startswith("#"):
+            continue
         if not line:
             if result:
                 break
