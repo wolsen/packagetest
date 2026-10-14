@@ -522,6 +522,62 @@ def already_applied_patches(tree: Path) -> list[dict]:
     return omitted
 
 
+def integrated_upstream_patches(tree: Path, checkout: Path,
+                                upstream_sha: str) -> list[dict]:
+    """Omit forwarded patches whose Gerrit change is in frozen upstream.
+
+    Textual patch probes become ambiguous after upstream evolves the merged
+    implementation. A Gerrit Change-Id in both the Debian patch header and an
+    ancestor commit identifies the forwarded change independently of later
+    edits to the same files.
+    """
+    if not re.fullmatch(r'[0-9a-f]{40}', upstream_sha):
+        raise ValueError('Integrated-patch check requires a frozen upstream SHA')
+    series = tree / 'debian/patches/series'
+    if not series.is_file():
+        return []
+    lines = series.read_text().splitlines()
+    omitted = []
+    for index, line in enumerate(lines):
+        words = line.split()
+        if not words or words[0].startswith('#'):
+            continue
+        name = Path(words[0])
+        if name.is_absolute() or '..' in name.parts:
+            raise ValueError('Unsafe quilt patch path')
+        patch = tree / 'debian/patches' / name
+        if not patch.is_file() or patch.is_symlink():
+            continue
+        text = patch.read_text(errors='replace')
+        first_section = re.search(r'(?m)^(?:diff --git |---\s)', text)
+        header = text[:first_section.start()] if first_section else text
+        change_ids = set(re.findall(
+            r'(?m)^Change-Id:\s*(I[0-9a-fA-F]{40})\s*$', header))
+        if len(change_ids) != 1:
+            continue
+        change_id = next(iter(change_ids))
+        result = subprocess.run(
+            ['git', 'log', upstream_sha, '-n', '1', '--format=%H',
+             '--fixed-strings', '--grep=' + f'Change-Id: {change_id}'],
+            cwd=checkout, text=True, capture_output=True, timeout=30, check=True)
+        commit = result.stdout.strip()
+        if not re.fullmatch(r'[0-9a-f]{40}', commit):
+            continue
+        lines[index] = (f'# Integrated upstream as {commit[:12]} '
+                        f'({change_id}): {line}')
+        omitted.append({
+            'action': 'omit-integrated-upstream-patch',
+            'name': str(name),
+            'sha256': sha256(patch),
+            'change_id': change_id,
+            'upstream_commit': commit,
+            'human_review_required': True,
+        })
+    if omitted:
+        series.write_text('\n'.join(lines) + '\n')
+    return omitted
+
+
 SEMANTIC_PATCH_STOPWORDS = {
     'false', 'from', 'import', 'none', 'return', 'self', 'test', 'true',
     'value', 'with',
@@ -874,7 +930,9 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
         evolution, evolution_actions = source_evolution(entry, checkout, selected, tree)
         report['source_evolution'] = evolution
         write_source_evolution(evolution, build.root / 'packaging-proposal')
-        report['packaging_adjustments'] = already_applied_patches(tree)
+        report['packaging_adjustments'] = integrated_upstream_patches(
+            tree, checkout, selected['sha'])
+        report['packaging_adjustments'].extend(already_applied_patches(tree))
         report['packaging_adjustments'].extend(superseded_upstream_patches(
             tree, checkout, evolution.get('commit_delta', {})))
         report['packaging_adjustments'].extend(upstream_dependency_adjustments(entry, tree))

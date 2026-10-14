@@ -8,7 +8,10 @@ import tarfile
 
 import pytest
 
-from packagetest.nightly_source import extract_snapshot, prepare_source, snapshot_debian_version
+from packagetest.nightly_source import (extract_snapshot,
+                                        integrated_upstream_patches,
+                                        prepare_source,
+                                        snapshot_debian_version)
 
 
 def test_preserve_debian_epoch():
@@ -38,6 +41,42 @@ def test_download_verified_accepts_sha512(tmp_path, monkeypatch):
     download_verified('https://archive.example/source.dsc', output,
                       hashlib.sha512(payload).hexdigest(), 'sha512')
     assert output.read_bytes() == payload
+
+
+def test_forwarded_patch_is_omitted_when_change_id_is_in_frozen_upstream(tmp_path):
+    tree = tmp_path / 'tree'
+    patches = tree / 'debian/patches'
+    checkout = tmp_path / 'upstream'
+    patches.mkdir(parents=True)
+    checkout.mkdir()
+    change_id = 'I' + '1' * 40
+    patch_name = 'forwarded-security-fix.patch'
+    (patches / 'series').write_text(f'{patch_name}\nlocal-only.patch\n')
+    (patches / patch_name).write_text(
+        f'Description: forwarded fix\nChange-Id: {change_id}\n\n'
+        '--- a/service.py\n+++ b/service.py\n@@ -1 +1 @@\n-old\n+new\n')
+    (patches / 'local-only.patch').write_text(
+        'Description: local fix\n--- a/local.py\n+++ b/local.py\n@@ -1 +1 @@\n-old\n+new\n')
+    subprocess.run(['git', 'init', '-q', checkout], check=True)
+    (checkout / 'service.py').write_text('new\n')
+    subprocess.run(['git', '-C', checkout, 'add', 'service.py'], check=True)
+    subprocess.run([
+        'git', '-C', checkout, '-c', 'user.name=Test',
+        '-c', 'user.email=test@example.invalid', 'commit', '-qm',
+        f'Forwarded fix\n\nChange-Id: {change_id}',
+    ], check=True)
+    frozen = subprocess.check_output(
+        ['git', '-C', checkout, 'rev-parse', 'HEAD'], text=True).strip()
+
+    result = integrated_upstream_patches(tree, checkout, frozen)
+
+    assert len(result) == 1
+    assert result[0]['name'] == patch_name
+    assert result[0]['change_id'] == change_id
+    assert result[0]['upstream_commit'] == frozen
+    series = (patches / 'series').read_text()
+    assert f'# Integrated upstream as {frozen[:12]}' in series
+    assert '\nlocal-only.patch\n' in series
 
 
 def test_missing_pin_fails_with_persistent_evidence(tmp_path):
