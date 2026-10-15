@@ -7,6 +7,12 @@ import subprocess
 ROOT = Path(__file__).parents[1]
 
 
+def test_builder_installs_packagetest_runtime_dependencies():
+    builder = (ROOT / 'scripts/prepare-builder.sh').read_text()
+    for package in ('python3-packaging', 'python3-yaml', 'python3-tomlkit'):
+        assert package in builder
+
+
 def test_cache_key_binds_daily_update_policy_and_builder_script(tmp_path):
     output = tmp_path / 'github-output'
     completed = subprocess.run(

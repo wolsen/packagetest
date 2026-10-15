@@ -29,6 +29,7 @@ host_packages=(
     git git-buildpackage pristine-tar devscripts dpkg-dev debhelper dh-python
     openstack-pkg-tools sbuild schroot debootstrap ubuntu-keyring ubuntu-cloud-keyring lintian
     python3-venv python3-pip python3-pytest python3-setuptools python3-wheel
+    python3-packaging python3-yaml python3-tomlkit
 )
 apt_options=(
     -o Acquire::Retries=3
