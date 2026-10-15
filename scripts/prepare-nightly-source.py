@@ -96,6 +96,7 @@ def export_prepared(prepared: dict, entry: dict, catalog: dict, output: Path) ->
         'catalog_entry_sha256': digest(entry),
         'pins': {'upstream_sha': entry['upstream_sha'],
                  'packaging_sha': entry.get('packaging_sha')},
+        'packaging_source': prepared['metadata'].get('packaging_source'),
         'ci': catalog['ci'],
     }
     (output / 'prepared-source.json').write_text(json.dumps(manifest, indent=2) + '\n')

@@ -226,16 +226,33 @@ def test_launchpad_packaging_checkout_does_not_retry_permanent_failure(
 
 
 def test_ubuntu_importer_checkout_rejects_archive_version_mismatch(tmp_path):
-    from packagetest.nightly_source import Preparation, checkout_packaging_tree
+    from packagetest.nightly_source import (PackagingIdentityMismatch, Preparation,
+                                            checkout_packaging_tree)
     repository, revision = importer_packaging_repository(tmp_path, version='0.9-1')
     build = Preparation(tmp_path / 'result')
-    with pytest.raises(ValueError, match='differs from archive'):
+    with pytest.raises(PackagingIdentityMismatch, match='differs from archive'):
         checkout_packaging_tree(build, {
             'source': 'demo', 'archive_version': '1.0-1', 'binaries': ['python3-demo'],
             'packaging_source_kind': 'git', 'packaging_source_role': 'ubuntu-importer',
             'packaging_source_repository': str(repository),
             'packaging_branch': 'ubuntu/resolute', 'packaging_sha': revision,
         })
+
+
+def test_stale_importer_can_fall_back_only_to_exact_uca_ppa_source():
+    from packagetest.nightly_source import _can_use_published_source_fallback
+    entry = {
+        'packaging_source_role': 'ubuntu-importer',
+        'archive_source': {
+            'url': ('https://ppa.launchpadcontent.net/ubuntu-cloud-archive/'
+                    'hibiscus-staging/ubuntu/pool/main/d/demo/demo_1.0-1~cloud0.dsc'),
+        },
+    }
+
+    assert _can_use_published_source_fallback(entry)
+    entry['archive_source']['url'] = (
+        'https://archive.ubuntu.com/ubuntu/pool/main/d/demo/demo_1.0-1.dsc')
+    assert not _can_use_published_source_fallback(entry)
 
 
 def test_generic_archive_vcs_checkout_rejects_stale_binary_set(tmp_path):

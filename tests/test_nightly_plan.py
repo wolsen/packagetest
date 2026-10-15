@@ -112,6 +112,37 @@ def test_packaging_resolution_uses_archive_vcs_when_launchpad_tree_is_absent(mon
     assert entry['packaging_source_repository'] == 'https://salsa.example/openstack/demo.git'
     assert entry['packaging_branch'] == 'debian/hibiscus'
     assert entry['packaging_sha'] == revision
+    assert 'Debian packaging is being used as the final fallback' in (
+        entry['packaging_fallback_warning'])
+
+
+def test_packaging_resolution_prefers_exact_uca_ppa_source_over_debian(monkeypatch):
+    def run(command, **kwargs):
+        repository = command[3]
+        if 'launchpad.net' in repository:
+            return SimpleNamespace(stdout='', stderr='repository does not exist', returncode=128)
+        raise AssertionError(f'Debian VCS must not be queried: {repository}')
+
+    monkeypatch.setattr(module.subprocess, 'run', run)
+    entry = module.freeze_packaging({
+        'source': 'demo',
+        'packaging_repository':
+            'https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/+source/demo/+git/demo',
+        'packaging_branch_candidates': ['stable/2026.2', 'master'],
+        'ubuntu_importer_repository': 'https://git.launchpad.net/ubuntu/+source/demo',
+        'ubuntu_importer_branch_candidates': ['ubuntu/resolute'],
+        'archive_packaging_repository': 'https://salsa.debian.org/openstack-team/demo.git',
+        'archive_packaging_series_branch': 'debian/hibiscus',
+        'archive_source': {
+            'url': ('https://ppa.launchpadcontent.net/ubuntu-cloud-archive/'
+                    'hibiscus-staging/ubuntu/pool/main/d/demo/demo_1.0-1~cloud0.dsc'),
+            'sha256': '0' * 64,
+        },
+    })
+
+    assert entry['packaging_source_kind'] == 'archive'
+    assert entry['packaging_source_role'] == 'uca-ppa-source'
+    assert 'packaging_fallback_warning' not in entry
 
 
 def test_packaging_resolution_uses_importer_before_series_archive_vcs(monkeypatch):
@@ -255,6 +286,21 @@ def test_discovery_summary_defers_dependency_levels_until_preparation():
     assert 'Dependency levels will be computed after' in summary
     assert ('| `a` | requested | No target-archive package | '
             '`master` (release-metadata-development-branch) |') in summary
+
+
+def test_discovery_summary_highlights_debian_packaging_fallback():
+    data = {'series': '2026.2', 'packages': [{
+        'source': 'a', 'selection_reasons': ['requested'],
+        'upstream_ref': 'stable/2026.2', 'upstream_sha': '1' * 40,
+        'packaging_sha': '2' * 40,
+        'packaging_fallback_warning': module.DEBIAN_PACKAGING_FALLBACK_WARNING,
+    }]}
+
+    summary = module.render_discovery_summary(data, ['a'], ['a'])
+
+    assert '## Packaging fallback warnings' in summary
+    assert '**WARNING — `a`:**' in summary
+    assert 'Debian packaging is being used as the final fallback' in summary
 
 
 def test_upstream_metadata_expands_requested_roots_before_planning():

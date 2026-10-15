@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+from urllib.parse import urlparse
 
 from .artifacts import checksum_entries, fields, sha256, verify_source
 from .catalog import dependency_names
@@ -217,4 +218,15 @@ def apply_prepared_metadata(catalog: dict, manifests: dict[str, dict]) -> dict:
             exact_autopkgtests=manifest['autopkgtests'],
             exact_binary_packages=manifest['binary_packages'],
         )
+        packaging_source = manifest.get('packaging_source')
+        if packaging_source:
+            entry['planned_packaging_source_role'] = entry.get('packaging_source_role')
+            entry['packaging_source_role'] = packaging_source.get('role')
+            entry['effective_packaging_source'] = packaging_source
+            hostname = urlparse(packaging_source.get('url', '')).hostname or ''
+            uses_debian = (
+                packaging_source.get('role') in {'series-archive-vcs', 'archive-vcs'} or
+                hostname == 'debian.org' or hostname.endswith('.debian.org'))
+            if not uses_debian:
+                entry.pop('packaging_fallback_warning', None)
     return catalog

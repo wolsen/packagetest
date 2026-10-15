@@ -6,7 +6,8 @@ import sys
 
 import pytest
 
-from packagetest.prepared_plan import exact_dependencies, relation_groups, stable_digest
+from packagetest.prepared_plan import (apply_prepared_metadata, exact_dependencies,
+                                       relation_groups, stable_digest)
 
 
 def manifest(source, version, binaries, *, build='', tests=None, binary_depends=''):
@@ -97,6 +98,30 @@ def test_duplicate_prepared_binary_provider_is_rejected():
     }
     with pytest.raises(ValueError, match='Ambiguous prepared binary provider'):
         exact_dependencies(catalog, manifests)
+
+
+def test_prepared_metadata_records_effective_ppa_source_and_clears_debian_warning():
+    warning = 'Debian packaging is being used as the final fallback.'
+    catalog = {'packages': [{
+        'source': 'demo', 'binaries': ['python3-demo'],
+        'packaging_source_role': 'ubuntu-importer',
+        'packaging_fallback_warning': warning,
+    }]}
+    prepared = manifest('demo', '2.0-1', ['python3-demo'])
+    prepared.update(dsc='demo_2.0-1.dsc', dsc_sha256='a' * 64,
+                    catalog_entry_sha256='b' * 64)
+    prepared['packaging_source'] = {
+        'kind': 'archive', 'role': 'uca-ppa-source',
+        'url': ('https://ppa.launchpadcontent.net/ubuntu-cloud-archive/'
+                'hibiscus-staging/ubuntu/pool/main/d/demo/demo_1.0-1.dsc'),
+    }
+
+    result = apply_prepared_metadata(catalog, {'demo': prepared})['packages'][0]
+
+    assert result['planned_packaging_source_role'] == 'ubuntu-importer'
+    assert result['packaging_source_role'] == 'uca-ppa-source'
+    assert result['effective_packaging_source']['kind'] == 'archive'
+    assert 'packaging_fallback_warning' not in result
 
 
 def write_prepared(root, entry, catalog, *, version, binaries, build=''):

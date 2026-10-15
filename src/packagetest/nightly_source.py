@@ -1,9 +1,9 @@
 """Prepare independently buildable, pinned snapshot source packages.
 
-The Ubuntu OpenStack Launchpad Git tree normally supplies Debian packaging;
-the archive Vcs-Git tree covers packages not maintained there. Upstream Git
-supplies the new source tree. A checksum-pinned published source package is an
-explicit final fallback when neither packaging repository can be resolved.
+The Ubuntu OpenStack Launchpad Git tree normally supplies Debian packaging.
+For UCA targets, the exact checksum-pinned PPA source is preferred when those
+Ubuntu trees are unavailable or stale. Debian VCS packaging is the final
+fallback. Upstream Git supplies the new source tree.
 """
 from __future__ import annotations
 
@@ -69,6 +69,19 @@ _PERMANENT_LAUNCHPAD_FETCH_ERRORS = (
 
 def _is_launchpad_git(repository: str) -> bool:
     return urlparse(repository).hostname == 'git.launchpad.net'
+
+
+def _is_uca_ppa_source(entry: dict) -> bool:
+    url = entry.get('archive_source', {}).get('url', '')
+    parsed = urlparse(url)
+    return (parsed.hostname in {'ppa.launchpad.net', 'ppa.launchpadcontent.net'}
+            and parsed.path.startswith('/ubuntu-cloud-archive/'))
+
+
+def _can_use_published_source_fallback(entry: dict) -> bool:
+    role = entry.get('packaging_source_role')
+    return (role in {'series-archive-vcs', 'archive-vcs'} or
+            role == 'ubuntu-importer' and _is_uca_ppa_source(entry))
 
 
 def _is_permanent_launchpad_fetch_error(error: Exception) -> bool:
@@ -1084,15 +1097,15 @@ def checkout_packaging_tree(build: Preparation, entry: dict) -> tuple[Path, dict
     if role == 'ubuntu-importer':
         version = build.command('dpkg-parsechangelog', '-S', 'Version', cwd=checkout)
         if version != entry['archive_version']:
-            raise ValueError(
+            raise PackagingIdentityMismatch(
                 f'Ubuntu importer packaging version {version} differs from archive '
                 f'{entry["archive_version"]}')
         binaries = sorted(re.findall(r'^Package:\s*(\S+)', control.read_text(), re.M))
         if binaries != sorted(entry['binaries']):
-            raise ValueError(
+            raise PackagingIdentityMismatch(
                 f'Ubuntu importer binary set differs from archive: {binaries} != '
                 f'{sorted(entry["binaries"])}')
-    elif role == 'archive-vcs':
+    elif role in {'series-archive-vcs', 'archive-vcs'}:
         binaries = sorted(re.findall(r'^Package:\s*(\S+)', control.read_text(), re.M))
         expected = sorted(entry['binaries'])
         if binaries != expected:
@@ -1123,7 +1136,9 @@ def extract_archive_packaging(build: Preparation, entry: dict) -> tuple[Path, Pa
     packaging_tree = build.work / 'packaging'
     build.command('dpkg-source', '--skip-patches', '-x', str(baseline_dsc), str(packaging_tree))
     return packaging_tree, baseline_dsc, {
-        'kind': 'archive', 'url': spec['url'], algorithm: source_checksum,
+        'kind': 'archive',
+        'role': ('uca-ppa-source' if _is_uca_ppa_source(entry) else 'published-source'),
+        'url': spec['url'], algorithm: source_checksum,
         'reason': entry.get('packaging_resolution_error'),
     }
 
@@ -1170,7 +1185,7 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
             try:
                 packaging_tree, packaging_source = checkout_packaging_tree(build, entry)
             except PackagingIdentityMismatch as error:
-                if entry.get('packaging_source_role') != 'archive-vcs':
+                if not _can_use_published_source_fallback(entry):
                     raise
                 rejected = {
                     'kind': 'git',

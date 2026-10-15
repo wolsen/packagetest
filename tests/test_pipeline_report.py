@@ -22,6 +22,11 @@ def write_inputs(tmp_path, *, valid_checksum=True):
              'selection_reasons': ['requested']},
             {'source': 'beta', 'deliverable': 'beta', 'archive_version': '2.0-1',
              'upstream_ref': 'master', 'upstream_sha': 'b' * 40,
+             'packaging_source_role': 'series-archive-vcs',
+             'packaging_fallback_warning':
+                 ('No usable Ubuntu-maintained packaging or exact Ubuntu Cloud Archive PPA '
+                  'source package was available. Debian packaging is being used as the final '
+                  'fallback and requires human review.'),
              'run_dependencies': ['alpha'], 'archive_bootstrap_dependencies': ['archive-helper'],
              'selection_reasons': ['upstream dependency of root']},
         ],
@@ -117,6 +122,10 @@ def test_report_renders_results_rationale_and_verified_inline_diff(tmp_path):
     assert report['packages'][0]['source_evolution']['commit_delta']['count'] == 1
     assert report['plan']['binary_review_count'] == 1
     assert report['counts']['build'] == {'FAILED': 1, 'SUCCEEDED': 1}
+    assert report['packages'][1]['packaging_source_role'] == 'series-archive-vcs'
+    assert report['warnings'][-1]['kind'] == 'debian-packaging-fallback'
+    assert 'Packaging source warning' in page
+    assert 'Debian packaging is being used as the final fallback' in page
 
 
 def test_corrupt_patch_is_reported_and_never_exported_or_embedded(tmp_path):

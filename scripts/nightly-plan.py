@@ -12,6 +12,22 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from urllib.parse import urlparse
+
+
+DEBIAN_PACKAGING_FALLBACK_WARNING = (
+    'No usable Ubuntu-maintained packaging or exact Ubuntu Cloud Archive PPA '
+    'source package was available. Debian packaging is being used as the final '
+    'fallback and requires human review.'
+)
+
+
+def is_uca_ppa_source(entry: dict) -> bool:
+    """Return whether the frozen source descriptor comes from a UCA PPA."""
+    url = entry.get('archive_source', {}).get('url', '')
+    parsed = urlparse(url)
+    return (parsed.hostname in {'ppa.launchpad.net', 'ppa.launchpadcontent.net'}
+            and parsed.path.startswith('/ubuntu-cloud-archive/'))
 
 
 def resolve_upstream_dependency_closure(catalog, sources=None, candidate_dependencies=(),
@@ -317,9 +333,12 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
     archive_git = sum(1 for source in plan['sources']
                       if entries[source].get('packaging_source_role') in {
                           'series-archive-vcs', 'archive-vcs'})
+    ppa_source = sum(1 for source in plan['sources']
+                     if entries[source].get('packaging_source_role') == 'uca-ppa-source')
     lines.extend(['', '## Packaging source', '',
                   f'{ubuntu_git} selected packages use plan-pinned Ubuntu OpenStack Launchpad Git trees. '
                   f'{importer_git} use plan-pinned Ubuntu importer Git trees. '
+                  f'{ppa_source} use exact checksummed Ubuntu Cloud Archive PPA source packages. '
                   f'{archive_git} use their archive VCS repository because Launchpad has no corresponding tree.'])
     if fallbacks:
         lines.append(
@@ -329,6 +348,14 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
             lines.append(f"- `{fallback['source']}`: {fallback['error']}")
     else:
         lines.append('No selected package requires archive packaging extraction.')
+    warnings = [(source, entries[source]['packaging_fallback_warning'])
+                for source in plan['sources']
+                if entries[source].get('packaging_fallback_warning')]
+    if warnings:
+        lines.extend(['', '## Packaging fallback warnings', '',
+                      'These packages use Debian packaging as the final fallback and require human review:', ''])
+        for source, warning in warnings:
+            lines.append(f'- **WARNING — `{source}`:** {warning}')
     return '\n'.join(lines) + '\n'
 
 
@@ -360,12 +387,20 @@ def render_discovery_summary(catalog: dict, sources: list[str], roots: list[str]
         lines.append(f"| `{source}` | {reasons} | {baseline} | {selection} | "
                      f"`{entry.get('upstream_sha', 'unresolved')}` | "
                      f"`{entry.get('packaging_sha', 'archive fallback')}` |")
+    warnings = [(source, entries[source]['packaging_fallback_warning'])
+                for source in sources
+                if entries[source].get('packaging_fallback_warning')]
+    if warnings:
+        lines.extend(['', '## Packaging fallback warnings', '',
+                      'These packages use Debian packaging as the final fallback and require human review:', ''])
+        for source, warning in warnings:
+            lines.append(f'- **WARNING — `{source}`:** {warning}')
     lines.extend(['', 'Dependency levels will be computed after these exact sources produce their `.dsc` metadata.'])
     return '\n'.join(lines) + '\n'
 
 
 def freeze_packaging(entry):
-    """Prefer team Git, Ubuntu importer, series packaging, then source."""
+    """Prefer Ubuntu Git, then an exact UCA PPA source, then Debian Git."""
     ubuntu_repository = entry.get('packaging_repository')
     ubuntu_branches = entry.get('packaging_branch_candidates') or []
     upstream_branches = entry.get('packaging_upstream_branch_candidates') or []
@@ -401,6 +436,7 @@ def freeze_packaging(entry):
                      packaging_upstream_sha=resolved.get(upstream_branch),
                      packaging_pristine_tar_sha=resolved.get(pristine_branch))
         entry.pop('packaging_resolution_error', None)
+        entry.pop('packaging_fallback_warning', None)
         return
 
     errors = []
@@ -417,6 +453,19 @@ def freeze_packaging(entry):
             return entry
         except Exception as exc:
             errors.append(f'Ubuntu importer Git: {exc}')
+    # The PPA source is the exact, checksummed package selected for this UCA
+    # run. Prefer it over Debian VCS packaging, whose branch can differ from
+    # the Ubuntu/UCA package even when its upstream release name matches.
+    if is_uca_ppa_source(entry):
+        entry.update(packaging_source_kind='archive',
+                     packaging_source_role='uca-ppa-source',
+                     packaging_source_repository=None, packaging_branch=None,
+                     packaging_sha=None, packaging_upstream_branch=None,
+                     packaging_upstream_sha=None,
+                     packaging_pristine_tar_sha=None,
+                     packaging_resolution_error='; '.join(errors))
+        entry.pop('packaging_fallback_warning', None)
+        return entry
     archive_repository = entry.get('archive_packaging_repository')
     # When Ubuntu has no usable packaging tree, prefer the Debian branch for
     # the exact OpenStack series before considering moving generic branches.
@@ -427,6 +476,7 @@ def freeze_packaging(entry):
         try:
             resolve(archive_repository, series_archive_branches,
                     'series-archive-vcs')
+            entry['packaging_fallback_warning'] = DEBIAN_PACKAGING_FALLBACK_WARNING
             return entry
         except Exception as exc:
             errors.append(f'Series archive VCS: {exc}')
@@ -436,6 +486,7 @@ def freeze_packaging(entry):
             'debian/unstable', 'master'])))
         try:
             resolve(archive_repository, archive_branches, 'archive-vcs')
+            entry['packaging_fallback_warning'] = DEBIAN_PACKAGING_FALLBACK_WARNING
             return entry
         except Exception as exc:
             errors.append(f'Archive VCS: {exc}')
@@ -446,6 +497,9 @@ def freeze_packaging(entry):
                  packaging_sha=None, packaging_upstream_branch=None,
                  packaging_upstream_sha=None, packaging_pristine_tar_sha=None,
                  packaging_resolution_error='; '.join(errors))
+    url = entry.get('archive_source', {}).get('url', '')
+    if 'debian.org' in (urlparse(url).hostname or ''):
+        entry['packaging_fallback_warning'] = DEBIAN_PACKAGING_FALLBACK_WARNING
     return entry
 
 

@@ -125,6 +125,13 @@ def build_report(catalog: dict, plan: dict, results: list[dict], proposals_root:
     for failure in plan.get('resolution_failures', []):
         warnings.append({'error': f"Source resolution failed for {failure.get('source', 'unknown')}: "
                                   f"{failure.get('error', 'unknown error')}"})
+    for source, entry in entries.items():
+        if entry.get('packaging_fallback_warning'):
+            warnings.append({
+                'source': source,
+                'kind': 'debian-packaging-fallback',
+                'error': f"{source}: {entry['packaging_fallback_warning']}",
+            })
 
     packages = []
     missing = {'result': 'MISSING', 'error': 'No result was aggregated for this package'}
@@ -142,6 +149,8 @@ def build_report(catalog: dict, plan: dict, results: list[dict], proposals_root:
             'archive_version': entry.get('archive_version'),
             'comparison_archive_version': entry.get('comparison_archive_version'),
             'comparison_archive_pocket': entry.get('comparison_archive_pocket'),
+            'packaging_source_role': entry.get('packaging_source_role'),
+            'packaging_fallback_warning': entry.get('packaging_fallback_warning'),
             'upstream_ref': entry.get('upstream_ref'),
             'upstream_sha': entry.get('upstream_sha'),
             'build': result.get('build', missing),
@@ -305,6 +314,10 @@ def render_html(report: dict) -> str:
         for label, value in [('Build', build), ('Autopkgtest', test)]:
             if value.get('error'):
                 errors.append(f'<h4>{label} detail</h4><pre class="error">{html.escape(str(value["error"]))}</pre>')
+        packaging_warning = package.get('packaging_fallback_warning')
+        if packaging_warning:
+            errors.insert(0, '<p class="review">Packaging source warning: ' +
+                          html.escape(packaging_warning) + '</p>')
         cards.append(f'''
 <details class="package" id="package-{safe_id(source)}" data-search="{html.escape(search, quote=True)}"
          data-build="{html.escape(build.get('result', 'UNKNOWN'), quote=True)}"
@@ -322,12 +335,14 @@ def render_html(report: dict) -> str:
       <dl>{render_key_values({'archive version': package.get('archive_version'),
                               'comparison archive version': package.get('comparison_archive_version'),
                               'comparison archive tier': package.get('comparison_archive_pocket'),
+                              'packaging source': package.get('packaging_source_role'),
                               'upstream ref': package.get('upstream_ref'),
                               'upstream sha': package.get('upstream_sha'),
                               'candidate dependencies': dependencies,
                               'archive bootstrap dependencies': bootstrap,
                               'selection reason': reasons},
                              ('archive version', 'comparison archive version', 'comparison archive tier',
+                              'packaging source',
                               'upstream ref', 'upstream sha',
                               'candidate dependencies', 'archive bootstrap dependencies', 'selection reason'))}</dl>
       {''.join(errors)}
