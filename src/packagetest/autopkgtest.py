@@ -56,6 +56,9 @@ def diagnostic_message(report: dict, *, limit: int = 2000) -> str:
             text = f"{test.get('name', 'unknown')} {test['result']}"
             if test.get('detail'):
                 text += f": {test['detail']}"
+            diagnostic = report.get('test_diagnostics', {}).get(test.get('name'))
+            if diagnostic:
+                text += f': {diagnostic}'
             details.append(text)
     if report.get('error'):
         details.append(str(report['error']))
@@ -63,6 +66,28 @@ def diagnostic_message(report: dict, *, limit: int = 2000) -> str:
         details.extend(line for line in str(report['summary']).splitlines() if line.strip())
     message = '; '.join(details) or 'No test-level diagnostic was recorded; inspect console.log'
     return message if len(message) <= limit else message[:limit - 3] + '...'
+
+
+def collect_test_diagnostics(directory: Path, tests: list[dict], *, limit: int = 4000) -> dict:
+    """Collect bounded per-test stderr/stdout tails from autopkgtest's output dir."""
+    diagnostics = {}
+    if not directory.is_dir():
+        return diagnostics
+    for test in tests:
+        if test.get('result') != 'FAIL' or not test.get('name'):
+            continue
+        parts = []
+        for suffix in ('stderr', 'stdout'):
+            path = directory / f"{test['name']}-{suffix}"
+            if not path.is_file() or path.is_symlink():
+                continue
+            value = path.read_text(errors='replace').strip()
+            if value:
+                parts.append(f'{suffix}: {value[-limit:]}')
+        if parts:
+            value = '; '.join(parts)
+            diagnostics[test['name']] = value[-limit:]
+    return diagnostics
 
 
 def candidate_check_script(versions: dict[str, str]) -> str:
@@ -213,6 +238,8 @@ def run(manifest_path: Path, source: str, output: Path, *, backend: str, image: 
         summary_path = output / 'summary'
         summary = summary_path.read_text() if summary_path.exists() else ''
         report.update(summary=summary, **classify(returncode, summary))
+        report['test_diagnostics'] = collect_test_diagnostics(
+            output / 'testbed', report['tests'])
     except (OSError, ValueError, KeyError, StopIteration, subprocess.SubprocessError) as error:
         report.update(result='INFRA_ERROR', error=str(error))
     finally:

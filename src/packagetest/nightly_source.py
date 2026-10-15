@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import configparser
 from datetime import datetime, timezone
+import difflib
 import fnmatch
 import gzip
 import hashlib
@@ -436,6 +437,164 @@ def upstream_dependency_adjustments(entry: dict, tree: Path) -> list[dict]:
     revised = ''.join(paragraphs)
     if revised != before:
         path.write_text(revised)
+    return actions
+
+
+def _add_quilt_patch(tree: Path, name: str, content: str) -> None:
+    patches = tree / 'debian' / 'patches'
+    patches.mkdir(parents=True, exist_ok=True)
+    patch = patches / name
+    if patch.exists() or patch.is_symlink():
+        raise ValueError(f'Packaging already contains generated patch name: {name}')
+    patch.write_text(content)
+    series = patches / 'series'
+    existing = series.read_text() if series.is_file() else ''
+    if existing and not existing.endswith('\n'):
+        existing += '\n'
+    series.write_text(existing + name + '\n')
+
+
+def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
+    """Patch incomplete setuptools discovery and package-data declarations."""
+    path = tree / 'pyproject.toml'
+    if not path.is_file():
+        return []
+    text = path.read_text()
+    try:
+        includes = tomllib.loads(text).get('tool', {}).get('setuptools', {}).get(
+            'packages', {}).get('find', {}).get('include', [])
+    except tomllib.TOMLDecodeError:
+        return []
+    replacements = {}
+    omitted = {}
+    package_roots = []
+    for include in includes if isinstance(includes, list) else []:
+        if not isinstance(include, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.]*', include):
+            continue
+        package = tree.joinpath(*include.split('.'))
+        if package.is_dir():
+            package_roots.append((include, package))
+        subpackages = sorted(
+            child.relative_to(tree).as_posix().replace('/', '.')
+            for child in package.rglob('*')
+            if child.is_dir() and (child / '__init__.py').is_file()
+        ) if package.is_dir() else []
+        if subpackages:
+            replacements[include] = include + '*'
+            omitted[include] = subpackages
+    package_data = {}
+    has_package_data = '[tool.setuptools.package-data]' in text
+    if not has_package_data:
+        for root_name, package_root in package_roots:
+            package_dirs = [package_root] + [
+                child for child in package_root.rglob('*')
+                if child.is_dir() and (child / '__init__.py').is_file()
+            ]
+            for package_dir in package_dirs:
+                files = sorted(
+                    child.name for child in package_dir.iterdir()
+                    if child.is_file() and not child.name.startswith('.')
+                    and child.suffix not in {'.py', '.pyi', '.pyc'}
+                    and child.name != 'py.typed'
+                )
+                if files:
+                    relative = package_dir.relative_to(package_root).parts
+                    package_name = '.'.join((root_name, *relative))
+                    package_data[package_name] = files
+    if not replacements and not package_data:
+        return []
+    revised = text
+    for old, new in replacements.items():
+        pattern = rf'(?m)^(\s*include\s*=\s*\[[^\n]*)(["\']){re.escape(old)}\2([^\n]*\]\s*)$'
+        revised, count = re.subn(
+            pattern, lambda match: match.group(1) + match.group(2) + new
+            + match.group(2) + match.group(3), revised, count=1)
+        if count != 1:
+            raise ValueError(f'Cannot safely widen setuptools package discovery for {old}')
+    if package_data:
+        if not revised.endswith('\n'):
+            revised += '\n'
+        revised += '\n[tool.setuptools.package-data]\n'
+        for package, files in sorted(package_data.items()):
+            revised += f'{json.dumps(package)} = {json.dumps(files)}\n'
+    diff = ''.join(difflib.unified_diff(
+        text.splitlines(keepends=True), revised.splitlines(keepends=True),
+        fromfile='a/pyproject.toml', tofile='b/pyproject.toml', n=3))
+    name = 'complete-setuptools-packaging.patch'
+    header = (
+        'Description: Complete setuptools package discovery and runtime data\n'
+        ' The upstream snapshot omits importable subpackages or package data from\n'
+        ' its setuptools configuration. Include them in builds and tests.\n'
+        'Forwarded: no\n'
+        'Author: Packaging Build Agent <packaging-agent@example.invalid>\n'
+    )
+    _add_quilt_patch(tree, name, header + diff)
+    return [{
+        'action': 'add-quilt-patch', 'name': name,
+        'reason': 'Setuptools metadata omits importable subpackages or runtime package data.',
+        'replacements': replacements, 'omitted_subpackages': omitted,
+        'package_data': package_data,
+        'human_review_required': True,
+    }]
+
+
+def autopkgtest_packaging_adjustments(entry: dict, tree: Path) -> list[dict]:
+    """Adapt generated and superficial Python tests to the snapshot metadata."""
+    actions = []
+    tests = tree / 'debian' / 'tests'
+    control = tests / 'control'
+    if control.is_file():
+        before = control.read_text()
+        blocks = re.split(r'(\n\s*\n)', before)
+        changed = []
+        for index in range(0, len(blocks), 2):
+            block = blocks[index]
+            if 'Test-Command:' not in block or '.__version__' not in block:
+                continue
+            restrictions = re.search(r'(?m)^Restrictions:\s*(.*)$', block)
+            if restrictions and 'allow-stderr' not in {
+                    item.strip() for item in restrictions.group(1).split(',')}:
+                replacement = restrictions.group(0) + ', allow-stderr'
+                blocks[index] = block[:restrictions.start()] + replacement + block[restrictions.end():]
+                changed.append(index)
+            elif not restrictions:
+                blocks[index] = block.rstrip('\n') + '\nRestrictions: allow-stderr\n'
+                changed.append(index)
+        revised = ''.join(blocks)
+        if changed and revised != before:
+            control.write_text(revised)
+            actions.append({
+                'action': 'allow-superficial-version-warning',
+                'path': 'debian/tests/control',
+                'reason': ('A version-probe autopkgtest accesses a deprecated module attribute; '
+                           'stderr warnings do not invalidate its exit-status check.'),
+            })
+
+    source_control = fields(tree / 'debian' / 'control')
+    source = entry['source']
+    if (source_control.get('Testsuite') != 'autopkgtest-pkg-python'
+            and not re.fullmatch(r'python3?-.+', source)):
+        return actions
+    prefix = 'python3-' if source.startswith('python3-') else 'python-'
+    expected = source.removeprefix(prefix).replace('-', '_')
+    names = set()
+    for top_level in tree.glob('*.egg-info/top_level.txt'):
+        names.update(line.strip() for line in top_level.read_text().splitlines()
+                     if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', line.strip()))
+    if expected in names or len(names) != 1:
+        return actions
+    actual = next(iter(names))
+    tests.mkdir(parents=True, exist_ok=True)
+    config = tests / 'autopkgtest-pkg-python.conf'
+    if config.exists() or config.is_symlink():
+        return actions
+    config.write_text(f'import_name = {actual}\n')
+    actions.append({
+        'action': 'set-autodep8-python-import',
+        'path': 'debian/tests/autopkgtest-pkg-python.conf',
+        'expected_import': expected, 'actual_import': actual,
+        'reason': 'The source-package-derived autodep8 import is absent from upstream metadata.',
+    })
     return actions
 
 
@@ -1004,6 +1163,8 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
         report['packaging_adjustments'].extend(superseded_upstream_patches(
             tree, checkout, evolution.get('commit_delta', {})))
         report['packaging_adjustments'].extend(upstream_dependency_adjustments(entry, tree))
+        report['packaging_adjustments'].extend(setuptools_discovery_adjustments(tree))
+        report['packaging_adjustments'].extend(autopkgtest_packaging_adjustments(entry, tree))
         report['packaging_adjustments'].extend(evolution_actions)
         if remediation_patch is not None:
             from .failure_analysis import validate_source_patch
@@ -1038,6 +1199,8 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
         if len(dscs) != 1:
             raise ValueError('Expected exactly one generated Debian source package')
         verify_source(dscs[0], source, version)
+        validation_tree = build.work / 'source-package-validation'
+        build.command('dpkg-source', '-x', str(dscs[0]), str(validation_tree))
         report.update(status='PREPARED', version=version, snapshot=snapshot,
                       dsc=str(dscs[0]), dsc_sha256=sha256(dscs[0]),
                       prepared_at=datetime.now(timezone.utc).isoformat())

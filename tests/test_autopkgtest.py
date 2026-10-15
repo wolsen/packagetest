@@ -3,7 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from packagetest.autopkgtest import checked_file, classify, diagnostic_message, exit_status, run
+from packagetest.autopkgtest import (checked_file, classify, collect_test_diagnostics,
+                                     diagnostic_message, exit_status, run)
 
 
 @pytest.mark.parametrize('code,summary,result', [
@@ -44,6 +45,20 @@ def test_diagnostic_message_explains_failed_test_behind_return_code():
 
 def test_diagnostic_message_preserves_infrastructure_error():
     assert diagnostic_message({'error': 'testbed setup timed out'}) == 'testbed setup timed out'
+
+
+def test_failed_test_diagnostic_includes_bounded_stderr_and_stdout(tmp_path):
+    (tmp_path / 'autodep8-python3-stderr').write_text('Traceback: wrong import\n')
+    (tmp_path / 'autodep8-python3-stdout').write_text('Testing with python3\n')
+    tests = [{'name': 'autodep8-python3', 'result': 'FAIL', 'detail': 'non-zero'}]
+
+    diagnostics = collect_test_diagnostics(tmp_path, tests)
+
+    assert diagnostics == {
+        'autodep8-python3': (
+            'stderr: Traceback: wrong import; stdout: Testing with python3')}
+    assert 'Traceback: wrong import' in diagnostic_message({
+        'tests': tests, 'test_diagnostics': diagnostics})
 
 
 def test_rejects_corrupt_or_traversing_artifact(tmp_path):

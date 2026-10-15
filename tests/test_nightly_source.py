@@ -556,6 +556,117 @@ Restrictions: superficial
     assert value['autopkgtests'][0]['depends'] == '@, python3-testtools'
 
 
+def test_autodep8_import_is_derived_from_generated_top_level_metadata(tmp_path):
+    from packagetest.nightly_source import autopkgtest_packaging_adjustments
+    (tmp_path / 'debian').mkdir()
+    (tmp_path / 'debian/control').write_text('''Source: python-oslo.i18n
+Testsuite: autopkgtest-pkg-python
+
+Package: python3-oslo.i18n
+Architecture: all
+Description: demo
+''')
+    metadata = tmp_path / 'oslo.i18n.egg-info'
+    metadata.mkdir()
+    (metadata / 'top_level.txt').write_text('oslo_i18n\n')
+
+    actions = autopkgtest_packaging_adjustments(
+        {'source': 'python-oslo.i18n'}, tmp_path)
+
+    assert actions[0]['actual_import'] == 'oslo_i18n'
+    assert (tmp_path / 'debian/tests/autopkgtest-pkg-python.conf').read_text() == (
+        'import_name = oslo_i18n\n')
+
+
+def test_python_source_uses_autodep8_even_without_explicit_testsuite_field(tmp_path):
+    from packagetest.nightly_source import autopkgtest_packaging_adjustments
+    (tmp_path / 'debian').mkdir()
+    (tmp_path / 'debian/control').write_text('Source: python-oslo.i18n\n')
+    metadata = tmp_path / 'oslo.i18n.egg-info'
+    metadata.mkdir()
+    (metadata / 'top_level.txt').write_text('oslo_i18n\n')
+
+    autopkgtest_packaging_adjustments({'source': 'python-oslo.i18n'}, tmp_path)
+
+    assert (tmp_path / 'debian/tests/autopkgtest-pkg-python.conf').read_text() == (
+        'import_name = oslo_i18n\n')
+
+
+def test_python3_source_autodep8_import_drops_source_prefix(tmp_path):
+    from packagetest.nightly_source import autopkgtest_packaging_adjustments
+    (tmp_path / 'debian').mkdir()
+    (tmp_path / 'debian/control').write_text('Source: python3-oslo.i18n\n')
+    metadata = tmp_path / 'oslo.i18n.egg-info'
+    metadata.mkdir()
+    (metadata / 'top_level.txt').write_text('oslo_i18n\n')
+
+    actions = autopkgtest_packaging_adjustments(
+        {'source': 'python3-oslo.i18n'}, tmp_path)
+
+    assert actions[0]['expected_import'] == 'oslo.i18n'
+
+
+def test_superficial_version_probe_allows_deprecation_warning(tmp_path):
+    from packagetest.nightly_source import autopkgtest_packaging_adjustments
+    tests = tmp_path / 'debian/tests'
+    tests.mkdir(parents=True)
+    (tmp_path / 'debian/control').write_text('Source: python-demo\n')
+    control = tests / 'control'
+    control.write_text('''Restrictions: superficial
+Depends: python3-demo
+Test-Command: python3 -c "import demo; print(demo.__version__)"
+''')
+
+    actions = autopkgtest_packaging_adjustments({'source': 'python-demo'}, tmp_path)
+
+    assert actions[0]['action'] == 'allow-superficial-version-warning'
+    assert control.read_text().startswith('Restrictions: superficial, allow-stderr\n')
+
+
+def test_exact_setuptools_discovery_is_patched_to_include_subpackages(tmp_path):
+    from packagetest.nightly_source import setuptools_discovery_adjustments
+    (tmp_path / 'debian').mkdir()
+    package = tmp_path / 'os_service_types'
+    (package / 'tests').mkdir(parents=True)
+    (package / '__init__.py').write_text('')
+    (package / 'tests/__init__.py').write_text('')
+    (tmp_path / 'pyproject.toml').write_text('''[tool.setuptools.packages.find]
+include = ["os_service_types"]
+''')
+
+    actions = setuptools_discovery_adjustments(tmp_path)
+
+    assert actions[0]['replacements'] == {'os_service_types': 'os_service_types*'}
+    patch = (tmp_path / 'debian/patches/complete-setuptools-packaging.patch').read_text()
+    assert '-include = ["os_service_types"]' in patch
+    assert '+include = ["os_service_types*"]' in patch
+    assert (tmp_path / 'debian/patches/series').read_text() == (
+        'complete-setuptools-packaging.patch\n')
+
+
+def test_setuptools_package_data_is_added_for_importable_subpackage(tmp_path):
+    from packagetest.nightly_source import setuptools_discovery_adjustments
+    (tmp_path / 'debian').mkdir()
+    package = tmp_path / 'os_service_types'
+    data = package / 'data'
+    data.mkdir(parents=True)
+    (package / '__init__.py').write_text('')
+    (data / '__init__.py').write_text('')
+    (data / 'service-types.json').write_text('{}')
+    (tmp_path / 'pyproject.toml').write_text('''[tool.setuptools.packages.find]
+include = ["os_service_types"]
+''')
+
+    actions = setuptools_discovery_adjustments(tmp_path)
+
+    assert actions[0]['package_data'] == {
+        'os_service_types.data': ['service-types.json'],
+    }
+    patch = (tmp_path / 'debian/patches/complete-setuptools-packaging.patch').read_text()
+    assert '+[tool.setuptools.package-data]' in patch
+    assert '+"os_service_types.data" = ["service-types.json"]' in patch
+
+
 def test_only_complete_already_applied_patch_is_omitted(tmp_path):
     from packagetest.nightly_source import already_applied_patches
     patches = tmp_path / 'debian/patches'
