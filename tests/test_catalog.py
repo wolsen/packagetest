@@ -339,3 +339,53 @@ def test_uca_package_absence_is_not_mislabeled_as_comparison_baseline(tmp_path):
     assert heat['archive_version'] == ubuntu['Version']
     assert heat['comparison_archive_version'] is None
     assert heat['comparison_archive_index'] is None
+
+
+def test_uca_comparison_uses_most_mature_available_promotion_tier(tmp_path):
+    root = tmp_path / 'releases'
+    deliverables = root / 'deliverables' / 'hibiscus'
+    deliverables.mkdir(parents=True)
+    for name in ('heat', 'horizon'):
+        (deliverables / f'{name}.yaml').write_text(json.dumps({
+            'repository-settings': {f'openstack/{name}': {}},
+        }))
+    subprocess.run(['git', 'init', '-q', str(root)], check=True)
+    subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test',
+                    '-c', 'user.email=t@example.invalid', 'commit', '--allow-empty',
+                    '-qm', 'fixture'], check=True)
+
+    def write_index(name, records):
+        path = tmp_path / name
+        path.write_text('\n\n'.join(
+            '\n'.join(f'{key}: {value}' for key, value in record.items())
+            for record in records))
+        return path
+
+    ubuntu_heat = archive('heat')
+    ubuntu_horizon = archive('horizon')
+    updates_heat = archive('heat')
+    updates_heat['Version'] = '1:27.0.0-0ubuntu1~cloud0'
+    staging_heat = archive('heat')
+    staging_heat['Version'] = '1:27.0.1-0ubuntu1~cloud0'
+    staging_horizon = archive('horizon')
+    staging_horizon['Version'] = '4:27.0.0-0ubuntu1~cloud0'
+    proposed_horizon = archive('horizon')
+    proposed_horizon['Version'] = '4:27.0.1-0ubuntu1~cloud0'
+    base = write_index('ubuntu-Sources', [ubuntu_heat, ubuntu_horizon])
+    updates = write_index('hibiscus-updates-Sources', [updates_heat])
+    staging = write_index('hibiscus-staging-Sources', [staging_heat, staging_horizon])
+    proposed = write_index('hibiscus-proposed-Sources', [proposed_horizon])
+    metadata = {
+        updates.name: {'pocket': 'uca-hibiscus-updates', 'comparison_priority': 300},
+        staging.name: {'pocket': 'uca-hibiscus-staging', 'comparison_priority': 200},
+        proposed.name: {'pocket': 'uca-hibiscus-proposed', 'comparison_priority': 100},
+    }
+
+    result = make_catalog(root, [base, proposed, staging, updates],
+                          index_metadata=metadata)
+
+    packages = {item['source']: item for item in result['packages']}
+    assert packages['heat']['comparison_archive_version'] == updates_heat['Version']
+    assert packages['heat']['comparison_archive_pocket'] == 'uca-hibiscus-updates'
+    assert packages['horizon']['comparison_archive_version'] == staging_horizon['Version']
+    assert packages['horizon']['comparison_archive_pocket'] == 'uca-hibiscus-staging'

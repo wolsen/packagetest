@@ -345,15 +345,19 @@ def render_discovery_summary(catalog: dict, sources: list[str], roots: list[str]
              f'{len(sources)} source packages were selected and pinned for parallel source preparation.', '',
              f"Series status: `{catalog.get('series_status', 'unknown')}`", '',
              f"Requested roots: {', '.join(f'`{source}`' for source in roots)}", '',
-             '| Source | Selection reason | Upstream selection | Upstream SHA | Packaging SHA |',
-             '|---|---|---|---|---|']
+             '| Source | Selection reason | Archive comparison | Upstream selection | Upstream SHA | Packaging SHA |',
+             '|---|---|---|---|---|---|']
     for source in sources:
         entry = entries[source]
         reasons = ', '.join(entry.get('selection_reasons', [])) or 'catalog selection'
         selection = f"`{entry.get('upstream_ref', 'unknown')}` ({entry.get('branch_policy', 'unknown')})"
         if entry.get('upstream_release'):
             selection += f"; release `{entry['upstream_release']}`"
-        lines.append(f"| `{source}` | {reasons} | {selection} | "
+        comparison = entry.get('comparison_archive_version')
+        pocket = entry.get('comparison_archive_pocket')
+        baseline = (f"`{comparison}` from `{pocket}`" if comparison
+                    else 'No target-archive package')
+        lines.append(f"| `{source}` | {reasons} | {baseline} | {selection} | "
                      f"`{entry.get('upstream_sha', 'unresolved')}` | "
                      f"`{entry.get('packaging_sha', 'archive fallback')}` |")
     lines.extend(['', 'Dependency levels will be computed after these exact sources produce their `.dsc` metadata.'])

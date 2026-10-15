@@ -253,7 +253,8 @@ def test_discovery_summary_defers_dependency_levels_until_preparation():
     assert 'Series status: `development`' in summary
     assert 'selected and pinned for parallel source preparation' in summary
     assert 'Dependency levels will be computed after' in summary
-    assert '| `a` | requested | `master` (release-metadata-development-branch) |' in summary
+    assert ('| `a` | requested | No target-archive package | '
+            '`master` (release-metadata-development-branch) |') in summary
 
 
 def test_upstream_metadata_expands_requested_roots_before_planning():

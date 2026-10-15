@@ -174,6 +174,7 @@ def _official_commit_delta(entry: dict, checkout: Path, selected: dict) -> dict:
             'basis': 'no-target-archive-baseline',
             'count': None, 'commits': [],
             'official_tag_resolution': 'target-archive-package-absent',
+            'comparison_archive_pocket': None,
         }
     archive_upstream = _archive_upstream_version(comparison_version)
     from .versioning import upstream_version_to_debian_version
@@ -196,6 +197,7 @@ def _official_commit_delta(entry: dict, checkout: Path, selected: dict) -> dict:
             'archive_upstream_version': archive_upstream,
             'comparison_tag_matches_archive_version': True,
             'basis': 'official-package-upstream-tag',
+            'comparison_archive_pocket': entry.get('comparison_archive_pocket'),
             'count': len(commits), 'commits': commits,
         }
     # Some Ubuntu versions contain repacks or post-release snapshots for which
@@ -207,6 +209,7 @@ def _official_commit_delta(entry: dict, checkout: Path, selected: dict) -> dict:
         'archive_upstream_version': archive_upstream,
         'comparison_tag_matches_archive_version': False,
         'basis': 'nearest-upstream-release-tag',
+        'comparison_archive_pocket': entry.get('comparison_archive_pocket'),
         'count': selected['commits_since_tag'],
         'commits': selected.get('commits', []),
         'official_tag_resolution': ('not-found' if not matches else 'ambiguous'),

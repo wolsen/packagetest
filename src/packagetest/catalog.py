@@ -363,9 +363,15 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
                     metadata.get('comparison_priority', 0))
                 if source['_packagetest_archive_priority']:
                     comparison_previous = comparison_sources.get(source['Package'])
-                    if (comparison_previous is None or subprocess.run([
-                            'dpkg', '--compare-versions', source['Version'], 'gt',
-                            comparison_previous['Version']]).returncode == 0):
+                    comparison_priority = source['_packagetest_archive_priority']
+                    previous_comparison_priority = (comparison_previous or {}).get(
+                        '_packagetest_archive_priority', -1)
+                    if (comparison_previous is None
+                            or comparison_priority > previous_comparison_priority
+                            or comparison_priority == previous_comparison_priority
+                            and subprocess.run([
+                                'dpkg', '--compare-versions', source['Version'], 'gt',
+                                comparison_previous['Version']]).returncode == 0):
                         comparison_sources[source['Package']] = source
                 previous = sources.get(source['Package'])
                 priority = source['_packagetest_archive_priority']

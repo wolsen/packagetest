@@ -141,6 +141,7 @@ def build_report(catalog: dict, plan: dict, results: list[dict], proposals_root:
             'selection_reasons': entry.get('selection_reasons', []),
             'archive_version': entry.get('archive_version'),
             'comparison_archive_version': entry.get('comparison_archive_version'),
+            'comparison_archive_pocket': entry.get('comparison_archive_pocket'),
             'upstream_ref': entry.get('upstream_ref'),
             'upstream_sha': entry.get('upstream_sha'),
             'build': result.get('build', missing),
@@ -266,10 +267,12 @@ def render_evolution(evolution: dict | None) -> str:
               if evolution.get('human_binary_package_review_required') else '')
     return f'''<dl>{render_key_values({
         'archive upstream version': delta.get('archive_upstream_version'),
+        'comparison archive tier': delta.get('comparison_archive_pocket'),
         'comparison tag': delta.get('comparison_tag'),
         'commits after baseline': delta.get('count'),
         'comparison basis': delta.get('basis'),
-    }, ('archive upstream version', 'comparison tag', 'commits after baseline', 'comparison basis'))}</dl>
+    }, ('archive upstream version', 'comparison archive tier', 'comparison tag',
+        'commits after baseline', 'comparison basis'))}</dl>
       {mismatch}
       <details><summary>Commits in snapshot ({len(commits)})</summary>
         {'<ol>' + commit_rows + '</ol>' if commits else
@@ -318,12 +321,14 @@ def render_html(report: dict) -> str:
     <section><h3>Package result</h3>
       <dl>{render_key_values({'archive version': package.get('archive_version'),
                               'comparison archive version': package.get('comparison_archive_version'),
+                              'comparison archive tier': package.get('comparison_archive_pocket'),
                               'upstream ref': package.get('upstream_ref'),
                               'upstream sha': package.get('upstream_sha'),
                               'candidate dependencies': dependencies,
                               'archive bootstrap dependencies': bootstrap,
                               'selection reason': reasons},
-                             ('archive version', 'comparison archive version', 'upstream ref', 'upstream sha',
+                             ('archive version', 'comparison archive version', 'comparison archive tier',
+                              'upstream ref', 'upstream sha',
                               'candidate dependencies', 'archive bootstrap dependencies', 'selection reason'))}</dl>
       {''.join(errors)}
     </section>

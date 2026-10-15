@@ -78,12 +78,31 @@ def _target_pair(series: str, codename: str, suites: dict[str, str]) -> list[dic
             },
             "extra_source_indexes": [
                 {
-                    "filename": f"packagetest-{uca_suite}-updates-{codename}-main-Sources.gz",
-                    "url": ("https://ubuntu-cloud.archive.canonical.com/ubuntu/dists/"
-                            f"{uca_suite}-updates/{codename}/main/source/Sources.gz"),
-                    "archive_root": "https://ubuntu-cloud.archive.canonical.com/ubuntu/",
-                    "pocket": f"uca-{codename}",
-                    "comparison_priority": 1,
+                    "filename": f"packagetest-{codename}-updates-{uca_suite}-main-Sources.xz",
+                    "url": ("https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
+                            f"{codename}-updates/ubuntu/dists/{uca_suite}/main/source/Sources.xz"),
+                    "archive_root": ("https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
+                                     f"{codename}-updates/ubuntu/"),
+                    "pocket": f"uca-{codename}-updates",
+                    "comparison_priority": 300,
+                },
+                {
+                    "filename": f"packagetest-{codename}-staging-{uca_suite}-main-Sources.xz",
+                    "url": ("https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
+                            f"{codename}-staging/ubuntu/dists/{uca_suite}/main/source/Sources.xz"),
+                    "archive_root": ("https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
+                                     f"{codename}-staging/ubuntu/"),
+                    "pocket": f"uca-{codename}-staging",
+                    "comparison_priority": 200,
+                },
+                {
+                    "filename": f"packagetest-{codename}-proposed-{uca_suite}-main-Sources.xz",
+                    "url": ("https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
+                            f"{codename}-proposed/ubuntu/dists/{uca_suite}/main/source/Sources.xz"),
+                    "archive_root": ("https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
+                                     f"{codename}-proposed/ubuntu/"),
+                    "pocket": f"uca-{codename}-proposed",
+                    "comparison_priority": 100,
                 }
             ],
         },
