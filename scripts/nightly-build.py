@@ -10,7 +10,6 @@ from packagetest.artifacts import fields, sha256
 from packagetest.catalog import dependency_names
 from packagetest.handoff import build_repository, collect_producers, stamp_generation
 from packagetest.locked import LockedBuild
-from packagetest.nightly_source import prepare_source
 from packagetest.snapshot_targets import build_target, catalog_target
 
 
@@ -108,6 +107,10 @@ def main():
             prepared = {'dsc': str(dsc),
                         'metadata': json.loads(resolution.read_text()) if resolution.is_file() else {}}
         else:
+            # The dependency-only preflight deliberately runs before host build
+            # tools are installed. Keep source-preparation dependencies out of
+            # that path; the complete build runs after prepare-builder.sh.
+            from packagetest.nightly_source import prepare_source
             prepared = prepare_source(entry, args.output / 'source-preparation',
                                       remediation_patch=args.remediation_patch,
                                       target=snapshot_target)

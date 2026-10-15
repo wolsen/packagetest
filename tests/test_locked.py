@@ -4,9 +4,28 @@ from pathlib import Path
 
 import pytest
 from packagetest.artifacts import sha256, verify_binaries
-from packagetest.locked import load_lock, LockedBuild, StageFailure
+from packagetest.locked import (
+    load_lock,
+    LockedBuild,
+    needs_lintian_distribution_overlay,
+    StageFailure,
+)
 
 LOCK = Path(__file__).resolve().parents[1] / 'config/locks/oslo-i18n-noble-baseline.json'
+
+
+@pytest.mark.parametrize('target', [
+    {'suite': 'noble', 'profile': 'noble-uca-epoxy'},
+    {'suite': 'resolute', 'kind': 'uca', 'profile': 'resolute-uca-hibiscus'},
+    {'suite': 'resolute', 'cloud_archive': {'distribution': 'resolute-hibiscus'}},
+    {'suite': 'resolute'},
+])
+def test_lintian_distribution_overlay_covers_uca_target_shapes(target):
+    assert needs_lintian_distribution_overlay(target)
+
+
+def test_lintian_distribution_overlay_skips_known_ubuntu_suite():
+    assert not needs_lintian_distribution_overlay({'suite': 'noble', 'profile': 'noble'})
 
 
 def test_lock_rejects_unpinned_inputs(tmp_path):

@@ -1,9 +1,25 @@
 import importlib.util
+import builtins
 import json
 from pathlib import Path
 
 from packagetest.locked import LockedBuild, StageFailure
 import pytest
+
+
+def test_dependency_preflight_does_not_import_source_preparation(monkeypatch):
+    real_import = builtins.__import__
+
+    def reject_source_preparation(name, *args, **kwargs):
+        if name == 'packagetest.nightly_source':
+            raise AssertionError('dependency preflight imported source preparation')
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, '__import__', reject_source_preparation)
+    path = Path(__file__).parents[1] / 'scripts/nightly-build.py'
+    spec = importlib.util.spec_from_file_location('nightly_build_preflight', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
 
 
 def test_prepared_snapshot_is_rechecked_before_build(tmp_path):

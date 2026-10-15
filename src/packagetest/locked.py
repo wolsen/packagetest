@@ -27,6 +27,14 @@ def _hex(value: str, length: int) -> bool:
     return isinstance(value, str) and bool(re.fullmatch(rf'[a-f0-9]{{{length}}}', value))
 
 
+def needs_lintian_distribution_overlay(target: dict) -> bool:
+    """Return whether Lintian needs the target's upload distribution added."""
+    return (target.get('kind') == 'uca'
+            or bool(target.get('cloud_archive'))
+            or '-uca-' in target.get('profile', '')
+            or target['suite'] == 'resolute')
+
+
 def load_lock(path: Path) -> dict:
     lock = json.loads(path.read_text())
     if lock.get('schema_version') != 1:
@@ -404,9 +412,9 @@ class LockedBuild:
                         raise StageFailure(f'Build did not use required dependency {dep}={version}')
                 self.enter('lintian')
                 lintian_args = []
-                if target.get('cloud_archive') or target['suite'] == 'resolute':
-                    # Noble's Lintian knows Ubuntu suites but not UCA pocket
-                    # names. Extend its distribution data; disable no checks.
+                if needs_lintian_distribution_overlay(target):
+                    # Host Lintian knows Ubuntu suites but not every UCA upload
+                    # distribution. Extend its distribution data; disable no checks.
                     overlay = self.root / 'lintian'
                     data = overlay / 'vendors/ubuntu/main/data/changes-file/known-dists'
                     data.parent.mkdir(parents=True, exist_ok=True)
