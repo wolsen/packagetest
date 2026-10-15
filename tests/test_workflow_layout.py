@@ -187,6 +187,9 @@ def test_packaging_engine_ci_runs_unit_tests_once_and_a_small_regression_matrix(
     library = Path('scripts/run-library.sh').read_text()
     assert 'name: Packaging engine CI' in workflow
     assert 'name: Python unit tests' in workflow
+    assert 'for attempt in 1 2 3' in workflow
+    assert 'Acquire::Retries=3' in workflow
+    assert 'timeout --signal=TERM --kill-after=30s 5m' in workflow
     assert '["baseline","snapshot","uca"]' in workflow
     assert 'RUN_LIBRARY_SKIP_TESTS: 1' in workflow
     assert 'RUN_LIBRARY_SKIP_TESTS' in library

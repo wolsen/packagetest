@@ -26,8 +26,25 @@ jobs:
         with:
           persist-credentials: false
       - run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-packaging python3-pytest python3-tomlkit
+          apt_options=(
+            -o Acquire::Retries=3
+            -o Acquire::http::Timeout=30
+            -o Acquire::https::Timeout=30
+            -o DPkg::Lock::Timeout=300
+          )
+          for attempt in 1 2 3; do
+            if sudo timeout --signal=TERM --kill-after=30s 5m \
+                apt-get "${apt_options[@]}" update; then
+              break
+            fi
+            if [[ "$attempt" == 3 ]]; then
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
+          sudo timeout --signal=TERM --kill-after=30s 10m \
+            env DEBIAN_FRONTEND=noninteractive apt-get "${apt_options[@]}" \
+            install -y python3-packaging python3-pytest python3-tomlkit
           PYTHONPATH=src python3 -m pytest -q
 
   build:
