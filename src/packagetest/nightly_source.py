@@ -164,7 +164,18 @@ def _commit_inventory(checkout: Path, start: str, end: str) -> list[dict]:
 
 def _official_commit_delta(entry: dict, checkout: Path, selected: dict) -> dict:
     """Prefer the release tag matching Ubuntu's packaged upstream version."""
-    archive_upstream = _archive_upstream_version(entry['archive_version'])
+    comparison_version = entry.get(
+        'comparison_archive_version', entry['archive_version'])
+    if comparison_version is None:
+        return {
+            'comparison_tag': None, 'comparison_tag_sha': None,
+            'archive_upstream_version': None,
+            'comparison_tag_matches_archive_version': False,
+            'basis': 'no-target-archive-baseline',
+            'count': None, 'commits': [],
+            'official_tag_resolution': 'target-archive-package-absent',
+        }
+    archive_upstream = _archive_upstream_version(comparison_version)
     from .versioning import upstream_version_to_debian_version
     tags = subprocess.run(
         ['git', '-C', str(checkout), 'tag', '--merged', selected['sha']],
@@ -266,10 +277,15 @@ def write_source_evolution(report: dict, destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     (destination / 'source-evolution.json').write_text(json.dumps(report, indent=2) + '\n')
     delta = report['commit_delta']
-    lines = [f"## {report['source']} upstream evolution", '',
-             f"{delta['count']} commits since `{delta['comparison_tag']}` "
-             f"({delta['basis'].replace('-', ' ')})."]
-    if not delta['comparison_tag_matches_archive_version']:
+    lines = [f"## {report['source']} upstream evolution", '']
+    if delta['basis'] == 'no-target-archive-baseline':
+        lines.append('No official package exists in the target archive, so an official '
+                     'commit delta cannot be calculated yet.')
+    else:
+        lines.append(f"{delta['count']} commits since `{delta['comparison_tag']}` "
+                     f"({delta['basis'].replace('-', ' ')}).")
+    if (delta['basis'] != 'no-target-archive-baseline'
+            and not delta['comparison_tag_matches_archive_version']):
         lines.extend(['', f"Archive upstream version `{delta['archive_upstream_version']}` did not "
                       'match that tag; verify the official-package baseline.'])
     if delta['commits']:
@@ -456,8 +472,8 @@ def _add_quilt_patch(tree: Path, name: str, content: str) -> None:
     series.write_text(existing + name + '\n')
 
 
-def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
-    """Patch incomplete setuptools discovery and package-data declarations."""
+def _setuptools_discovery_adjustments(tree: Path, patch_tree: Path) -> list[dict]:
+    """Calculate setuptools changes from ``tree`` and add them to ``patch_tree``."""
     path = tree / 'pyproject.toml'
     if not path.is_file():
         return []
@@ -475,11 +491,13 @@ def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
     package_roots = []
     configured = list(includes if isinstance(includes, list) else []) + list(explicit)
     for include in configured:
-        if not isinstance(include, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.]*', include):
+        if (not isinstance(include, str)
+                or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.]*\*?', include)):
             continue
-        package = tree.joinpath(*include.split('.'))
+        package_name = include.removesuffix('*')
+        package = tree.joinpath(*package_name.split('.'))
         if package.is_dir():
-            package_roots.append((include, package))
+            package_roots.append((package_name, package))
         subpackages = sorted(
             child.relative_to(tree).as_posix().replace('/', '.')
             for child in package.rglob('*')
@@ -488,7 +506,7 @@ def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
         if subpackages:
             if include in explicit:
                 explicit_additions.update(set(subpackages) - set(explicit))
-            else:
+            elif not include.endswith('*'):
                 replacements[include] = include + '*'
             omitted[include] = subpackages
     package_data = {}
@@ -549,7 +567,7 @@ def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
         'Forwarded: no\n'
         'Author: Packaging Build Agent <packaging-agent@example.invalid>\n'
     )
-    _add_quilt_patch(tree, name, header + diff)
+    _add_quilt_patch(patch_tree, name, header + diff)
     return [{
         'action': 'add-quilt-patch', 'name': name,
         'reason': 'Setuptools metadata omits importable subpackages or runtime package data.',
@@ -558,6 +576,36 @@ def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
         'package_data': package_data,
         'human_review_required': True,
     }]
+
+
+def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
+    """Patch setuptools metadata against the state produced by active patches.
+
+    Generated patches are appended to ``debian/patches/series``. Their diff
+    therefore has to use the source state after every preceding quilt patch,
+    rather than the pristine upstream snapshot.
+    """
+    series = tree / 'debian' / 'patches' / 'series'
+    active = [line for line in series.read_text().splitlines()
+              if line.strip() and not line.lstrip().startswith('#')] \
+        if series.is_file() else []
+    if not active:
+        return _setuptools_discovery_adjustments(tree, tree)
+
+    with tempfile.TemporaryDirectory(prefix='packagetest-post-quilt-') as directory:
+        patched = Path(directory) / 'source'
+        shutil.copytree(tree, patched, symlinks=True)
+        environment = os.environ.copy()
+        environment['QUILT_PATCHES'] = 'debian/patches'
+        result = subprocess.run(
+            ['quilt', '--quiltrc', '/dev/null', 'push', '-a'], cwd=patched,
+            env=environment, text=True, capture_output=True)
+        if result.returncode != 0:
+            # Source preparation will diagnose and remediate the actual failed
+            # packaging patch. Do not compound it with a generated patch based
+            # on a source state that can never exist.
+            return []
+        return _setuptools_discovery_adjustments(patched, tree)
 
 
 def autopkgtest_packaging_adjustments(entry: dict, tree: Path) -> list[dict]:

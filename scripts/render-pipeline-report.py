@@ -140,6 +140,7 @@ def build_report(catalog: dict, plan: dict, results: list[dict], proposals_root:
             'archive_bootstrap_dependencies': entry.get('archive_bootstrap_dependencies', []),
             'selection_reasons': entry.get('selection_reasons', []),
             'archive_version': entry.get('archive_version'),
+            'comparison_archive_version': entry.get('comparison_archive_version'),
             'upstream_ref': entry.get('upstream_ref'),
             'upstream_sha': entry.get('upstream_sha'),
             'build': result.get('build', missing),
@@ -255,7 +256,10 @@ def render_evolution(evolution: dict | None) -> str:
         + html.escape(item.get('packaging', 'review required')) + '</li>'
         for item in introduced)
     mismatch = ''
-    if not delta.get('comparison_tag_matches_archive_version', False):
+    if delta.get('basis') == 'no-target-archive-baseline':
+        mismatch = ('<p class="review">No official package exists in the target archive; '
+                    'an official commit delta is not available yet.</p>')
+    elif not delta.get('comparison_tag_matches_archive_version', False):
         mismatch = ('<p class="review">The archive version did not match this tag; '
                     'verify the official-package baseline.</p>')
     review = ('<p class="review">Human review must decide whether a new binary package is needed.</p>'
@@ -268,7 +272,9 @@ def render_evolution(evolution: dict | None) -> str:
     }, ('archive upstream version', 'comparison tag', 'commits after baseline', 'comparison basis'))}</dl>
       {mismatch}
       <details><summary>Commits in snapshot ({len(commits)})</summary>
-        {'<ol>' + commit_rows + '</ol>' if commits else '<p>Snapshot matches the comparison tag.</p>'}
+        {'<ol>' + commit_rows + '</ol>' if commits else
+         '<p>No official comparison is available.</p>' if delta.get('basis') == 'no-target-archive-baseline' else
+         '<p>Snapshot matches the comparison tag.</p>'}
       </details>
       <h4>New commands, services, and entry points</h4>
       {review}{'<ul>' + entry_rows + '</ul>' if introduced else '<p>None detected.</p>'}'''
@@ -311,12 +317,13 @@ def render_html(report: dict) -> str:
   <div class="package-body">
     <section><h3>Package result</h3>
       <dl>{render_key_values({'archive version': package.get('archive_version'),
+                              'comparison archive version': package.get('comparison_archive_version'),
                               'upstream ref': package.get('upstream_ref'),
                               'upstream sha': package.get('upstream_sha'),
                               'candidate dependencies': dependencies,
                               'archive bootstrap dependencies': bootstrap,
                               'selection reason': reasons},
-                             ('archive version', 'upstream ref', 'upstream sha',
+                             ('archive version', 'comparison archive version', 'upstream ref', 'upstream sha',
                               'candidate dependencies', 'archive bootstrap dependencies', 'selection reason'))}</dl>
       {''.join(errors)}
     </section>

@@ -32,6 +32,8 @@ def test_hibiscus_targets_are_derived_from_release_mappings():
     assert targets['hibiscus-resolute-uca']['ubuntu_release'] == '26.04'
     assert targets['hibiscus-resolute-uca']['cloud_archive']['distribution'] == (
         'resolute-updates/hibiscus')
+    assert targets['hibiscus-resolute-uca']['extra_source_indexes'][0][
+        'comparison_priority'] == 1
     assert build_target(targets['hibiscus-resolute-uca'])['chroot'] == (
         'resolute-uca-hibiscus-amd64-sbuild')
 

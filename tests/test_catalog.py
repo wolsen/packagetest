@@ -276,7 +276,7 @@ def test_latest_archive_version_wins_independent_of_index_order(tmp_path):
         'ubuntu/resolute-updates')
 
 
-def test_uca_overlay_is_the_comparison_baseline_when_newer(tmp_path):
+def test_uca_overlay_wins_when_cloud_revision_sorts_before_ubuntu(tmp_path):
     root = tmp_path / 'releases'
     (root / 'deliverables' / 'hibiscus').mkdir(parents=True)
     (root / 'deliverables' / 'hibiscus' / 'heat.yaml').write_text(json.dumps({
@@ -287,7 +287,7 @@ def test_uca_overlay_is_the_comparison_baseline_when_newer(tmp_path):
                     '-c', 'user.email=t@example.invalid', 'commit', '--allow-empty',
                     '-qm', 'fixture'], check=True)
     ubuntu = archive('heat')
-    ubuntu['Version'] = '1:26.0.0-0ubuntu1.2'
+    ubuntu['Version'] = '1:27.0.0-0ubuntu1'
     cloud = archive('heat')
     cloud['Version'] = '1:27.0.0-0ubuntu1~cloud1'
     base = tmp_path / 'packagetest-resolute-main-Sources'
@@ -299,9 +299,43 @@ def test_uca_overlay_is_the_comparison_baseline_when_newer(tmp_path):
         index_metadata={overlay.name: {
             'pocket': 'uca-hibiscus',
             'archive_root': 'https://ubuntu-cloud.archive.canonical.com/ubuntu/',
+            'comparison_priority': 1,
         }})
     heat = result['packages'][0]
     assert heat['archive_version'] == '1:27.0.0-0ubuntu1~cloud1'
     assert heat['archive_pocket'] == 'uca-hibiscus'
+    assert heat['archive_index'] == overlay.name
+    assert heat['comparison_archive_version'] == '1:27.0.0-0ubuntu1~cloud1'
+    assert heat['comparison_archive_index'] == overlay.name
     assert heat['archive_source']['url'].startswith(
         'https://ubuntu-cloud.archive.canonical.com/ubuntu/pool/')
+
+
+def test_uca_package_absence_is_not_mislabeled_as_comparison_baseline(tmp_path):
+    root = tmp_path / 'releases'
+    (root / 'deliverables' / 'hibiscus').mkdir(parents=True)
+    (root / 'deliverables' / 'hibiscus' / 'heat.yaml').write_text(json.dumps({
+        'repository-settings': {'openstack/heat': {}},
+    }))
+    subprocess.run(['git', 'init', '-q', str(root)], check=True)
+    subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test',
+                    '-c', 'user.email=t@example.invalid', 'commit', '--allow-empty',
+                    '-qm', 'fixture'], check=True)
+    ubuntu = archive('heat')
+    base = tmp_path / 'packagetest-resolute-main-Sources'
+    overlay = tmp_path / 'packagetest-resolute-updates-hibiscus-main-Sources'
+    base.write_text('\n'.join(f'{key}: {value}' for key, value in ubuntu.items()))
+    overlay.write_text('')
+
+    result = make_catalog(
+        root, [base, overlay],
+        index_metadata={overlay.name: {
+            'pocket': 'uca-hibiscus',
+            'archive_root': 'https://ubuntu-cloud.archive.canonical.com/ubuntu/',
+            'comparison_priority': 1,
+        }})
+
+    heat = result['packages'][0]
+    assert heat['archive_version'] == ubuntu['Version']
+    assert heat['comparison_archive_version'] is None
+    assert heat['comparison_archive_index'] is None

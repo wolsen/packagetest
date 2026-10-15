@@ -83,6 +83,7 @@ def _target_pair(series: str, codename: str, suites: dict[str, str]) -> list[dic
                             f"{uca_suite}-updates/{codename}/main/source/Sources.gz"),
                     "archive_root": "https://ubuntu-cloud.archive.canonical.com/ubuntu/",
                     "pocket": f"uca-{codename}",
+                    "comparison_priority": 1,
                 }
             ],
         },

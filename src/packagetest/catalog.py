@@ -218,7 +218,9 @@ def _upstream_selection(metadata: dict, repository: str | None, *, series: str,
 
 def package_record(name: str, metadata: dict, archive: dict, *, series: str,
                    membership: str, series_status: str = 'unknown',
-                   codename: str | None = None, suite: str = 'resolute') -> dict:
+                   codename: str | None = None, suite: str = 'resolute',
+                   comparison_archive: dict | None = None,
+                   comparison_required: bool = False) -> dict:
     repos = repository_names(metadata)
     # Multi-repository deliverables need an explicit mapping; never guess that
     # a deliverable filename is necessarily the source repository name.
@@ -243,6 +245,7 @@ def package_record(name: str, metadata: dict, archive: dict, *, series: str,
     archive_packaging_repository, archive_packaging_branch = vcs_git(archive.get('Vcs-Git', ''))
     archive_packaging_repository = PACKAGING_REPOSITORY_OVERRIDES.get(
         archive['Package'], archive_packaging_repository)
+    comparison = comparison_archive if comparison_required else archive
     return {
         'deliverable': name, 'source': archive['Package'], 'membership': membership,
         'release_type': metadata.get('type', 'other'), 'team': metadata.get('team'),
@@ -254,6 +257,15 @@ def package_record(name: str, metadata: dict, archive: dict, *, series: str,
         'all_upstream_repositories': repos,
         'archive_version': archive['Version'],
         'archive_pocket': archive.get('_packagetest_archive_pocket', 'release'),
+        'archive_index': archive.get('_packagetest_archive_index'),
+        'comparison_archive_version': (
+            comparison.get('Version') if comparison is not None else None),
+        'comparison_archive_pocket': (
+            comparison.get('_packagetest_archive_pocket')
+            if comparison is not None else None),
+        'comparison_archive_index': (
+            comparison.get('_packagetest_archive_index')
+            if comparison is not None else None),
         'archive_identity_evidence': identity_evidence(archive),
         'binaries': sorted(x.strip() for x in archive.get('Binary', '').split(',') if x.strip()),
         'build_depends': ', '.join(archive.get(k, '') for k in ('Build-Depends', 'Build-Depends-Indep', 'Build-Depends-Arch') if archive.get(k)),
@@ -322,6 +334,7 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
     # YAML is needed only for refreshing the catalog, not for consuming it.
     import yaml
     sources = {}
+    comparison_sources = {}
     indexes = []
     for path in source_indexes:
         data = path.read_bytes()
@@ -340,8 +353,28 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
                 )
                 source['_packagetest_archive_root'] = metadata.get(
                     'archive_root', 'https://archive.ubuntu.com/ubuntu/')
+                source['_packagetest_archive_index'] = filename
+                # A target-specific overlay (for example the Hibiscus Cloud
+                # Archive) defines the comparison baseline even when Ubuntu's
+                # development series carries a numerically newer version.
+                # Version ordering remains useful within the same archive
+                # tier for release, updates, and security pockets.
+                source['_packagetest_archive_priority'] = int(
+                    metadata.get('comparison_priority', 0))
+                if source['_packagetest_archive_priority']:
+                    comparison_previous = comparison_sources.get(source['Package'])
+                    if (comparison_previous is None or subprocess.run([
+                            'dpkg', '--compare-versions', source['Version'], 'gt',
+                            comparison_previous['Version']]).returncode == 0):
+                        comparison_sources[source['Package']] = source
                 previous = sources.get(source['Package'])
-                if previous is None or subprocess.run(['dpkg', '--compare-versions', source['Version'], 'gt', previous['Version']]).returncode == 0:
+                priority = source['_packagetest_archive_priority']
+                previous_priority = (previous or {}).get(
+                    '_packagetest_archive_priority', -1)
+                if (previous is None or priority > previous_priority
+                        or priority == previous_priority and subprocess.run([
+                            'dpkg', '--compare-versions', source['Version'],
+                            'gt', previous['Version']]).returncode == 0):
                     sources[source['Package']] = source
     status_path = releases / 'data' / 'series_status.yaml'
     statuses = yaml.safe_load(status_path.read_text()) if status_path.is_file() else []
@@ -349,6 +382,9 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
                           if item.get('name') == codename
                           or str(item.get('release-id')) == str(series)), {})
     target_status = status_record.get('status', 'unknown')
+    comparison_required = bool(comparison_sources or any(
+        metadata.get('comparison_priority')
+        for metadata in (index_metadata or {}).values()))
     cycle = {path.stem: yaml.safe_load(path.read_text()) for path in sorted((releases / 'deliverables' / codename).glob('*.yaml'))}
     if not cycle:
         raise ValueError(f'No deliverables for {codename}')
@@ -360,7 +396,9 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
         if source:
             packages[source] = package_record(
                 name, metadata, sources[source], series=series, membership='cycle',
-                series_status=target_status, codename=codename, suite=suite)
+                series_status=target_status, codename=codename, suite=suite,
+                comparison_archive=comparison_sources.get(source),
+                comparison_required=comparison_required)
         else:
             exclusions.append({'deliverable': name, 'release_type': metadata.get('type'),
                                'repositories': repository_names(metadata),
@@ -372,7 +410,9 @@ def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
             candidates[source] = package_record(
                 name, metadata, sources[source], series=series,
                 membership='independent-build-dependency',
-                series_status=target_status, codename=codename, suite=suite)
+                series_status=target_status, codename=codename, suite=suite,
+                comparison_archive=comparison_sources.get(source),
+                comparison_required=comparison_required)
     binary_sources = {binary: source for source, item in {**candidates, **packages}.items() for binary in item['binaries']}
     while True:
         required = {binary_sources[binary] for item in packages.values() for binary in dependency_names(item['build_depends']) if binary in binary_sources}

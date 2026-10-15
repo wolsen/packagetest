@@ -1,6 +1,7 @@
 import io
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -522,6 +523,29 @@ def test_official_package_tag_delta_lists_every_snapshot_commit(tmp_path):
         'Add API command', 'Move service to WSGI']
 
 
+def test_commit_delta_does_not_use_packaging_seed_when_target_archive_is_absent(
+        tmp_path):
+    from packagetest.nightly_source import _official_commit_delta
+    repository = tmp_path / 'upstream'
+    repository.mkdir()
+    subprocess.run(['git', 'init', '-q', '-b', 'master', str(repository)], check=True)
+    subprocess.run(['git', '-C', str(repository), '-c', 'user.name=Test',
+                    '-c', 'user.email=test@example.invalid', 'commit', '--allow-empty',
+                    '-qm', 'snapshot'], check=True)
+    tip = subprocess.check_output(
+        ['git', '-C', str(repository), 'rev-parse', 'HEAD'], text=True).strip()
+
+    delta = _official_commit_delta(
+        {'archive_version': '28.0.0-0ubuntu1',
+         'comparison_archive_version': None}, repository,
+        {'sha': tip, 'base_tag': '28.0.0', 'base_tag_sha': tip,
+         'commits_since_tag': 0, 'commits': []})
+
+    assert delta['basis'] == 'no-target-archive-baseline'
+    assert delta['official_tag_resolution'] == 'target-archive-package-absent'
+    assert delta['count'] is None
+
+
 def test_prepared_control_metadata_captures_binary_and_autopkgtest_relationships(tmp_path):
     import importlib.util
     path = Path(__file__).parents[1] / 'scripts/prepare-nightly-source.py'
@@ -712,6 +736,66 @@ command = "demo:main"
     patch = (tmp_path / 'debian/patches/complete-setuptools-packaging.patch').read_text()
     assert '"demo.tests"' in patch
     assert ' # package list' in patch
+
+
+def test_setuptools_adjustment_uses_source_after_existing_quilt_patches(tmp_path):
+    from packagetest.nightly_source import setuptools_discovery_adjustments
+    package = tmp_path / 'demo'
+    data = package / 'data'
+    data.mkdir(parents=True)
+    (package / '__init__.py').write_text('')
+    (data / '__init__.py').write_text('')
+    (data / 'schema.json').write_text('{}')
+    (tmp_path / 'pyproject.toml').write_text('''[tool.setuptools]
+packages = ["demo"]
+''')
+    patches = tmp_path / 'debian/patches'
+    patches.mkdir(parents=True)
+    (patches / 'series').write_text('use-package-find.patch\n')
+    (patches / 'use-package-find.patch').write_text('''--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,2 +1,3 @@
+ [tool.setuptools]
+-packages = ["demo"]
++[tool.setuptools.packages.find]
++include = ["demo*"]
+''')
+
+    actions = setuptools_discovery_adjustments(tmp_path)
+
+    assert actions[0]['explicit_package_additions'] == []
+    generated = (patches / 'complete-setuptools-packaging.patch').read_text()
+    assert '[tool.setuptools.package-data]' in generated
+    assert '-packages = ["demo"]' not in generated
+    check = tmp_path / 'check'
+    shutil.copytree(tmp_path, check)
+    result = subprocess.run(
+        ['quilt', '--quiltrc', '/dev/null', 'push', '-a'], cwd=check,
+        env={**os.environ, 'QUILT_PATCHES': 'debian/patches'},
+        text=True, capture_output=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_setuptools_adjustment_defers_when_existing_quilt_patch_fails(tmp_path):
+    from packagetest.nightly_source import setuptools_discovery_adjustments
+    package = tmp_path / 'demo'
+    package.mkdir()
+    (package / '__init__.py').write_text('')
+    (tmp_path / 'pyproject.toml').write_text('''[tool.setuptools.packages.find]
+include = ["demo"]
+''')
+    patches = tmp_path / 'debian/patches'
+    patches.mkdir(parents=True)
+    (patches / 'series').write_text('broken.patch\n')
+    (patches / 'broken.patch').write_text('''--- a/missing
++++ b/missing
+@@ -1 +1 @@
+-old
++new
+''')
+
+    assert setuptools_discovery_adjustments(tmp_path) == []
+    assert not (patches / 'complete-setuptools-packaging.patch').exists()
 
 
 def test_only_complete_already_applied_patch_is_omitted(tmp_path):
