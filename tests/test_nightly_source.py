@@ -667,6 +667,31 @@ include = ["os_service_types"]
     assert '+"os_service_types.data" = ["service-types.json"]' in patch
 
 
+def test_explicit_setuptools_packages_are_expanded_with_subpackages(tmp_path):
+    from packagetest.nightly_source import setuptools_discovery_adjustments
+    (tmp_path / 'debian').mkdir()
+    package = tmp_path / 'oslo_versionedobjects'
+    (package / 'tests').mkdir(parents=True)
+    (package / '__init__.py').write_text('')
+    (package / 'tests/__init__.py').write_text('')
+    (tmp_path / 'pyproject.toml').write_text('''[tool.setuptools]
+packages = [
+    "oslo_versionedobjects"
+]
+
+[tool.ruff]
+line-length = 79
+''')
+
+    actions = setuptools_discovery_adjustments(tmp_path)
+
+    assert actions[0]['explicit_package_additions'] == [
+        'oslo_versionedobjects.tests']
+    patch = (tmp_path / 'debian/patches/complete-setuptools-packaging.patch').read_text()
+    assert '+    "oslo_versionedobjects.tests"' in patch
+    assert '\n+-\n' not in patch
+
+
 def test_only_complete_already_applied_patch_is_omitted(tmp_path):
     from packagetest.nightly_source import already_applied_patches
     patches = tmp_path / 'debian/patches'

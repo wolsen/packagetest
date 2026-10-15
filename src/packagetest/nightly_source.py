@@ -461,14 +461,18 @@ def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
         return []
     text = path.read_text()
     try:
-        includes = tomllib.loads(text).get('tool', {}).get('setuptools', {}).get(
-            'packages', {}).get('find', {}).get('include', [])
+        setuptools = tomllib.loads(text).get('tool', {}).get('setuptools', {})
     except tomllib.TOMLDecodeError:
         return []
+    packages = setuptools.get('packages', {}) if isinstance(setuptools, dict) else {}
+    includes = packages.get('find', {}).get('include', []) if isinstance(packages, dict) else []
+    explicit = packages if isinstance(packages, list) else []
     replacements = {}
+    explicit_additions = set()
     omitted = {}
     package_roots = []
-    for include in includes if isinstance(includes, list) else []:
+    configured = list(includes if isinstance(includes, list) else []) + list(explicit)
+    for include in configured:
         if not isinstance(include, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.]*', include):
             continue
         package = tree.joinpath(*include.split('.'))
@@ -480,7 +484,10 @@ def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
             if child.is_dir() and (child / '__init__.py').is_file()
         ) if package.is_dir() else []
         if subpackages:
-            replacements[include] = include + '*'
+            if include in explicit:
+                explicit_additions.update(set(subpackages) - set(explicit))
+            else:
+                replacements[include] = include + '*'
             omitted[include] = subpackages
     package_data = {}
     has_package_data = '[tool.setuptools.package-data]' in text
@@ -501,7 +508,7 @@ def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
                     relative = package_dir.relative_to(package_root).parts
                     package_name = '.'.join((root_name, *relative))
                     package_data[package_name] = files
-    if not replacements and not package_data:
+    if not replacements and not explicit_additions and not package_data:
         return []
     revised = text
     for old, new in replacements.items():
@@ -511,6 +518,19 @@ def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
             + match.group(2) + match.group(3), revised, count=1)
         if count != 1:
             raise ValueError(f'Cannot safely widen setuptools package discovery for {old}')
+    if explicit_additions:
+        pattern = (r'(?ms)^(?P<indent>[ \t]*)packages[ \t]*=[ \t]*\['
+                   r'.*?^(?P=indent)\][ \t]*$')
+        values = list(explicit) + sorted(explicit_additions)
+
+        def explicit_replacement(match):
+            indent = match.group('indent')
+            body = ',\n'.join(f'{indent}    {json.dumps(value)}' for value in values)
+            return f'{indent}packages = [\n{body}\n{indent}]'
+
+        revised, count = re.subn(pattern, explicit_replacement, revised, count=1)
+        if count != 1:
+            raise ValueError('Cannot safely expand explicit setuptools package discovery')
     if package_data:
         if not revised.endswith('\n'):
             revised += '\n'
@@ -533,6 +553,7 @@ def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
         'action': 'add-quilt-patch', 'name': name,
         'reason': 'Setuptools metadata omits importable subpackages or runtime package data.',
         'replacements': replacements, 'omitted_subpackages': omitted,
+        'explicit_package_additions': sorted(explicit_additions),
         'package_data': package_data,
         'human_review_required': True,
     }]

@@ -72,7 +72,9 @@ def test_main_push_exercises_heat_candidate_closure():
     for workflow in (stonking, uca):
         assert 'branches: [main]' in workflow
         assert ("github.event_name == 'push' && "
-                "'python-neutron-lib,python-oslo.versionedobjects,heat,watcher,glance'") in workflow
+                "'python-neutron-lib,python-oslo.versionedobjects,"
+                "python-debtcollector,python-oslo.i18n,python-os-service-types,"
+                "heat,watcher,glance'") in workflow
         assert '[full-snapshot]' not in workflow
     assert any(edge['source'] == 'heat' and edge['dependency'] == 'python-neutron-lib'
                for edge in policy)
