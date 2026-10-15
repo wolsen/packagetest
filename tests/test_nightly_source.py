@@ -677,7 +677,7 @@ def test_explicit_setuptools_packages_are_expanded_with_subpackages(tmp_path):
     (tmp_path / 'pyproject.toml').write_text('''[tool.setuptools]
 packages = [
     "oslo_versionedobjects"
-]
+    ]
 
 [tool.ruff]
 line-length = 79
@@ -690,6 +690,28 @@ line-length = 79
     patch = (tmp_path / 'debian/patches/complete-setuptools-packaging.patch').read_text()
     assert '+    "oslo_versionedobjects.tests"' in patch
     assert '\n+-\n' not in patch
+
+
+def test_inline_setuptools_packages_are_expanded_with_subpackages(tmp_path):
+    from packagetest.nightly_source import setuptools_discovery_adjustments
+    (tmp_path / 'debian').mkdir()
+    package = tmp_path / 'demo'
+    (package / 'tests').mkdir(parents=True)
+    (package / '__init__.py').write_text('')
+    (package / 'tests/__init__.py').write_text('')
+    (tmp_path / 'pyproject.toml').write_text('''[tool.setuptools]
+packages = ["demo"] # package list
+
+[project.entry-points.demo]
+command = "demo:main"
+''')
+
+    actions = setuptools_discovery_adjustments(tmp_path)
+
+    assert actions[0]['explicit_package_additions'] == ['demo.tests']
+    patch = (tmp_path / 'debian/patches/complete-setuptools-packaging.patch').read_text()
+    assert '+    "demo.tests"' in patch
+    assert ' # package list' in patch
 
 
 def test_only_complete_already_applied_patch_is_omitted(tmp_path):

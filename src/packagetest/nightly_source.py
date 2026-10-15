@@ -454,6 +454,72 @@ def _add_quilt_patch(tree: Path, name: str, content: str) -> None:
     series.write_text(existing + name + '\n')
 
 
+def _replace_toml_string_array(text: str, section: str, key: str,
+                               values: list[str]) -> str:
+    """Replace one TOML string array without depending on its whitespace style."""
+    header = re.search(rf'(?m)^\[{re.escape(section)}\][ \t]*(?:#.*)?$', text)
+    if not header:
+        raise ValueError(f'Cannot find TOML section [{section}]')
+    next_header = re.search(r'(?m)^\[', text[header.end():])
+    section_end = (header.end() + next_header.start()
+                   if next_header else len(text))
+    assignment = re.search(
+        rf'(?m)^(?P<indent>[ \t]*){re.escape(key)}[ \t]*=[ \t]*',
+        text[header.end():section_end])
+    if not assignment:
+        raise ValueError(f'Cannot find TOML assignment [{section}] {key}')
+    assignment_start = header.end() + assignment.start()
+    value_start = header.end() + assignment.end()
+    opening = text.find('[', value_start, section_end)
+    if opening < 0:
+        raise ValueError(f'[{section}] {key} is not an array')
+    depth = 0
+    quote = None
+    escaped = False
+    comment = False
+    closing = None
+    for index in range(opening, section_end):
+        char = text[index]
+        if comment:
+            if char == '\n':
+                comment = False
+            continue
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == '\\' and quote == '"':
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char == '#':
+            comment = True
+        elif char in {'"', "'"}:
+            quote = char
+        elif char == '[':
+            depth += 1
+        elif char == ']':
+            depth -= 1
+            if depth == 0:
+                closing = index
+                break
+    if closing is None:
+        raise ValueError(f'Cannot find closing array bracket for [{section}] {key}')
+    indent = re.match(r'[ \t]*', text[assignment_start:]).group(0)
+    body = ',\n'.join(f'{indent}    {json.dumps(value)}' for value in values)
+    revised = text[:opening] + f'[\n{body}\n{indent}]' + text[closing + 1:]
+    try:
+        parsed = tomllib.loads(revised)
+    except tomllib.TOMLDecodeError as error:
+        raise ValueError(f'Generated invalid TOML while replacing [{section}] {key}') from error
+    actual = parsed
+    for component in section.split('.'):
+        actual = actual[component]
+    if actual.get(key) != values:
+        raise ValueError(f'Generated unexpected TOML value for [{section}] {key}')
+    return revised
+
+
 def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
     """Patch incomplete setuptools discovery and package-data declarations."""
     path = tree / 'pyproject.toml'
@@ -519,18 +585,9 @@ def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
         if count != 1:
             raise ValueError(f'Cannot safely widen setuptools package discovery for {old}')
     if explicit_additions:
-        pattern = (r'(?ms)^(?P<indent>[ \t]*)packages[ \t]*=[ \t]*\['
-                   r'.*?^(?P=indent)\][ \t]*$')
         values = list(explicit) + sorted(explicit_additions)
-
-        def explicit_replacement(match):
-            indent = match.group('indent')
-            body = ',\n'.join(f'{indent}    {json.dumps(value)}' for value in values)
-            return f'{indent}packages = [\n{body}\n{indent}]'
-
-        revised, count = re.subn(pattern, explicit_replacement, revised, count=1)
-        if count != 1:
-            raise ValueError('Cannot safely expand explicit setuptools package discovery')
+        revised = _replace_toml_string_array(
+            revised, 'tool.setuptools', 'packages', values)
     if package_data:
         if not revised.endswith('\n'):
             revised += '\n'

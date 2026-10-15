@@ -35,4 +35,4 @@ jobs:
     with:
       target-id: hibiscus-stonking
       target-label: Ubuntu Stonking development
-      sources: ${{ github.event_name == 'push' && 'python-neutron-lib,python-oslo.versionedobjects,python-debtcollector,python-oslo.i18n,python-os-service-types,heat,watcher,glance' || inputs.sources }}
+      sources: ${{ github.event_name == 'push' && 'python-neutron-lib,python-oslo.versionedobjects,python-debtcollector,python-oslo.i18n,python-os-service-types,cinder-tempest-plugin,heat,watcher,glance' || inputs.sources }}
