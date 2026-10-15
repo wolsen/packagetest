@@ -27,7 +27,7 @@ jobs:
           persist-credentials: false
       - run: |
           sudo apt-get update
-          sudo apt-get install -y python3-packaging python3-pytest
+          sudo apt-get install -y python3-packaging python3-pytest python3-tomlkit
           PYTHONPATH=src python3 -m pytest -q
 
   build:

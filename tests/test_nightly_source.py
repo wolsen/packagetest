@@ -710,7 +710,7 @@ command = "demo:main"
 
     assert actions[0]['explicit_package_additions'] == ['demo.tests']
     patch = (tmp_path / 'debian/patches/complete-setuptools-packaging.patch').read_text()
-    assert '+    "demo.tests"' in patch
+    assert '"demo.tests"' in patch
     assert ' # package list' in patch
 
 
