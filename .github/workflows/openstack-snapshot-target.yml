@@ -238,10 +238,11 @@ jobs:
         with:
           name: nightly-discovery-${{ inputs.target-id }}
           path: nightly-discovery
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: prepared-source-${{ inputs.target-id }}-*
-          path: prepared-inputs
+      - name: Download every prepared source through the paginated inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_PATTERN: prepared-source-${{ inputs.target-id }}-*
+        run: python3 scripts/download-workflow-artifacts.py --pattern "$ARTIFACT_PATTERN" --output prepared-inputs
       - id: finalize
         name: Resolve exact binary providers and dependency levels
         run: >-
@@ -290,16 +291,16 @@ jobs:
         with:
           name: nightly-plan-${{ inputs.target-id }}
           path: nightly-plan
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: status-${{ inputs.target-id }}-*
-          path: statuses
+      - name: Download all package statuses through the paginated inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_PATTERN: status-${{ inputs.target-id }}-*
+        run: python3 scripts/download-workflow-artifacts.py --pattern "$ARTIFACT_PATTERN" --output statuses
       - name: Download proposed packaging changes
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          pattern: packaging-proposal-${{ inputs.target-id }}-*
-          path: proposals
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_PATTERN: packaging-proposal-${{ inputs.target-id }}-*
+        run: python3 scripts/download-workflow-artifacts.py --pattern "$ARTIFACT_PATTERN" --output proposals --allow-empty
       - name: Aggregate every requested source without hiding missing jobs
         run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --summary-inputs statuses --output summary
       - name: Render static pipeline report

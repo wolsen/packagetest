@@ -23,7 +23,8 @@ def test_each_build_matrix_runs_its_own_autopkgtest():
 
 def test_summary_artifact_contains_browsable_results_and_packaging_proposals():
     workflow = Path('.github/workflows/openstack-snapshot-target.yml').read_text()
-    assert 'pattern: packaging-proposal-${{ inputs.target-id }}-*' in workflow
+    assert 'ARTIFACT_PATTERN: packaging-proposal-${{ inputs.target-id }}-*' in workflow
+    assert '--output proposals --allow-empty' in workflow
     assert 'python3 scripts/render-pipeline-report.py' in workflow
     assert '--plan nightly-plan/plan.json' in workflow
     assert '--results summary/results.json' in workflow
@@ -128,7 +129,8 @@ def test_model_contract_is_focused_and_does_not_duplicate_snapshot_orchestration
     assert 'build-dependency-level.yml' not in workflow
     assert 'prepare_autopkgtest_image:' not in workflow
     assert 'prepare_sbuild_rootfs:' not in workflow
-    assert 'pattern: ${{ steps.dependencies.outputs.pattern }}' in reusable
+    assert 'ARTIFACT_PATTERN: ${{ steps.dependencies.outputs.pattern }}' in reusable
+    assert '--output downloads --merge-multiple' in reusable
     assert 'test "$pattern" = \'__no_dependencies__\'' not in reusable
 
 

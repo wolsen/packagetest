@@ -91,12 +91,12 @@ jobs:
         env:
           SOURCE: ${{ matrix.source }}
         run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --dependency-pattern "$SOURCE"
-      - uses: actions/download-artifact@v4
+      - name: Download all required producers through the paginated inventory
         if: steps.dependencies.outputs.needed == 'true'
-        with:
-          pattern: ${{ steps.dependencies.outputs.pattern }}
-          path: downloads
-          merge-multiple: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_PATTERN: ${{ steps.dependencies.outputs.pattern }}
+        run: python3 scripts/download-workflow-artifacts.py --pattern "$ARTIFACT_PATTERN" --output downloads --merge-multiple
       - name: Unpack same-run producers
         run: |
           mkdir -p inputs outputs

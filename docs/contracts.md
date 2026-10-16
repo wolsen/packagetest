@@ -168,6 +168,27 @@ distribution, required build dependency versions, and manifest records. Returned
 paths are reconstructed from the downloaded bundle. `build_repository` rechecks
 bytes when copying verified binaries into the disposable testbed repository.
 
+## Workflow artifact retrieval
+
+Pattern downloads for prepared sources, producer bundles, statuses, and
+packaging proposals use `scripts/download-workflow-artifacts.py`. The downloader
+reads every 100-item page of the current run's GitHub REST artifact inventory
+before selecting matches. It accepts a glob or the planner's flat brace list
+of exact producer artifact names. Named single-artifact downloads use the
+standard download action.
+
+Artifact names must be safe directory components. Duplicate names, expired
+matches, invalid ZIP paths, links, conflicting merged files, and service digest
+mismatches fail retrieval. Each archive is extracted into temporary staging
+before publication. Producer archives can merge unique top-level bundle files;
+other downloads preserve one directory per artifact. A matching artifact must
+exist unless `--allow-empty` is supplied for optional packaging proposals.
+
+The workflow provides `GH_TOKEN` with Actions read access. The token is attached
+only to GitHub API requests and removed from redirected blob-storage requests.
+Download failures remain workflow failures instead of becoming missing records
+in a successful aggregate report.
+
 ## Repair baseline recovery
 
 Package remediation accepts an existing preparation tree or the immutable
