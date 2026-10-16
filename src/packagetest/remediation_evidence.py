@@ -20,19 +20,48 @@ LINTIAN_LEVELS = {
 }
 
 
+def _policy_values(value: str) -> list[str]:
+    """Parse comma-separated Lintian severities, dropping empty values."""
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 def _fail_on(command: list[str]) -> list[str]:
+    """Read the first complete failure-policy option, defaulting to errors only."""
     for index, argument in enumerate(command):
         if argument.startswith("--fail-on="):
-            return [
-                item.strip()
-                for item in argument.split("=", 1)[1].split(",")
-                if item.strip()
-            ]
+            return _policy_values(argument.split("=", 1)[1])
+
         if argument == "--fail-on" and index + 1 < len(command):
-            return [
-                item.strip() for item in command[index + 1].split(",") if item.strip()
-            ]
+            return _policy_values(command[index + 1])
+
     return ["error"]
+
+
+def _lintian_threshold(policy: list[str]) -> int:
+    """Use the least severe configured level as the inclusive failure threshold."""
+    ranks = [rank for name, rank in LINTIAN_LEVELS.values() if name in policy]
+    return max(ranks) if ranks else 0
+
+
+def _lintian_tags(output: str, threshold: int) -> tuple[list[str], list[str]]:
+    """Separate recognized tags from those meeting the recorded failure threshold."""
+    tags = [line for line in output.splitlines() if re.match(r"^[EWIPXO]: ", line)]
+    gating = [line for line in tags if LINTIAN_LEVELS[line[0]][1] <= threshold]
+    return tags, gating
+
+
+def _lintian_details(output: str, gating: list[str], supporting: list[str]) -> list[str]:
+    """Show gating tags, or a diagnostic tail when the exit status lacks matching tags."""
+    if gating:
+        lines = ["GATING TAGS:", *gating]
+    else:
+        lines = ["GATING TAGS: none were found despite the nonzero return code",
+                 "DIAGNOSTIC TAIL:", *output.splitlines()[-40:]]
+
+    if supporting:
+        lines.extend(["LOWER-SEVERITY SAMPLE:", *supporting])
+
+    return lines
 
 
 def lintian_evidence(payload: dict, *, supporting_limit: int = 20) -> str:
@@ -41,10 +70,7 @@ def lintian_evidence(payload: dict, *, supporting_limit: int = 20) -> str:
         "command", []
     )
     policy = _fail_on(command)
-    configured_ranks = [
-        rank for _, (name, rank) in LINTIAN_LEVELS.items() if name in policy
-    ]
-    threshold = max(configured_ranks) if configured_ranks else 0
+    threshold = _lintian_threshold(policy)
     output = "\n".join(
         filter(
             None,
@@ -54,8 +80,7 @@ def lintian_evidence(payload: dict, *, supporting_limit: int = 20) -> str:
             ],
         )
     )
-    tags = [line for line in output.splitlines() if re.match(r"^[EWIPXO]: ", line)]
-    gating = [line for line in tags if LINTIAN_LEVELS[line[0]][1] <= threshold]
+    tags, gating = _lintian_tags(output, threshold)
     supporting = [line for line in tags if line not in gating][:supporting_limit]
     lines = [
         "STRUCTURED LINTIAN FAILURE",
@@ -64,27 +89,12 @@ def lintian_evidence(payload: dict, *, supporting_limit: int = 20) -> str:
         f"gating_tags: {len(gating)}",
         f"other_displayed_tags: {len(tags) - len(gating)}",
     ]
-    if gating:
-        lines.extend(["GATING TAGS:", *gating])
-    else:
-        lines.extend(
-            [
-                "GATING TAGS: none were found despite the nonzero return code",
-                "DIAGNOSTIC TAIL:",
-                *output.splitlines()[-40:],
-            ]
-        )
-    if supporting:
-        lines.extend(["LOWER-SEVERITY SAMPLE:", *supporting])
+    lines.extend(_lintian_details(output, gating, supporting))
     return "\n".join(lines)
 
 
-def extract_test_failure_evidence(text: str, *, limit: int = 12_000) -> str:
-    """Keep test failures and their tracebacks while dropping package inventories."""
-    marker = "displaying pip3 freeze output"
-    if marker in text:
-        text = text[: text.index(marker)]
-    lines = text.splitlines()
+def _test_failure_lines(lines: list[str]) -> list[str]:
+    """Select failure windows and standalone exception summaries in log order."""
     selected: list[str] = []
     for index, line in enumerate(lines):
         if line.startswith(("FAIL: ", "ERROR: ", "Failed to import test module:")):
@@ -98,6 +108,16 @@ def extract_test_failure_evidence(text: str, *, limit: int = 12_000) -> str:
             line,
         ):
             selected.append(line)
+    return selected
+
+
+def extract_test_failure_evidence(text: str, *, limit: int = 12_000) -> str:
+    """Keep test failures and their tracebacks while dropping package inventories."""
+    marker = "displaying pip3 freeze output"
+    if marker in text:
+        text = text[: text.index(marker)]
+    lines = text.splitlines()
+    selected = _test_failure_lines(lines)
     # Preserve order while collapsing repeated traceback lines from overlapping windows.
     unique = list(dict.fromkeys(selected))
     body = "\n".join(unique)
@@ -134,53 +154,61 @@ def tail(path: Path, limit: int = 10_000) -> str:
     return text if len(text) <= limit else "[earlier output omitted]\n" + text[-limit:]
 
 
+def _build_failure_blocks(outputs: Path) -> list[str]:
+    """Prefer the latest structured build failure over the general build log."""
+    failures = sorted(outputs.rglob("failure.json"))
+    if failures:
+        return [structured_failure(failures[-1])]
+
+    log = outputs / "nightly-build.log"
+    return [tail(log, 8_000)] if log.is_file() else []
+
+
+def _test_failure_blocks(tests: Path | None) -> list[str]:
+    """Read structured test evidence only when an autopkgtest log is available."""
+    if tests is None:
+        return []
+
+    log = tests / "autopkgtest.log"
+    if not log.is_file():
+        return []
+
+    return [extract_test_failure_evidence(log.read_text(errors="replace"))]
+
+
 def failure_evidence(outputs: Path, tests: Path | None) -> str:
-    failure_json = sorted(outputs.rglob("failure.json"))
-    blocks = []
-    if failure_json:
-        blocks.append(structured_failure(failure_json[-1]))
-    else:
-        build_log = outputs / "nightly-build.log"
-        if build_log.is_file():
-            blocks.append(tail(build_log, 8_000))
-    autopkgtest = tests / "autopkgtest.log" if tests is not None else None
-    if autopkgtest is not None and autopkgtest.is_file():
-        blocks.append(
-            extract_test_failure_evidence(autopkgtest.read_text(errors="replace"))
-        )
-    result_paths = [outputs / "result.json"]
+    """Combine build, test, and result evidence in priority order within one budget."""
+    blocks = _build_failure_blocks(outputs) + _test_failure_blocks(tests)
+    paths = [outputs / "result.json"]
     if tests is not None:
-        result_paths.append(tests / "result/result.json")
-    for path in result_paths:
+        paths.append(tests / "result/result.json")
+
+    for path in paths:
         if path.is_file():
             blocks.append(f"--- {path.name} ---\n{tail(path, 2_000)}")
+
     return "\n\n".join(blocks)[:20_000]
 
 
-def failure_focus(evidence: str, limit: int = 3_000) -> str:
-    if evidence.startswith("STRUCTURED LINTIAN FAILURE"):
-        return evidence[:limit]
-    if evidence.startswith("STRUCTURED TEST FAILURE"):
-        failure = evidence.rfind("\nFAIL: ")
-        if failure >= 0:
-            return (evidence.splitlines()[0] + "\n" + evidence[failure:])[-limit:]
-        return evidence[-limit:]
-    if "ModuleNotFoundError" in evidence:
-        relevant = []
-        for line in evidence.splitlines():
-            if any(
-                marker in line
-                for marker in (
-                    "Failed to import test module:",
-                    "ModuleNotFoundError:",
-                    "make[",
-                    "dpkg-buildpackage: error:",
-                )
-            ):
-                if line not in relevant:
-                    relevant.append(line)
-        if relevant:
-            return "\n".join(relevant)[:limit]
+def _structured_test_focus(evidence: str, limit: int) -> str:
+    """Prefer the final named test failure while retaining the structured heading."""
+    failure = evidence.rfind("\nFAIL: ")
+    if failure >= 0:
+        return (evidence.splitlines()[0] + "\n" + evidence[failure:])[-limit:]
+
+    return evidence[-limit:]
+
+
+def _missing_module_focus(evidence: str, limit: int) -> str | None:
+    """Deduplicate import-failure and enclosing build-error lines without reordering them."""
+    markers = ("Failed to import test module:", "ModuleNotFoundError:",
+               "make[", "dpkg-buildpackage: error:")
+    relevant = [line for line in evidence.splitlines() if any(marker in line for marker in markers)]
+    return "\n".join(dict.fromkeys(relevant))[:limit] if relevant else None
+
+
+def _diagnostic_focus(evidence: str, limit: int) -> str:
+    """Center context around the earliest last-occurring diagnostic marker."""
     markers = [
         "ModuleNotFoundError",
         "ImportError",
@@ -198,6 +226,22 @@ def failure_focus(evidence: str, limit: int = 3_000) -> str:
         return evidence[-limit:]
     center = min(positions)
     return evidence[max(0, center - 800) : center + limit - 800]
+
+
+def failure_focus(evidence: str, limit: int = 3_000) -> str:
+    """Choose stage-specific prompt evidence before falling back to diagnostic markers."""
+    if evidence.startswith("STRUCTURED LINTIAN FAILURE"):
+        return evidence[:limit]
+
+    if evidence.startswith("STRUCTURED TEST FAILURE"):
+        return _structured_test_focus(evidence, limit)
+
+    if "ModuleNotFoundError" in evidence:
+        focus = _missing_module_focus(evidence, limit)
+        if focus is not None:
+            return focus
+
+    return _diagnostic_focus(evidence, limit)
 
 
 def failure_signature(evidence: str) -> str:
