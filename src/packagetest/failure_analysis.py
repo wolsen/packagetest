@@ -886,22 +886,25 @@ def _between(text: str, start: str, end: str) -> str:
     return matches[-1].group(1) if matches else ""
 
 
+def _repository_patch_path(value: str) -> None:
+    """Require a safe target in the repository's reviewed areas."""
+    path = PurePosixPath(value)
+    if _unsafe_relative_path(path):
+        raise ValueError(f"unsafe patch path: {value}")
+
+    if path.parts[0] not in ALLOWED_PATCH_ROOTS:
+        raise ValueError(f"patch path is outside reviewed repository areas: {value}")
+
+    if value.startswith(FORBIDDEN_PATCH_PREFIXES):
+        raise ValueError(f"forbidden patch path: {value}")
+
+
 def patch_paths(patch: str) -> list[str]:
-    paths = []
-    for old, new in re.findall(r"^diff --git a/(\S+) b/(\S+)$", patch, re.MULTILINE):
-        if old != new:
-            raise ValueError("renames and path changes are not accepted")
-        paths.append(new)
-    if not paths:
-        raise ValueError("response contains no git unified diff")
+    """Check all diff identities before enforcing repository path restrictions."""
+    paths = _git_patch_paths(patch)
     for value in paths:
-        path = PurePosixPath(value)
-        if path.is_absolute() or ".." in path.parts or not path.parts:
-            raise ValueError(f"unsafe patch path: {value}")
-        if path.parts[0] not in ALLOWED_PATCH_ROOTS:
-            raise ValueError(f"patch path is outside reviewed repository areas: {value}")
-        if value.startswith(FORBIDDEN_PATCH_PREFIXES):
-            raise ValueError(f"forbidden patch path: {value}")
+        _repository_patch_path(value)
+
     return paths
 
 
@@ -931,73 +934,122 @@ def validate_patch(patch: str, repository: Path) -> dict:
     return result
 
 
-def source_patch_paths(patch: str) -> list[str]:
-    """Validate paths in a patch intended for one prepared source tree."""
+def _source_patch_path(value: str) -> None:
+    """Limit a source repair target to safe Debian packaging paths excluding changelog."""
+    path = PurePosixPath(value)
+    if _unsafe_relative_path(path) or path.parts[0] == ".git":
+        raise ValueError(f"unsafe source patch path: {value}")
+
+    if path.parts[0] != "debian" or path == PurePosixPath("debian/changelog"):
+        raise ValueError(f"automatic remediation is restricted to Debian packaging: {value}")
+
+
+def _unsafe_relative_path(path: PurePosixPath) -> bool:
+    """Identify absolute, traversing, or empty paths before accessing their components."""
+    return path.is_absolute() or ".." in path.parts or not path.parts
+
+
+def _git_patch_paths(patch: str) -> list[str]:
+    """Require Git diff headers without renames or changed target paths."""
     paths = []
     for old, new in re.findall(r"^diff --git a/(\S+) b/(\S+)$", patch, re.MULTILINE):
         if old != new:
             raise ValueError("renames and path changes are not accepted")
-        path = PurePosixPath(new)
-        if path.is_absolute() or ".." in path.parts or not path.parts or path.parts[0] == ".git":
-            raise ValueError(f"unsafe source patch path: {new}")
-        if path.parts[0] != "debian" or path == PurePosixPath("debian/changelog"):
-            raise ValueError(f"automatic remediation is restricted to Debian packaging: {new}")
+
         paths.append(new)
+
     if not paths:
         raise ValueError("response contains no git unified diff")
+
     return paths
 
 
-def validate_source_patch(patch: str, tree: Path, *, apply: bool = False) -> dict:
-    """Check a model patch against prepared source and reject test bypasses."""
-    result = {"result": "REJECTED", "paths": [], "error": ""}
-    if len(patch.encode()) > 256 * 1024:
-        result["error"] = "patch exceeds 256 KiB"
-        return result
-    try:
-        result["paths"] = source_patch_paths(patch)
-    except ValueError as exc:
-        result["error"] = str(exc)
-        return result
-    added = "\n".join(line[1:] for line in patch.splitlines()
-                       if line.startswith("+") and not line.startswith("+++"))
+def source_patch_paths(patch: str) -> list[str]:
+    """Validate paths in a patch intended for one prepared source tree."""
+    # Validate each header before continuing so rejection precedence remains stable.
+    paths = []
+    for old, new in re.findall(r"^diff --git a/(\S+) b/(\S+)$", patch, re.MULTILINE):
+        if old != new:
+            raise ValueError("renames and path changes are not accepted")
+
+        _source_patch_path(new)
+        paths.append(new)
+
+    if not paths:
+        raise ValueError("response contains no git unified diff")
+
+    return paths
+
+
+def _added_patch_lines(patch: str) -> list[str]:
+    """Extract added content without interpreting outer diff file headers as payload."""
+    return [line[1:] for line in patch.splitlines()
+            if line.startswith("+") and not line.startswith("+++")]
+
+
+def _test_bypass_error(patch: str, paths: list[str]) -> str:
+    """Reject added test-bypass markers and deletion of test-named files."""
+    added = "\n".join(_added_patch_lines(patch))
     bypass = re.compile(
         r"(?im)(pytest\.mark\.skip|unittest\.skip|@skip|xfail|DEB_BUILD_OPTIONS.*nocheck|"
         r"override_dh_auto_test[^\n]*:\s*(?:true|:)|exit\s+0\s*(?:#.*)?$)")
     if bypass.search(added):
-        result["error"] = "patch attempts to skip or bypass tests"
-        return result
-    if "deleted file mode" in patch and any("test" in path.lower() for path in result["paths"]):
-        result["error"] = "patch deletes test content"
-        return result
+        return "patch attempts to skip or bypass tests"
+
+    if "deleted file mode" in patch and any("test" in path.lower() for path in paths):
+        return "patch deletes test content"
+
+    return ""
+
+
+def _packaging_content_error(patch: str, paths: list[str]) -> str:
+    """Reject ownership changes, placeholder/log content, and binary staging writes."""
     forbidden_content = re.compile(
         r"(?im)^\+(?:Maintainer|Uploaders|XSBC-Original-Maintainer):|"
         r"your\.email@example\.com|your name|traceback \(most recent call last\):"
     )
     if forbidden_content.search(patch):
-        result["error"] = "patch changes package ownership metadata or contains placeholder/log content"
-        return result
-    if any(re.match(r"debian/[^/]+/usr/", path) for path in result["paths"]):
-        result["error"] = "patch writes into a binary-package staging directory"
-        return result
-    series_additions = {
-        line[1:].strip() for line in patch.splitlines()
-        if line.startswith("+") and not line.startswith("+++")
-        and not line[1:].lstrip().startswith("#") and line[1:].strip().endswith(".patch")
-    }
-    changed = set(result["paths"])
+        return "patch changes package ownership metadata or contains placeholder/log content"
+
+    if any(re.match(r"debian/[^/]+/usr/", path) for path in paths):
+        return "patch writes into a binary-package staging directory"
+
+    return ""
+
+
+def _series_patch_names(patch: str) -> set[str]:
+    """Select uncommented added patch names using the existing series-reference policy."""
+    return {line.strip() for line in _added_patch_lines(patch)
+            if not line.lstrip().startswith("#") and line.strip().endswith(".patch")}
+
+
+def _series_reference_error(patch: str, paths: list[str], tree: Path) -> str:
+    """Require added series references to exist already or be included in the proposal."""
+    series_additions = _series_patch_names(patch)
+    changed = set(paths)
     missing = sorted(name for name in series_additions
                      if f"debian/patches/{name}" not in changed and not (tree / "debian/patches" / name).is_file())
     if missing:
-        result["error"] = f"series references patch files that do not exist: {missing}"
-        return result
+        return f"series references patch files that do not exist: {missing}"
+    return ""
+
+
+def _source_patch_policy_error(patch: str, paths: list[str], tree: Path) -> str:
+    """Apply content restrictions in their established rejection order."""
+    return (_test_bypass_error(patch, paths)
+            or _packaging_content_error(patch, paths)
+            or _series_reference_error(patch, paths, tree))
+
+
+def _check_source_application(patch: str, paths: list[str], tree: Path, apply: bool) -> subprocess.CompletedProcess:
+    """Run Git validation or application with nested quilt whitespace handled explicitly."""
     tree = tree.resolve()
     patch_path = (tree.parent / ".packagetest-remediation.patch").resolve()
     patch_path.write_text(patch)
     # A unified diff stored inside debian/patches legitimately contains a
     # single-space context marker for blank lines. In an outer remediation
     # diff that marker looks like newly-added trailing whitespace to git.
-    whitespace = ("nowarn" if all(path.startswith("debian/patches/") for path in result["paths"])
+    whitespace = ("nowarn" if all(path.startswith("debian/patches/") for path in paths)
                   else "error-all")
     command = ["git", "apply", "--recount", f"--whitespace={whitespace}"]
     if not apply:
@@ -1005,12 +1057,41 @@ def validate_source_patch(patch: str, tree: Path, *, apply: bool = False) -> dic
     command.append(str(patch_path))
     completed = subprocess.run(command, cwd=tree, text=True, capture_output=True, timeout=30)
     patch_path.unlink(missing_ok=True)
+    return completed
+
+
+def _source_patch_result(patch: str, paths: list[str], tree: Path, apply: bool) -> dict:
+    """Return policy rejection or application evidence without changing the report schema."""
+    result = {"result": "REJECTED", "paths": paths, "error": ""}
+    error = _source_patch_policy_error(patch, paths, tree)
+    if error:
+        result["error"] = error
+        return result
+
+    completed = _check_source_application(patch, paths, tree, apply)
     if completed.returncode:
         result["error"] = (completed.stderr or completed.stdout).strip()[-4000:]
         return result
+
     result.update(result="APPLIED" if apply else "APPLIES", error="",
                   patch_sha256=hashlib.sha256(patch.encode()).hexdigest())
     return result
+
+
+def validate_source_patch(patch: str, tree: Path, *, apply: bool = False) -> dict:
+    """Bound a source patch before checking its paths, content policies, and application."""
+    result = {"result": "REJECTED", "paths": [], "error": ""}
+    if len(patch.encode()) > 256 * 1024:
+        result["error"] = "patch exceeds 256 KiB"
+        return result
+
+    try:
+        paths = source_patch_paths(patch)
+    except ValueError as exc:
+        result["error"] = str(exc)
+        return result
+
+    return _source_patch_result(patch, paths, tree, apply)
 
 
 def safe_evidence_text(evidence: Path, *, limit: int = 12_000) -> str:
