@@ -208,44 +208,69 @@ def validate_repair_decision(decision: dict, evidence: str) -> dict:
     return validate(decision, evidence)
 
 
-def normalize_repair_decision(decision: dict, tree: Path, evidence: str = "") -> dict:
-    """Correct unambiguous model field mismatches using evidence and the tree."""
+def _missing_imports(evidence: str) -> list[str]:
+    """Extract missing-module names without treating unrelated model text as evidence."""
+    return re.findall(r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)", evidence)
+
+
+def _import_root(module: str) -> str:
+    """Normalize the top-level Python import name for Debian dependency matching."""
+    return module.split(".")[0].replace("-", "_").lower()
+
+
+def _normalize_dependency_decision(decision: dict, evidence: str) -> dict:
+    """Correct one quoted import only when the actual failure evidence supports it."""
     normalized = dict(decision)
-    if decision.get("action") == "add_dependency":
-        quoted = list(dict.fromkeys(re.findall(
-            r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)",
-            decision.get("evidence", ""))))
-        supported = {
-            module.split(".")[0].replace("-", "_").lower()
-            for module in re.findall(
-                r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)", evidence)
-        }
-        if len(quoted) == 1:
-            module = quoted[0].split(".")[0].replace("-", "_").lower()
-            package_module = decision.get("subject", "").removeprefix(
-                "python3-").replace("-", "_").lower()
-            if module in supported and package_module != module:
-                normalized["subject"] = "python3-" + module.replace("_", "-")
+    quoted = list(dict.fromkeys(_missing_imports(decision.get("evidence", ""))))
+    supported = set(map(_import_root, _missing_imports(evidence)))
+    if len(quoted) != 1:
         return normalized
-    if decision.get("action") != "replace_packaging_path":
-        return normalized
+
+    module = _import_root(quoted[0])
+    package_module = decision.get("subject", "").removeprefix("python3-").replace("-", "_").lower()
+    if module in supported and package_module != module:
+        normalized["subject"] = "python3-" + module.replace("_", "-")
+
+    return normalized
+
+
+def _safe_source_file(tree: Path, value: str) -> bool:
+    """Require a safe relative path naming a regular nonsymlink source file."""
+    path = PurePosixPath(value)
+    return not _unsafe_relative_path(path) and (tree / path).is_file() and not (tree / path).is_symlink()
+
+
+def _reversed_packaging_paths(tree: Path, rules: str, old: str, new: str) -> bool:
+    """Recognize reversed fields only when packaging references the absent path once."""
+    return rules.count(new) == 1 and not (tree / new).exists() and _safe_source_file(tree, old)
+
+
+def _normalize_path_decision(decision: dict, tree: Path) -> dict:
+    """Swap reversed path fields only with unambiguous rules and source-file evidence."""
+    normalized = dict(decision)
     old = decision.get("subject", "").strip()
     new = decision.get("replacement", "").strip()
     rules_path = tree / "debian/rules"
     if not old or not new or not rules_path.is_file():
         return normalized
+
     rules = rules_path.read_text(errors="replace")
-
-    def safe_regular_file(value: str) -> bool:
-        path = PurePosixPath(value)
-        return (not path.is_absolute() and ".." not in path.parts and bool(path.parts)
-                and (tree / path).is_file() and not (tree / path).is_symlink())
-
-    # The missing path is the one referenced by packaging but absent from the
-    # source tree. The replacement must be an existing regular source file.
-    if rules.count(new) == 1 and not (tree / new).exists() and safe_regular_file(old):
+    # Packaging identifies the missing path; the source tree proves its replacement exists.
+    if _reversed_packaging_paths(tree, rules, old, new):
         normalized["subject"], normalized["replacement"] = new, old
+
     return normalized
+
+
+def normalize_repair_decision(decision: dict, tree: Path, evidence: str = "") -> dict:
+    """Correct supported field mismatches without mutating the original model decision."""
+    if decision.get("action") == "add_dependency":
+        return _normalize_dependency_decision(decision, evidence)
+
+    if decision.get("action") == "replace_packaging_path":
+        return _normalize_path_decision(decision, tree)
+
+    return dict(decision)
 
 
 def _replace_file_patch(path: str, before: str, after: str) -> str:

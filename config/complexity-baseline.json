@@ -13,7 +13,6 @@
   "src/packagetest/contracts.py:PreparedSource.from_mapping": 8,
   "src/packagetest/failure_analysis.py:_priority": 8,
   "src/packagetest/failure_analysis.py:_tar_chunks": 9,
-  "src/packagetest/failure_analysis.py:normalize_repair_decision": 13,
   "src/packagetest/failure_analysis.py:repository_context": 13,
   "src/packagetest/failure_analysis.py:safe_evidence_text": 11,
   "src/packagetest/failure_summary.py:_print_command_trace": 13,
