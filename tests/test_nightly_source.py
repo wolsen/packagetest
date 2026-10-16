@@ -1156,3 +1156,39 @@ def test_autopkgtest_adaptation_preserves_dangling_config_and_other_tests(tmp_pa
     assert 'Restrictions: superficial, allow-stderr\n' in control.read_text()
     assert control.read_text().endswith('Restrictions: isolation-container\n')
     assert autopkgtest_packaging_adjustments({'source': 'python-demo'}, tmp_path) == []
+
+
+def test_entry_point_editor_keeps_input_and_prior_findings_independent(tmp_path: Path) -> None:
+    """Manifest edits preserve declaration records, final newlines, and prior evidence."""
+    from packagetest.nightly_source import EntryPointEditor
+
+    owner = tmp_path / 'demo.install'
+    owner.write_text('usr/bin/old-command')
+    baseline = [{'group': 'console_scripts', 'name': 'old-command', 'target': 'demo:old'}]
+    introduced = {'group': 'console_scripts', 'name': 'new-command', 'target': 'demo:new'}
+    editor = EntryPointEditor(tmp_path, baseline)
+    first = editor.inspect(introduced)
+    second = editor.inspect(introduced)
+
+    assert introduced == {'group': 'console_scripts', 'name': 'new-command', 'target': 'demo:new'}
+    assert first.finding['packaging'] == 'assigned-to-existing-binary'
+    assert first.action['manifest'] == 'demo.install'
+    assert second.finding['packaging'] == 'already-covered'
+    assert second.action is None
+    assert owner.read_text() == 'usr/bin/old-command\nusr/bin/new-command\n'
+
+
+def test_dependency_editor_keeps_text_and_inventory_consistent() -> None:
+    """A successful edit is recorded once and routes build tools to Build-Depends."""
+    from packagetest.nightly_source import BuildDependencyEditor
+
+    editor = BuildDependencyEditor(
+        'Source: demo\nBuild-Depends:\n debhelper,\nBuild-Depends-Indep:\n python3-all,\n')
+    requirement = {'kind': 'build-system', 'archive_source': 'python-new',
+                   'archive_version': '2.0-1', 'file': 'pyproject.toml', 'line': 2,
+                   'requirement': 'new>=2'}
+    first = editor.add('python3-new', [requirement])
+    assert first['scopes'] == ['build']
+    assert editor.source.split('Build-Depends-Indep:')[0].endswith(' python3-new,\n')
+    assert editor.add('python3-new', [requirement]) is None
+    assert editor.source.count('python3-new') == 1

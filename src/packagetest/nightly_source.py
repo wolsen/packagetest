@@ -43,6 +43,8 @@ BUILD_REQUIREMENTS = [
     {'name': 'setuptools', 'version': '80.9.0', 'sha256': '062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922'},
     {'name': 'wheel', 'version': '0.45.1', 'sha256': '708e7481cc80179af0e556bbf0cc00b8444c7321e2700b8d8580231d13017248'},
 ]
+EXECUTABLE_ENTRY_POINT_GROUPS = frozenset({'console_scripts', 'gui_scripts', 'wsgi_scripts'})
+
 SCM_REQUIREMENTS = [
     {'name': 'setuptools-scm', 'version': '8.3.1', 'sha256': '332ca0d43791b818b841213e76b1971b7711a960761c5bea5fc5cdb5196fbce3'},
     {'name': 'packaging', 'version': '25.0', 'sha256': '29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484'},
@@ -208,13 +210,8 @@ def source_evolution(entry: dict, checkout: Path, selected: dict, tree: Path) ->
     old_keys = {(item['group'], item['name'], item['target']) for item in baseline}
     introduced = [item for item in candidate
                   if (item['group'], item['name'], item['target']) not in old_keys]
-    debian = tree / 'debian'
-    existing_owners = _existing_command_owners(baseline, debian)
-    actions = []
-    findings = []
-    for item in introduced:
-        finding = _entry_point_finding(item, debian, existing_owners, actions)
-        findings.append(finding)
+    editor = EntryPointEditor(tree / 'debian', baseline)
+    findings, actions = editor.adapt(introduced)
 
     commit_delta = _official_commit_delta(entry, checkout, selected)
     return ({'schema_version': 1, 'source': entry['source'],
@@ -519,14 +516,9 @@ def upstream_dependency_adjustments(entry: dict, tree: Path) -> list[dict]:
     before = path.read_text()
     paragraphs = re.split(r'(\n\s*\n)', before)
     source = paragraphs[0]
-    build_field = 'Build-Depends-Indep' if 'Build-Depends-Indep:' in source else 'Build-Depends'
-    build_names = _existing_build_dependencies(source)
-    actions = []
-    grouped = _group_archive_requirements(usable)
-    for package, requirements in sorted(grouped.items()):
-        source = _add_archive_dependency(source, package, requirements, build_names, build_field, actions)
-
-    paragraphs[0] = source
+    editor = BuildDependencyEditor(source)
+    actions = editor.adapt(_group_archive_requirements(usable))
+    paragraphs[0] = editor.source
     revised = ''.join(paragraphs)
     if revised != before:
         path.write_text(revised)
@@ -1333,62 +1325,94 @@ def _dependency_insert_position(lines: list[str], start: int, end: int, package:
 
 def _existing_command_owners(baseline: list[dict], debian: Path) -> set[Path]:
     """Infer candidate binary owners from previously declared executable entry points."""
-    executable_groups = {'console_scripts', 'gui_scripts', 'wsgi_scripts'}
-    old_commands = {item['name'] for item in baseline if item['group'] in executable_groups}
+    old_commands = {item['name'] for item in baseline
+                    if item['group'] in EXECUTABLE_ENTRY_POINT_GROUPS}
     existing_owners = {owner for command in old_commands
                        for owner in _manifest_owners(debian, f'usr/bin/{command}')}
     return existing_owners
 
 
-def _entry_point_finding(item: dict, debian: Path, existing_owners: set[Path], actions: list[dict]) -> dict:
-    """Classify a new entry point and record conservative packaging actions."""
-    executable_groups = {'console_scripts', 'gui_scripts', 'wsgi_scripts'}
-    finding = {**item, 'kind': ('command-or-service' if item['group'] in executable_groups
-                                else 'plugin-entry-point'),
-               'human_binary_package_review_required': True}
-    if item['group'] in executable_groups:
-        _assign_command_owner(item, finding, debian, existing_owners, actions)
-    else:
-        finding['packaging'] = 'included-with-python-metadata'
+@dataclass(frozen=True)
+class EntryPointEdit:
+    """One entry-point finding and its optional manifest adaptation action."""
 
-    return finding
+    finding: dict
+    action: dict | None = None
 
 
-def _assign_command_owner(item: dict, finding: dict, debian: Path, existing_owners: set[Path], actions: list[dict]) -> None:
-    """Assign new commands only when existing binaries establish one owner."""
-    installed_path = f"usr/bin/{item['name']}"
-    owners = _manifest_owners(debian, installed_path)
-    finding['installed_path'] = installed_path
-    if owners:
-        finding.update(packaging='already-covered',
-                       owning_manifests=[path.name for path in owners])
-    elif len(existing_owners) == 1:
-        _install_new_command(item, finding, existing_owners, installed_path, actions)
-    else:
+class EntryPointEditor:
+    """Own manifest location and the baseline evidence permitting command assignment."""
+
+    def __init__(self, debian: Path, baseline: list[dict]) -> None:
+        """Infer owners from existing commands without creating binary packages."""
+        self.debian = debian
+        self.existing_owners = _existing_command_owners(baseline, debian)
+
+    def adapt(self, introduced: list[dict]) -> tuple[list[dict], list[dict]]:
+        """Return findings and actions in declaration order after conservative edits."""
+        findings = []
+        actions = []
+        for item in introduced:
+            edit = self.inspect(item)
+            findings.append(edit.finding)
+            if edit.action is not None:
+                actions.append(edit.action)
+
+        return findings, actions
+
+    def inspect(self, item: dict) -> EntryPointEdit:
+        """Classify one declaration, keeping the caller's entry-point record unchanged."""
+        finding = {**item, 'human_binary_package_review_required': True}
+        if item['group'] in EXECUTABLE_ENTRY_POINT_GROUPS:
+            finding['kind'] = 'command-or-service'
+            return self._command(finding)
+
+        finding.update(kind='plugin-entry-point', packaging='included-with-python-metadata')
+        return EntryPointEdit(finding)
+
+    def _command(self, finding: dict) -> EntryPointEdit:
+        """Keep covered commands and require one baseline owner for missing commands."""
+        installed_path = f"usr/bin/{finding['name']}"
+        finding['installed_path'] = installed_path
+        owners = _manifest_owners(self.debian, installed_path)
+        if owners:
+            finding.update(packaging='already-covered', owning_manifests=[path.name for path in owners])
+            return EntryPointEdit(finding)
+
+        if len(self.existing_owners) == 1:
+            return self._install(finding, next(iter(self.existing_owners)))
+
         finding.update(packaging='human-decision-required',
-                       candidate_manifests=sorted(path.name for path in existing_owners))
+                       candidate_manifests=sorted(path.name for path in self.existing_owners))
+        return EntryPointEdit(finding)
+
+    def _install(self, finding: dict, owner: Path) -> EntryPointEdit:
+        """Append a command to its unambiguous owner and return the full edit evidence."""
+        installed_path = finding['installed_path']
+        with owner.open('a') as stream:
+            if owner.stat().st_size and not owner.read_text().endswith('\n'):
+                stream.write('\n')
+
+            stream.write(installed_path + '\n')
+
+        finding.update(packaging='assigned-to-existing-binary', owning_manifests=[owner.name])
+        action = {
+            'action': 'install-new-upstream-command',
+            'name': finding['name'], 'entry_point_group': finding['group'],
+            'target': finding['target'], 'installed_path': installed_path,
+            'manifest': owner.name,
+            'reason': ('A new upstream executable was not covered by packaging; '
+                       'existing commands identify one unambiguous binary owner.'),
+            'human_binary_package_review_required': True,
+        }
+        return EntryPointEdit(finding, action)
 
 
-def _install_new_command(item: dict, finding: dict, existing_owners: set[Path], installed_path: str, actions: list[dict]) -> None:
-    """Append one unambiguous command to its manifest and retain review evidence."""
-    owner = next(iter(existing_owners))
-    with owner.open('a') as stream:
-        if owner.stat().st_size and not owner.read_text().endswith('\n'):
-            stream.write('\n')
 
-        stream.write(installed_path + '\n')
 
-    finding.update(packaging='assigned-to-existing-binary',
-                   owning_manifests=[owner.name])
-    actions.append({
-        'action': 'install-new-upstream-command',
-        'name': item['name'], 'entry_point_group': item['group'],
-        'target': item['target'], 'installed_path': installed_path,
-        'manifest': owner.name,
-        'reason': ('A new upstream executable was not covered by packaging; '
-                   'existing commands identify one unambiguous binary owner.'),
-        'human_binary_package_review_required': True,
-    })
+
+
+
 
 
 def _project_group_entries(group: str, declarations: dict) -> list[dict]:
@@ -1435,31 +1459,46 @@ def _control_field_value(lines: list[str], index: int, line: str) -> str:
     return value
 
 
-def _add_archive_dependency(source: str, package: str, requirements: list[dict], build_names: set[str], build_field: str, actions: list[dict]) -> str:
-    """Insert one absent archive-proven build dependency and record its evidence."""
-    kinds = {record['kind'] for record in requirements}
-    scopes = []
-    if package not in build_names:
-        field = 'Build-Depends' if 'build-system' in kinds else build_field
-        source = _add_control_dependency(source, field, package)
-        build_names.add(package)
-        scopes.append('build')
+class BuildDependencyEditor:
+    """Own source control text and the dependency inventory changed by adaptations."""
 
-    if scopes:
-        evidence = _requirement_evidence(requirements)
-        actions.append({
+    def __init__(self, source: str) -> None:
+        """Capture all build dependency fields and the default location for test tools."""
+        self.source = source
+        self.build_names = _existing_build_dependencies(source)
+        self.build_field = 'Build-Depends-Indep' if 'Build-Depends-Indep:' in source else 'Build-Depends'
+
+    def adapt(self, grouped: dict[str, list[dict]]) -> list[dict]:
+        """Add proven requirements in package order and return only mutation actions."""
+        actions = []
+        for package, requirements in sorted(grouped.items()):
+            action = self.add(package, requirements)
+            if action is not None:
+                actions.append(action)
+
+        return actions
+
+    def add(self, package: str, requirements: list[dict]) -> dict | None:
+        """Add one absent package, keeping control text and the name inventory together."""
+        if package in self.build_names:
+            return None
+
+        kinds = {record['kind'] for record in requirements}
+        field = 'Build-Depends' if 'build-system' in kinds else self.build_field
+        self.source = _add_control_dependency(self.source, field, package)
+        self.build_names.add(package)
+        return {
             'action': 'add-upstream-dependency',
             'package': package,
             'source': requirements[0]['archive_source'],
             'archive_version': requirements[0]['archive_version'],
             'requirement_kinds': sorted(kinds),
-            'scopes': scopes,
-            'evidence': evidence,
+            'scopes': ['build'],
+            'evidence': _requirement_evidence(requirements),
             'reason': ('Pinned upstream dependency is absent from Debian packaging; '
                        'the Ubuntu archive version satisfies the declared constraint.'),
-        })
+        }
 
-    return source
 
 
 def _requirement_evidence(requirements: list[dict]) -> list[str]:
