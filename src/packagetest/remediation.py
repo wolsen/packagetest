@@ -82,6 +82,22 @@ def prepared_tree(outputs: Path) -> Path:
     return roots[0]
 
 
+def _apply_repair_decisions(decisions: list[dict], working: Path) -> set[str]:
+    """Apply accepted repairs in order and collect their changed paths."""
+    changed = set()
+    for decision in decisions:
+        patch = render_source_repair(decision, working)
+        validation = validate_source_patch(patch, working, apply=True)
+        if validation["result"] != "APPLIED":
+            raise ValueError(
+                validation["error"] or "could not compose accepted repairs"
+            )
+
+        changed.update(validation["paths"])
+
+    return changed
+
+
 def render_cumulative_repair(decisions: list[dict], tree: Path) -> str:
     """Render every accepted decision as one patch against the original tree."""
     with tempfile.TemporaryDirectory(prefix="packagetest-repair-") as temp:
@@ -90,15 +106,7 @@ def render_cumulative_repair(decisions: list[dict], tree: Path) -> str:
         # Copy the complete failed source tree so the trusted renderer can
         # relocate hunks against the exact snapshot that failed preparation.
         shutil.copytree(tree, working, symlinks=True)
-        changed = set()
-        for decision in decisions:
-            patch = render_source_repair(decision, working)
-            validation = validate_source_patch(patch, working, apply=True)
-            if validation["result"] != "APPLIED":
-                raise ValueError(
-                    validation["error"] or "could not compose accepted repairs"
-                )
-            changed.update(validation["paths"])
+        changed = _apply_repair_decisions(decisions, working)
         blocks = []
         for name in sorted(changed):
             before = (tree / name).read_text()
@@ -114,15 +122,45 @@ def render_cumulative_repair(decisions: list[dict], tree: Path) -> str:
             )
             if body:
                 blocks.append(f"diff --git a/{name} b/{name}\n{body}")
+
         if not blocks:
             raise ValueError("repair decisions produced no cumulative change")
+
         return "".join(blocks)
+
+
+def _missing_dependency_decision(
+    primary: dict, imported: str, subjects: set[str]
+) -> dict | None:
+    """Suggest only direct module mappings not already covered by this batch."""
+    root = imported.split(".")[0]
+    # OpenStack's oslo_* imports map to dotted Debian names and need model
+    # judgment. Lowercase direct and underscore-to-hyphen names are safe
+    # candidates whose existence will still be checked by the rebuild.
+    if root.startswith("oslo_") or not re.fullmatch(r"[a-z][a-z0-9_]*", root):
+        return None
+
+    subject = "python3-" + root.replace("_", "-")
+    if subject in subjects:
+        return None
+
+    decision = {
+        "action": "add_dependency",
+        "subject": subject,
+        "replacement": "",
+        "evidence": f"ModuleNotFoundError: No module named '{imported}'",
+    }
+    if primary.get("scope"):
+        decision["scope"] = primary["scope"]
+
+    return decision
 
 
 def batch_missing_dependency_decisions(primary: dict, evidence: str) -> list[dict]:
     """Add straightforward missing-module repairs to one validated model choice."""
     if primary.get("action") != "add_dependency":
         return [primary]
+
     decisions = [primary]
     subjects = {primary["subject"]}
     modules = list(
@@ -133,26 +171,14 @@ def batch_missing_dependency_decisions(primary: dict, evidence: str) -> list[dic
         )
     )
     for imported in modules:
-        root = imported.split(".")[0]
-        # OpenStack's oslo_* imports map to dotted Debian names and need model
-        # judgment. Lowercase direct and underscore-to-hyphen names are safe
-        # candidates whose existence will still be checked by the rebuild.
-        if root.startswith("oslo_") or not re.fullmatch(r"[a-z][a-z0-9_]*", root):
+        decision = _missing_dependency_decision(primary, imported, subjects)
+        if decision is None:
             continue
-        subject = "python3-" + root.replace("_", "-")
-        if subject in subjects:
-            continue
-        decision = {
-            "action": "add_dependency",
-            "subject": subject,
-            "replacement": "",
-            "evidence": f"ModuleNotFoundError: No module named '{imported}'",
-        }
-        if primary.get("scope"):
-            decision["scope"] = primary["scope"]
+
         if validate_repair_decision(decision, evidence)["result"] == "ACCEPTED":
             decisions.append(decision)
-            subjects.add(subject)
+            subjects.add(decision["subject"])
+
     return decisions
 
 
@@ -224,9 +250,20 @@ RELEVANT PACKAGING CONTENT:
     return value
 
 
+def _model_environment(executable: Path) -> dict[str, str]:
+    """Prepend the model runtime directory while preserving inherited libraries."""
+    env = dict(os.environ)
+    runtime = str(executable.resolve().parent)
+    env["LD_LIBRARY_PATH"] = runtime + (
+        ":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else ""
+    )
+    return env
+
+
 def llama_generate(
     executable: Path, model: Path, text: str, attempt: int, timeout: int
 ) -> tuple[str, dict]:
+    """Run deterministic inference and retain timeout and failure diagnostics."""
     started = time.monotonic()
     command = [
         str(executable),
@@ -249,11 +286,7 @@ def llama_generate(
         "--simple-io",
         "--no-show-timings",
     ]
-    env = dict(os.environ)
-    runtime = str(executable.resolve().parent)
-    env["LD_LIBRARY_PATH"] = runtime + (
-        ":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else ""
-    )
+    env = _model_environment(executable)
     try:
         completed = subprocess.run(
             command, text=True, capture_output=True, timeout=timeout, env=env
@@ -261,8 +294,10 @@ def llama_generate(
     except subprocess.TimeoutExpired as exc:
 
         def as_text(value: str | bytes | None) -> str:
+            """Normalize partially captured subprocess output for timeout evidence."""
             if value is None:
                 return ""
+
             return value.decode(errors="replace") if isinstance(value, bytes) else value
 
         raise ModelTimeoutError(
@@ -271,6 +306,7 @@ def llama_generate(
             as_text(exc.stderr),
             time.monotonic() - started,
         ) from exc
+
     metadata = {
         "duration_seconds": round(time.monotonic() - started, 3),
         "returncode": completed.returncode,
@@ -280,8 +316,10 @@ def llama_generate(
         raise RuntimeError(
             f"llama-cli exited {completed.returncode}: {completed.stderr[-1000:]}"
         )
+
     if "exceeds the available context size" in completed.stdout:
         raise RuntimeError(completed.stdout[-1000:])
+
     return completed.stdout, metadata
 
 
@@ -756,6 +794,20 @@ def copy_initial_evidence(outputs: Path, tests: Path, report_dir: Path) -> None:
             shutil.copy2(path, evidence / name)
 
 
+def _attempt_summary_row(item: dict[str, Any]) -> str:
+    """Render one attempt, including the count of additional batched repairs."""
+    batched = len(item.get("batched_decisions", []))
+    decision_label = item.get("decision", {}).get("action", "—")
+    if batched > 1:
+        decision_label += f" (+{batched - 1} batched)"
+
+    return (
+        f"| {item['number']} | {decision_label} | "
+        f"{item.get('patch_validation', {}).get('result', '—')} | "
+        f"{item.get('build_result', '—')} | {item.get('test_result', '—')} | {item['result']} |\n"
+    )
+
+
 def publish_report(args: argparse.Namespace, report: dict[str, Any]) -> None:
     """Render the report without making retry or artifact-promotion decisions."""
     initial_phase = report["initial_phase"]
@@ -772,25 +824,19 @@ def publish_report(args: argparse.Namespace, report: dict[str, Any]) -> None:
             "| Attempt | Decision | Patch | Build | Autopkgtest | Result |\n"
             "|---:|---|---|---|---|---|\n"
         )
-        for item in attempts:
-            batched = len(item.get("batched_decisions", []))
-            decision_label = item.get("decision", {}).get("action", "—")
-            if batched > 1:
-                decision_label += f" (+{batched - 1} batched)"
-            stream.write(
-                f"| {item['number']} | {decision_label} | "
-                f"{item.get('patch_validation', {}).get('result', '—')} | "
-                f"{item.get('build_result', '—')} | {item.get('test_result', '—')} | {item['result']} |\n"
-            )
+        stream.writelines(map(_attempt_summary_row, attempts))
+
         if selected:
             stream.write(
                 f"\nAttempt {selected} was rebuilt and tested; its packages are the canonical downstream artifact.\n"
             )
         else:
             stream.write(f"\nStopped because: {stop_reason}.\n")
+
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
             summary.write((args.report / "summary.md").read_text())
+
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a") as output:
             output.write(f"repaired={'true' if selected else 'false'}\n")
