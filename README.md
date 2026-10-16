@@ -58,7 +58,7 @@ PATH="$PWD/.venv/bin:$PATH" bash scripts/check-installed-package.sh
 
 Some component tests require Debian tools such as quilt; CI installs them in a
 separate job. The dependency audit needs network access. Complexity checks cap
-new functions at 15 and reject increases above recorded legacy exceptions.
+new functions at 5 and reject increases above recorded legacy exceptions.
 When reducing complexity, lower the corresponding baseline entry. Baseline
 changes require review; CI never refreshes them automatically. Formatting and
 strict type checks initially cover the new typed boundaries, while correctness

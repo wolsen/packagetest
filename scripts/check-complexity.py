@@ -11,13 +11,15 @@ from radon.complexity import cc_visit
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE = ROOT / 'config/complexity-baseline.json'
-LIMIT = 15
+LIMIT = 5
 
 
 def measured_complexity() -> dict[str, int]:
+    """Measure functions, methods, and closures across production code and scripts."""
     scores = {}
 
     def collect(block, prefix, path):
+        """Record qualified function names while keeping closures independently visible."""
         name = prefix + block.name
         if hasattr(block, 'methods'):
             for method in block.methods:
@@ -35,7 +37,17 @@ def measured_complexity() -> dict[str, int]:
     return scores
 
 
+def complexity_errors(scores: dict[str, int], baseline: dict[str, int]) -> list[str]:
+    """Reject regressions and require removal or reduction of stale exceptions."""
+    errors = [f'{name}: {score} exceeds {baseline.get(name, LIMIT)}'
+              for name, score in scores.items() if score > baseline.get(name, LIMIT)]
+    errors.extend(f'{name}: remove or lower stale baseline entry'
+                  for name, score in baseline.items() if scores.get(name, 0) < score)
+    return errors
+
+
 def main() -> int:
+    """Check complexity against the migration baseline or explicitly regenerate it."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--write-baseline', action='store_true',
                         help='Record exceptions for explicit review; never run automatically in CI')
@@ -46,10 +58,7 @@ def main() -> int:
                                         if score > LIMIT}, indent=2, sort_keys=True) + '\n')
         return 0
     baseline = json.loads(BASELINE.read_text())
-    errors = [f'{name}: {score} exceeds {baseline.get(name, LIMIT)}'
-              for name, score in scores.items() if score > baseline.get(name, LIMIT)]
-    errors.extend(f'{name}: remove or lower stale baseline entry'
-                  for name, score in baseline.items() if scores.get(name, 0) < score)
+    errors = complexity_errors(scores, baseline)
     for error in errors:
         print(error)
     print(f'Checked {len(scores)} functions; {len(baseline)} legacy exceptions.')
