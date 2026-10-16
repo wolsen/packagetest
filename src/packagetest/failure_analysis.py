@@ -1325,67 +1325,125 @@ def validate_source_patch(patch: str, tree: Path, *, apply: bool = False) -> dic
     return _source_patch_result(patch, paths, tree, apply)
 
 
-def safe_evidence_text(evidence: Path, *, limit: int = 12_000) -> str:
-    """Read bounded text from evidence bundles without extracting archive members."""
-    chunks: list[tuple[int, str, str]] = []
-    for path in sorted(evidence.rglob("*")):
-        if path.is_symlink() or not path.is_file():
-            continue
-        if tarfile.is_tarfile(path):
-            chunks.extend(_tar_chunks(path))
-        elif path.suffix.lower() in TEXT_SUFFIXES and path.stat().st_size <= 512 * 1024:
-            text = path.read_text(errors="replace")
-            chunks.append((_priority(path.as_posix()), path.as_posix(), _tail(text, 12_000)))
-    chunks.sort(key=lambda item: (item[0], item[1]))
+EvidenceChunk = tuple[int, str, str]
+
+
+def _file_evidence_chunks(path: Path) -> list[EvidenceChunk]:
+    """Read an archive or a bounded text file after the caller excludes symlinks."""
+    if tarfile.is_tarfile(path):
+        return _tar_chunks(path)
+
+    if path.suffix.lower() in TEXT_SUFFIXES and path.stat().st_size <= 512 * 1024:
+        text = path.read_text(errors="replace")
+        return [(_priority(path.as_posix()), path.as_posix(), _tail(text, 12_000))]
+
+    return []
+
+
+def _render_evidence_chunks(chunks: list[EvidenceChunk], limit: int) -> str:
+    """Render priority-ordered evidence within the existing tail-truncation budget."""
     rendered = []
     remaining = limit
     for _, name, content in chunks:
         block = f"\n--- {name} ---\n{content.strip()}\n"
         if len(block) > remaining:
             block = block[-remaining:]
+
         if block:
             rendered.append(block)
             remaining -= len(block)
+
         if remaining <= 0:
             break
+
     return "".join(rendered)
 
 
-def _tar_chunks(path: Path) -> list[tuple[int, str, str]]:
+def safe_evidence_text(evidence: Path, *, limit: int = 12_000) -> str:
+    """Read bounded text from evidence bundles without extracting archive members."""
+    chunks: list[EvidenceChunk] = []
+    for path in sorted(evidence.rglob("*")):
+        if path.is_symlink() or not path.is_file():
+            continue
+
+        chunks.extend(_file_evidence_chunks(path))
+
+    chunks.sort(key=lambda item: (item[0], item[1]))
+    return _render_evidence_chunks(chunks, limit)
+
+
+def _tar_text_path(name: str) -> bool:
+    """Allow only nontraversing relative archive paths with recognized text suffixes."""
+    path = PurePosixPath(name)
+    return not path.is_absolute() and ".." not in path.parts and Path(name).suffix.lower() in TEXT_SUFFIXES
+
+
+def _eligible_tar_member(member: tarfile.TarInfo) -> bool:
+    """Exclude links, oversized members, unsafe names, and nontext archive content."""
+    return member.isfile() and member.size <= 512 * 1024 and _tar_text_path(member.name)
+
+
+def _tar_member_chunk(archive: tarfile.TarFile, member: tarfile.TarInfo, path: Path) -> EvidenceChunk | None:
+    """Read one eligible member directly into bounded evidence without filesystem extraction."""
+    if not _eligible_tar_member(member):
+        return None
+
+    stream = archive.extractfile(member)
+    if stream is None:
+        return None
+
+    text = stream.read().decode(errors="replace")
+    return _priority(member.name), f"{path.name}:{member.name}", _tail(text, 12_000)
+
+
+def _tar_chunks(path: Path) -> list[EvidenceChunk]:
+    """Collect safe archive evidence, retaining a diagnostic if tar decoding fails."""
     chunks = []
     try:
         with tarfile.open(path, "r:*") as archive:
             for member in archive.getmembers():
-                member_path = PurePosixPath(member.name)
-                if not member.isfile() or member.size > 512 * 1024:
-                    continue
-                if member_path.is_absolute() or ".." in member_path.parts:
-                    continue
-                if Path(member.name).suffix.lower() not in TEXT_SUFFIXES:
-                    continue
-                stream = archive.extractfile(member)
-                if stream is None:
-                    continue
-                text = stream.read().decode(errors="replace")
-                name = f"{path.name}:{member.name}"
-                chunks.append((_priority(member.name), name, _tail(text, 12_000)))
+                chunk = _tar_member_chunk(archive, member, path)
+                if chunk is not None:
+                    chunks.append(chunk)
+
     except tarfile.TarError as exc:
         chunks.append((0, path.name, f"Unreadable evidence archive: {exc}"))
+
     return chunks
 
 
+def _failure_evidence_name(name: str) -> bool:
+    """Recognize result records and explicitly named errors or failures."""
+    return name.endswith("result.json") or "error" in name or "failure" in name
+
+
+def _execution_evidence_name(name: str) -> bool:
+    """Recognize nightly build and autopkgtest execution logs."""
+    return name.endswith("nightly-build.log") or "autopkgtest" in name
+
+
+def _packaging_evidence_name(name: str) -> bool:
+    """Recognize Debian packaging paths and source/build descriptors."""
+    return "/debian/" in name or name.endswith((".dsc", ".build"))
+
+
 def _priority(name: str) -> int:
+    """Rank failure records before execution logs, packaging metadata, and other text."""
     lower = name.lower()
-    if lower.endswith("result.json") or "error" in lower or "failure" in lower:
+    if _failure_evidence_name(lower):
         return 0
-    if lower.endswith("nightly-build.log") or "autopkgtest" in lower:
+
+    if _execution_evidence_name(lower):
         return 1
-    if "/debian/" in lower or lower.endswith((".dsc", ".build")):
+
+    if _packaging_evidence_name(lower):
         return 2
+
     return 5
 
 
 def _tail(text: str, limit: int) -> str:
+    """Retain a bounded text tail with an explicit marker when earlier content is omitted."""
     return text if len(text) <= limit else "[earlier output omitted]\n" + text[-limit:]
 
 

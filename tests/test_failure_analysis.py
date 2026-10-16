@@ -756,3 +756,31 @@ def test_decision_parser_does_not_fall_back_past_invalid_final_decision(invalid,
 
     with pytest.raises(ValueError, match=message):
         parse_repair_decision(text)
+
+
+def test_evidence_reader_excludes_links_oversized_and_nontext_members(tmp_path):
+    """Archive and filesystem exclusions must hold without extracting any members."""
+    bundle = tmp_path / 'bundle.tar'
+    with tarfile.open(bundle, 'w') as archive:
+        for name, content in [('result.json', b'allowed-result'),
+                              ('/absolute.log', b'absolute-secret'),
+                              ('../escape.log', b'traversal-secret'),
+                              ('binary.bin', b'binary-secret'),
+                              ('huge.log', b'x' * (512 * 1024 + 1))]:
+            member = tarfile.TarInfo(name)
+            member.size = len(content)
+            archive.addfile(member, io.BytesIO(content))
+
+        link = tarfile.TarInfo('linked.log')
+        link.type = tarfile.SYMTYPE
+        link.linkname = 'result.json'
+        archive.addfile(link)
+
+    (tmp_path / 'linked.log').symlink_to(bundle)
+    evidence = safe_evidence_text(tmp_path)
+
+    assert 'allowed-result' in evidence
+    assert 'secret' not in evidence
+    assert 'huge.log' not in evidence
+    assert 'linked.log' not in evidence
+    assert not (tmp_path / 'result.json').exists()
