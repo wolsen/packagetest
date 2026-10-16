@@ -612,17 +612,16 @@ def upstream_dependency_adjustments(entry: dict, tree: Path) -> list[dict]:
 
 
 def _add_quilt_patch(tree: Path, name: str, content: str) -> None:
+    """Create a uniquely named packaging patch and append it to the quilt series."""
     patches = tree / 'debian' / 'patches'
     patches.mkdir(parents=True, exist_ok=True)
     patch = patches / name
     if patch.exists() or patch.is_symlink():
         raise ValueError(f'Packaging already contains generated patch name: {name}')
+
     patch.write_text(content)
     series = patches / 'series'
-    existing = series.read_text() if series.is_file() else ''
-    if existing and not existing.endswith('\n'):
-        existing += '\n'
-    series.write_text(existing + name + '\n')
+    _append_quilt_series(series, name)
 
 
 def _setuptools_configuration(text: str) -> tuple[list, list] | None:
@@ -837,9 +836,7 @@ def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
     rather than the pristine upstream snapshot.
     """
     series = tree / 'debian' / 'patches' / 'series'
-    active = [line for line in series.read_text().splitlines()
-              if line.strip() and not line.lstrip().startswith('#')] \
-        if series.is_file() else []
+    active = _active_quilt_lines(series)
     if not active:
         return _setuptools_discovery_adjustments(tree, tree)
 
@@ -856,6 +853,7 @@ def setuptools_discovery_adjustments(tree: Path) -> list[dict]:
             # packaging patch. Do not compound it with a generated patch based
             # on a source state that can never exist.
             return []
+
         return _setuptools_discovery_adjustments(patched, tree)
 
 
@@ -929,19 +927,8 @@ def write_packaging_proposal(entry: dict, baseline: Path, tree: Path, output: Pa
     """
     if not actions:
         return None
-    repositories = []
-    for role, key in [('ubuntu-openstack', 'packaging_repository'),
-                      ('ubuntu-importer', 'ubuntu_importer_repository'),
-                      ('archive', 'archive_packaging_repository')]:
-        repository = entry.get(key)
-        if repository and repository not in {item['repository'] for item in repositories}:
-            repositories.append({'role': role, 'repository': repository})
-    if not repositories:
-        raise ValueError('Packaging proposal requires a destination repository candidate')
-    branches = entry.get('packaging_branch_candidates') or []
-    if not branches:
-        raise ValueError('Packaging proposal requires destination branch candidates')
 
+    repositories, branches = _proposal_destinations(entry)
     output.mkdir(parents=True, exist_ok=True)
     patch_path = output / 'packaging-proposal.patch'
     with tempfile.TemporaryDirectory(prefix='packagetest-proposal-') as temporary:
@@ -966,6 +953,7 @@ def write_packaging_proposal(entry: dict, baseline: Path, tree: Path, output: Pa
                                 cwd=repository, env=environment, text=True, capture_output=True, check=True)
         if not result.stdout:
             return None
+
         patch_path.write_text(result.stdout)
 
     archive_algorithm, archive_digest = source_digest(entry['archive_source'])
@@ -999,23 +987,22 @@ def write_packaging_proposal(entry: dict, baseline: Path, tree: Path, output: Pa
 
 
 def extract_snapshot(archive: Path, destination: Path) -> None:
+    """Safely extract one snapshot root and flatten it into the requested directory."""
     destination.mkdir()
     with tarfile.open(archive) as source:
         members = source.getmembers()
-        roots = {Path(member.name).parts[0] for member in members if Path(member.name).parts}
-        if len(roots) != 1:
-            raise ValueError('Snapshot archive must contain exactly one top-level directory')
-        for member in members:
-            name = Path(member.name)
-            if name.is_absolute() or '..' in name.parts:
-                raise ValueError('Unsafe snapshot archive path')
+        root_name = _snapshot_root_name(members)
+        _validate_snapshot_paths(members)
         # Python data filtering prevents symlinks escaping the extraction root.
         source.extractall(destination, filter='data')
-    root = destination / next(iter(roots))
+
+    root = destination / root_name
     if not root.is_dir():
         raise ValueError('Snapshot archive root is not a directory')
+
     for child in root.iterdir():
         child.rename(destination / child.name)
+
     root.rmdir()
 
 
@@ -1031,21 +1018,16 @@ def preserve_orig_components(baseline_dsc: Path, source: str, upstream: str,
     for digest, size, filename in checksum_entries(fields(baseline_dsc)):
         if '.orig-' not in filename or filename.endswith('.asc'):
             continue
-        match = re.fullmatch(re.escape(source) + r'_[^/]+\.orig-([A-Za-z0-9-]+)\.tar\.(gz|xz|bz2|lzma)', filename)
-        if not match:
-            raise ValueError('Unsupported supplementary orig filename: ' + filename)
-        component, compression = match.groups()
+
+        component, compression = _orig_component_name(source, filename)
         archive = baseline_dsc.parent / filename
-        if archive.stat().st_size != int(size) or sha256(archive) != digest:
-            raise ValueError('Supplementary orig checksum mismatch: ' + filename)
+        _verify_component_bytes(archive, size, digest, filename)
         destination = output / f'{source}_{upstream}.orig-{component}.tar.{compression}'
         component_tree = tree / component
-        if destination.exists() or destination.is_symlink() or component_tree.exists() or component_tree.is_symlink():
-            raise ValueError('Supplementary orig component collides with snapshot: ' + component)
-        extract_snapshot(archive, component_tree)
-        shutil.copyfile(archive, destination)
+        _install_orig_component(archive, destination, component_tree, component)
         components.append({'component': component, 'archive_file': filename,
                            'snapshot_file': destination.name, 'sha256': digest})
+
     return components
 
 
@@ -1059,25 +1041,22 @@ def preserve_catalog_orig_components(build: SourcePreparer, entry: dict, upstrea
         filename = record['name']
         if '.orig-' not in filename or filename.endswith('.asc'):
             continue
-        match = re.fullmatch(re.escape(source) + r'_[^/]+\.orig-([A-Za-z0-9-]+)\.tar\.(gz|xz|bz2|lzma)', filename)
-        if not match:
-            raise ValueError('Unsupported supplementary orig filename: ' + filename)
-        component, compression = match.groups()
+
+        component, compression = _orig_component_name(source, filename)
         directory.mkdir(exist_ok=True)
         archive = directory / filename
         algorithm, digest = source_digest(record)
         download_verified(record['url'], archive, digest, algorithm)
         if archive.stat().st_size != record['size']:
             raise ValueError('Supplementary orig size mismatch: ' + filename)
+
         destination = output / f'{source}_{upstream}.orig-{component}.tar.{compression}'
         component_tree = tree / component
-        if destination.exists() or destination.is_symlink() or component_tree.exists() or component_tree.is_symlink():
-            raise ValueError('Supplementary orig component collides with snapshot: ' + component)
-        extract_snapshot(archive, component_tree)
-        shutil.copyfile(archive, destination)
+        _install_orig_component(archive, destination, component_tree, component)
         components.append({'component': component, 'archive_file': filename,
                            'snapshot_file': destination.name,
                            algorithm: digest})
+
     return components
 
 
@@ -1085,71 +1064,15 @@ def checkout_packaging_tree(build: SourcePreparer, entry: dict) -> tuple[Path, d
     """Checkout the exact source-package Git commit pinned by the run plan."""
     if entry.get('packaging_source_kind') != 'git':
         raise ValueError('Catalog entry does not select Git packaging')
-    repository = entry.get('packaging_source_repository')
-    revision = entry.get('packaging_sha')
-    branch = entry.get('packaging_branch')
-    if not repository or not re.fullmatch(r'[a-f0-9]{40}', revision or '') or not branch:
-        raise ValueError('Git packaging requires a pinned repository, branch, and commit')
+
+    repository, revision, branch = _packaging_coordinates(entry)
     checkout = build.work / 'packaging'
     build.command('git', 'init', '--quiet', str(checkout))
     build.command('git', 'remote', 'add', 'origin', repository, cwd=checkout)
-    launchpad = _is_launchpad_git(repository)
-    attempts = LAUNCHPAD_FETCH_ATTEMPTS if launchpad else 3
-    fetch_error = None
-    for attempt in range(1, attempts + 1):
-        try:
-            build.command('git', '-c', 'http.lowSpeedLimit=1000',
-                          '-c', 'http.lowSpeedTime=60', 'fetch', '--no-tags',
-                          '--depth=1', 'origin', revision, cwd=checkout)
-            fetch_error = None
-            break
-        except RuntimeError as exc:
-            fetch_error = exc
-            if launchpad and _is_permanent_launchpad_fetch_error(exc):
-                break
-            if attempt < attempts:
-                if launchpad:
-                    # Jitter prevents a large dependency level from retrying
-                    # against Launchpad in lockstep after a shared outage.
-                    delay = LAUNCHPAD_FETCH_BACKOFF[attempt - 1] + random.uniform(0, 5)
-                    label = 'Launchpad Git'
-                else:
-                    delay = attempt * 2
-                    label = 'Git'
-                print(f'{label} fetch attempt {attempt}/{attempts} failed; '
-                      f'retrying in {delay:.1f}s: {exc}', flush=True)
-                time.sleep(delay)
-    if fetch_error is not None:
-        raise fetch_error
+    PackagingFetcher(build, checkout, repository, revision).fetch()
     build.command('git', 'checkout', '--detach', revision, cwd=checkout)
-    actual = build.command('git', 'rev-parse', 'HEAD', cwd=checkout)
-    if actual != revision:
-        raise ValueError('Packaging checkout differs from the plan-pinned commit')
-    control = checkout / 'debian' / 'control'
-    if not control.is_file() or fields(control).get('Source') != entry['source']:
-        raise ValueError('Launchpad packaging debian/control source mismatch')
-    changelog_source = build.command('dpkg-parsechangelog', '-S', 'Source', cwd=checkout)
-    if changelog_source != entry['source']:
-        raise ValueError('Launchpad packaging debian/changelog source mismatch')
-    role = entry.get('packaging_source_role')
-    if role == 'ubuntu-importer':
-        version = build.command('dpkg-parsechangelog', '-S', 'Version', cwd=checkout)
-        if version != entry['archive_version']:
-            raise PackagingIdentityMismatch(
-                f'Ubuntu importer packaging version {version} differs from archive '
-                f'{entry["archive_version"]}')
-        binaries = sorted(re.findall(r'^Package:\s*(\S+)', control.read_text(), re.M))
-        if binaries != sorted(entry['binaries']):
-            raise PackagingIdentityMismatch(
-                f'Ubuntu importer binary set differs from archive: {binaries} != '
-                f'{sorted(entry["binaries"])}')
-    elif role in {'series-archive-vcs', 'archive-vcs'}:
-        binaries = sorted(re.findall(r'^Package:\s*(\S+)', control.read_text(), re.M))
-        expected = sorted(entry['binaries'])
-        if binaries != expected:
-            raise PackagingIdentityMismatch(
-                f'Generic archive VCS binary set differs from published archive: '
-                f'{binaries} != {expected}')
+    control = _verify_packaging_checkout(build, checkout, entry, revision)
+    _verify_packaging_role(build, checkout, control, entry)
     return checkout, {
         'kind': 'git', 'role': entry.get('packaging_source_role'),
         'repository': repository, 'branch': branch, 'sha': revision,
@@ -1207,3 +1130,196 @@ def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
     """Prepare a source in a new workspace; existing generations are never overwritten."""
     return SourcePreparer(destination).prepare(entry, cutoff=cutoff,
                                                remediation_patch=remediation_patch, target=target)
+
+
+def _snapshot_root_name(members: list[tarfile.TarInfo]) -> str:
+    """Require exactly one nonempty top-level path in the snapshot archive."""
+    roots = {Path(member.name).parts[0] for member in members if Path(member.name).parts}
+    if len(roots) != 1:
+        raise ValueError('Snapshot archive must contain exactly one top-level directory')
+
+    return next(iter(roots))
+
+
+def _validate_snapshot_paths(members: list[tarfile.TarInfo]) -> None:
+    """Reject absolute and parent-relative names before filtered extraction."""
+    for member in members:
+        name = Path(member.name)
+        if name.is_absolute() or '..' in name.parts:
+            raise ValueError('Unsafe snapshot archive path')
+
+
+def _orig_component_name(source: str, filename: str) -> tuple[str, str]:
+    """Parse a supplementary orig name without accepting paths or unsupported compression."""
+    match = re.fullmatch(re.escape(source) + r'_[^/]+\.orig-([A-Za-z0-9-]+)\.tar\.(gz|xz|bz2|lzma)', filename)
+    if not match:
+        raise ValueError('Unsupported supplementary orig filename: ' + filename)
+
+    component, compression = match.groups()
+    return component, compression
+
+
+def _verify_component_bytes(archive: Path, size: int, digest: str, filename: str) -> None:
+    """Verify supplementary source bytes before extracting or renaming them."""
+    if archive.stat().st_size != int(size) or sha256(archive) != digest:
+        raise ValueError('Supplementary orig checksum mismatch: ' + filename)
+
+
+def _install_orig_component(archive: Path, destination: Path, component_tree: Path, component: str) -> None:
+    """Reject file or directory collisions before preserving a supplementary component."""
+    if destination.exists() or destination.is_symlink() or component_tree.exists() or component_tree.is_symlink():
+        raise ValueError('Supplementary orig component collides with snapshot: ' + component)
+
+    extract_snapshot(archive, component_tree)
+    shutil.copyfile(archive, destination)
+
+
+def _packaging_coordinates(entry: dict) -> tuple[str, str, str]:
+    """Require repository, branch, and complete commit coordinates for Git packaging."""
+    repository = entry.get('packaging_source_repository')
+    revision = entry.get('packaging_sha')
+    branch = entry.get('packaging_branch')
+    if not repository or not re.fullmatch(r'[a-f0-9]{40}', revision or '') or not branch:
+        raise ValueError('Git packaging requires a pinned repository, branch, and commit')
+
+    return repository, revision, branch
+
+
+class PackagingFetcher:
+    """Own bounded Git fetch retries and Launchpad-specific backoff for one checkout."""
+
+    def __init__(self, build: SourcePreparer, checkout: Path, repository: str, revision: str) -> None:
+        """Select retry policy without changing the pinned revision being requested."""
+        self.build = build
+        self.checkout = checkout
+        self.revision = revision
+        self.launchpad = _is_launchpad_git(repository)
+        self.attempts = LAUNCHPAD_FETCH_ATTEMPTS if self.launchpad else 3
+
+    def fetch(self) -> None:
+        """Retry transient failures, stopping immediately on permanent Launchpad errors."""
+        fetch_error = None
+        for attempt in range(1, self.attempts + 1):
+            try:
+                self.build.command('git', '-c', 'http.lowSpeedLimit=1000',
+                                   '-c', 'http.lowSpeedTime=60', 'fetch', '--no-tags',
+                                   '--depth=1', 'origin', self.revision, cwd=self.checkout)
+                return
+            except RuntimeError as exc:
+                fetch_error = exc
+                if self._permanent(exc):
+                    break
+
+                self._pause(attempt, exc)
+
+        if fetch_error is not None:
+            raise fetch_error
+
+    def _permanent(self, error: Exception) -> bool:
+        """Limit permanent-failure recognition to the Launchpad fetch policy."""
+        return self.launchpad and _is_permanent_launchpad_fetch_error(error)
+
+    def _pause(self, attempt: int, error: Exception) -> None:
+        """Back off only when another attempt remains, jittering shared Launchpad retries."""
+        if attempt >= self.attempts:
+            return
+
+        if self.launchpad:
+            delay = LAUNCHPAD_FETCH_BACKOFF[attempt - 1] + random.uniform(0, 5)
+            label = 'Launchpad Git'
+        else:
+            delay = attempt * 2
+            label = 'Git'
+
+        print(f'{label} fetch attempt {attempt}/{self.attempts} failed; '
+              f'retrying in {delay:.1f}s: {error}', flush=True)
+        time.sleep(delay)
+
+
+def _verify_packaging_checkout(build: SourcePreparer, checkout: Path, entry: dict, revision: str) -> Path:
+    """Verify the checked-out commit and source identity in control and changelog."""
+    actual = build.command('git', 'rev-parse', 'HEAD', cwd=checkout)
+    if actual != revision:
+        raise ValueError('Packaging checkout differs from the plan-pinned commit')
+
+    control = checkout / 'debian' / 'control'
+    if not control.is_file() or fields(control).get('Source') != entry['source']:
+        raise ValueError('Launchpad packaging debian/control source mismatch')
+
+    changelog_source = build.command('dpkg-parsechangelog', '-S', 'Source', cwd=checkout)
+    if changelog_source != entry['source']:
+        raise ValueError('Launchpad packaging debian/changelog source mismatch')
+
+    return control
+
+
+def _verify_packaging_role(build: SourcePreparer, checkout: Path, control: Path, entry: dict) -> None:
+    """Enforce importer version identity and archive binary-set compatibility."""
+    role = entry.get('packaging_source_role')
+    if role == 'ubuntu-importer':
+        _verify_importer_identity(build, checkout, control, entry)
+    elif role in {'series-archive-vcs', 'archive-vcs'}:
+        binaries = sorted(re.findall(r'^Package:\s*(\S+)', control.read_text(), re.M))
+        expected = sorted(entry['binaries'])
+        if binaries != expected:
+            raise PackagingIdentityMismatch(
+                f'Generic archive VCS binary set differs from published archive: '
+                f'{binaries} != {expected}')
+
+
+def _verify_importer_identity(build: SourcePreparer, checkout: Path, control: Path, entry: dict) -> None:
+    """Require Ubuntu importer packaging to match the exact published version and binaries."""
+    version = build.command('dpkg-parsechangelog', '-S', 'Version', cwd=checkout)
+    if version != entry['archive_version']:
+        raise PackagingIdentityMismatch(
+            f'Ubuntu importer packaging version {version} differs from archive '
+            f'{entry["archive_version"]}')
+
+    binaries = sorted(re.findall(r'^Package:\s*(\S+)', control.read_text(), re.M))
+    if binaries != sorted(entry['binaries']):
+        raise PackagingIdentityMismatch(
+            f'Ubuntu importer binary set differs from archive: {binaries} != '
+            f'{sorted(entry["binaries"])}')
+
+
+def _proposal_destinations(entry: dict) -> tuple[list[dict], list[str]]:
+    """Require explicit candidate repositories and branches for reviewable packaging proposals."""
+    repositories = _candidate_repositories(entry)
+    if not repositories:
+        raise ValueError('Packaging proposal requires a destination repository candidate')
+
+    branches = entry.get('packaging_branch_candidates') or []
+    if not branches:
+        raise ValueError('Packaging proposal requires destination branch candidates')
+
+    return repositories, branches
+
+
+def _candidate_repositories(entry: dict) -> list[dict]:
+    """Preserve origin preference while deduplicating repository URLs."""
+    repositories = []
+    for role, key in [('ubuntu-openstack', 'packaging_repository'),
+                      ('ubuntu-importer', 'ubuntu_importer_repository'),
+                      ('archive', 'archive_packaging_repository')]:
+        repository = entry.get(key)
+        if repository and repository not in {item['repository'] for item in repositories}:
+            repositories.append({'role': role, 'repository': repository})
+
+    return repositories
+
+
+def _append_quilt_series(series: Path, name: str) -> None:
+    """Append a patch name while preserving a missing final newline in existing series."""
+    existing = series.read_text() if series.is_file() else ''
+    if existing and not existing.endswith('\n'):
+        existing += '\n'
+
+    series.write_text(existing + name + '\n')
+
+
+def _active_quilt_lines(series: Path) -> list[str]:
+    """Read nonempty uncommented entries before constructing the post-quilt source state."""
+    active = [line for line in series.read_text().splitlines()
+              if line.strip() and not line.lstrip().startswith('#')] \
+        if series.is_file() else []
+    return active
