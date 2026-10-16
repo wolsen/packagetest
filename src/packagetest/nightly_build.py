@@ -1,9 +1,13 @@
 """Build one frozen catalog snapshot with verified same-run dependencies."""
+from __future__ import annotations
+
 import argparse
+from dataclasses import dataclass
 import json
 from pathlib import Path
 import sys
 import traceback
+from typing import Any
 
 from packagetest.artifacts import fields, sha256
 from packagetest.contracts import BuildTarget, PreparedSource
@@ -14,9 +18,60 @@ from packagetest.locked import LockedBuild
 from packagetest.snapshot_targets import build_target, catalog_target
 
 
-def dependencies(entries, source):
-    result = set()
-    def visit(name):
+@dataclass(frozen=True)
+class BuildInputs:
+    """Validated run, target, and producer selection for one catalog source."""
+
+    source: str
+    snapshot_target: dict[str, Any]
+    target: dict[str, Any]
+    identity: dict[str, str]
+    entries: dict[str, dict[str, Any]]
+    required: frozenset[str]
+
+    def __post_init__(self) -> None:
+        """Reject invalid target identity or references outside the frozen catalog."""
+        BuildTarget.from_mapping(self.target)
+        if self.source not in self.entries:
+            raise ValueError(f'Unknown catalog source: {self.source}')
+
+        if self.required - self.entries.keys():
+            raise ValueError('Producer selection names sources outside the frozen catalog')
+
+    @property
+    def entry(self) -> dict[str, Any]:
+        """Read the selected entry from the same catalog used for producer validation."""
+        return self.entries[self.source]
+
+    @property
+    def context(self) -> BuildContext:
+        """Derive dependency restriction evaluation from the validated target."""
+        return BuildTarget.from_mapping(self.target).context
+
+
+@dataclass(frozen=True)
+class PreparedBuildSource:
+    """Source descriptor and preparation evidence consumed by lock construction."""
+
+    dsc: Path
+    metadata: dict[str, Any]
+    reused: bool
+
+    @classmethod
+    def from_preparation(cls, value: dict[str, Any]) -> PreparedBuildSource:
+        """Validate a fresh preparation result at its existing JSON-shaped boundary."""
+        if not isinstance(value['dsc'], str) or not isinstance(value['metadata'], dict):
+            raise ValueError('Invalid source preparation result')
+
+        return cls(Path(value['dsc']), value['metadata'], reused=False)
+
+
+def dependencies(entries: dict[str, dict[str, Any]], source: str) -> set[str]:
+    """Collect transitive same-run producers from the frozen catalog graph."""
+    result: set[str] = set()
+
+    def visit(name: str) -> None:
+        """Visit each producer once, including producers required by other producers."""
         for dep in entries[name].get('run_dependencies', []):
             if dep not in result:
                 result.add(dep)
@@ -87,14 +142,14 @@ def _group_providers(alternatives: list[dict], providers: dict) -> set[str]:
 
 def _execute_build(args: argparse.Namespace, state: dict) -> int:
     """Run frozen dependency handoff before any source preparation or build commands."""
-    snapshot_target, target, identity, entries, entry, required = _build_inputs(args)
-    locks = _dependency_locks(args.inputs, entries, required)
-    if required - locks.keys():
+    inputs = _build_inputs(args)
+    locks = _dependency_locks(args.inputs, inputs.entries, inputs.required)
+    if inputs.required - locks.keys():
         state['result'] = 'BLOCKED'
-        raise ValueError(f'Missing dependency builds: {sorted(required - locks.keys())}')
+        raise ValueError(f'Missing dependency builds: {sorted(inputs.required - locks.keys())}')
 
     producers = collect_producers(args.inputs, locks, run_id=args.run_id,
-                                  run_attempt=args.run_attempt, target=target)
+                                  run_attempt=args.run_attempt, target=inputs.target)
     if args.check_dependencies_only:
         state['result'] = 'READY'
         return 0
@@ -103,10 +158,10 @@ def _execute_build(args: argparse.Namespace, state: dict) -> int:
         build_repository(producers, args.output / 'dependency-repository')
 
     state['stage'] = 'snapshot-source'
-    prepared, dsc = _prepare_build_source(args, entry, identity, snapshot_target)
-    lock = _prepared_build_lock(args, entry, entries, required, target, producers, prepared, dsc)
+    prepared = _prepare_build_source(args, inputs)
+    lock = _prepared_build_lock(inputs, prepared, producers, remediation=bool(args.remediation_patch))
     state['stage'] = 'binary-build'
-    build = LockedBuild(lock, args.output, prepared_sources={args.source: dsc},
+    build = LockedBuild(lock, args.output, prepared_sources={args.source: prepared.dsc},
                         external_artifacts=producers, timeout=5400)
     result = build.run()
     stamp_generation(build.root / 'generation-manifest.json', run_id=args.run_id, run_attempt=args.run_attempt)
@@ -114,7 +169,7 @@ def _execute_build(args: argparse.Namespace, state: dict) -> int:
     return result
 
 
-def _dependency_locks(inputs: Path, entries: dict, required: set[str]) -> dict:
+def _dependency_locks(inputs: Path, entries: dict, required: frozenset[str]) -> dict:
     """Load one exact frozen catalog lock for each available producer."""
     locks = {}
     for path in inputs.rglob('build-lock.json'):
@@ -132,40 +187,35 @@ def _dependency_locks(inputs: Path, entries: dict, required: set[str]) -> dict:
     return locks
 
 
-def _prepare_build_source(args: argparse.Namespace, entry: dict, identity: dict, snapshot_target: dict) -> tuple[dict, Path]:
+def _prepare_build_source(args: argparse.Namespace, inputs: BuildInputs) -> PreparedBuildSource:
     """Reuse verified prepared source or prepare fresh source for remediation."""
     if args.prepared_source:
-        prepared, dsc = _reuse_prepared_source(args, entry, identity)
-    else:
-        # The dependency-only preflight deliberately runs before host build
-        # tools are installed. Keep source-preparation dependencies out of
-        # that path; the complete build runs after prepare-builder.sh.
-        from packagetest.nightly_source import prepare_source
-        prepared = prepare_source(entry, args.output / 'source-preparation',
-                                  remediation_patch=args.remediation_patch,
-                                  target=snapshot_target)
-        dsc = Path(prepared['dsc'])
+        return _reuse_prepared_source(args, inputs)
 
-    return prepared, dsc
+    # Dependency-only preflight must stay usable before host build tools exist.
+    from packagetest.nightly_source import prepare_source
+    prepared = prepare_source(inputs.entry, args.output / 'source-preparation',
+                              remediation_patch=args.remediation_patch,
+                              target=inputs.snapshot_target)
+    return PreparedBuildSource.from_preparation(prepared)
 
 
-def _reuse_prepared_source(args: argparse.Namespace, entry: dict, identity: dict) -> tuple[dict, Path]:
+def _reuse_prepared_source(args: argparse.Namespace, inputs: BuildInputs) -> PreparedBuildSource:
     """Verify frozen manifest identity and descriptor before reusing a prepared bundle."""
     if args.remediation_patch:
         raise ValueError('A remediation patch requires fresh source preparation')
 
     prepared_manifest = json.loads(
         (args.prepared_source / 'prepared-source.json').read_text())
-    _validate_prepared_manifest(prepared_manifest, args, entry, identity)
+    _validate_prepared_manifest(prepared_manifest, args, inputs.entry, inputs.identity)
     prepared_identity = PreparedSource.from_mapping(prepared_manifest)
     dsc = prepared_identity.verified_path(args.prepared_source / 'source')
     if not dsc.is_file() or sha256(dsc) != prepared_manifest['dsc_sha256']:
         raise ValueError('Prepared source .dsc is missing or changed')
 
     resolution = args.prepared_source / 'resolution.json'
-    prepared = {'dsc': str(dsc),
-                'metadata': json.loads(resolution.read_text()) if resolution.is_file() else {}}
-    return prepared, dsc
+    metadata = json.loads(resolution.read_text()) if resolution.is_file() else {}
+    return PreparedBuildSource(dsc, metadata, reused=True)
 
 
 def _validate_prepared_manifest(prepared_manifest: dict, args: argparse.Namespace, entry: dict, identity: dict) -> None:
@@ -181,30 +231,33 @@ def _validate_prepared_manifest(prepared_manifest: dict, args: argparse.Namespac
         raise ValueError('Prepared source differs from the final dependency plan')
 
 
-def _prepared_build_lock(args: argparse.Namespace, entry: dict, entries: dict, required: set[str], target: dict, producers: dict, prepared: dict, dsc: Path) -> dict:
+def _prepared_build_lock(inputs: BuildInputs, prepared: PreparedBuildSource,
+                         producers: dict, *, remediation: bool = False) -> dict:
     """Build a lock using adapted source declarations and exact producer versions."""
+    entry = inputs.entry
+    dsc = prepared.dsc
     source_fields = fields(dsc)
     version = source_fields['Version']
-    if args.prepared_source and version != entry.get('prepared_version'):
+    if prepared.reused and version != entry.get('prepared_version'):
         raise ValueError('Prepared source version differs from the final dependency plan')
 
     # Reviewed packaging adaptations can add or tighten dependencies. Pin
     # the dependencies of the source we actually build, not its baseline.
-    context = BuildTarget.from_mapping(target).context
-    if args.remediation_patch:
-        validate_candidate_dependencies(entry, entries, source_fields, required, context)
+    context = inputs.context
+    if remediation:
+        validate_candidate_dependencies(entry, inputs.entries, source_fields, set(inputs.required), context)
 
     versions = required_versions(source_fields, producers, context)
     expected_binaries = declared_binaries(source_fields)
-    package = {'source': args.source, 'version': version,
+    package = {'source': inputs.source, 'version': version,
                'expected_binaries': expected_binaries,
                'external_dependencies': sorted(producers), 'required_build_versions': versions,
                'input': {'kind': 'prepared-snapshot', 'dsc_sha256': sha256(dsc),
                          'upstream_sha': entry['upstream_sha']}}
-    if prepared['metadata'].get('remediation'):
-        package['input']['remediation'] = prepared['metadata']['remediation']
+    if prepared.metadata.get('remediation'):
+        package['input']['remediation'] = prepared.metadata['remediation']
 
-    lock = {'schema_version': 1, 'target': target, 'catalog_entry': entry,
+    lock = {'schema_version': 1, 'target': inputs.target, 'catalog_entry': entry,
             'maintainer': {'name': 'Packaging Build Agent', 'email': 'packaging-agent@example.invalid'},
             'packages': [package]}
     return lock
@@ -219,7 +272,7 @@ def _record_build_result(build: LockedBuild, state: dict) -> None:
         state['error'] = failed.get('error')
 
 
-def _build_inputs(args: argparse.Namespace) -> tuple[dict, dict, dict, dict, dict, set[str]]:
+def _build_inputs(args: argparse.Namespace) -> BuildInputs:
     """Validate the frozen run and derive target and producer closure."""
     catalog = json.loads(args.catalog.read_text())
     snapshot_target = catalog_target(catalog)
@@ -229,9 +282,11 @@ def _build_inputs(args: argparse.Namespace) -> tuple[dict, dict, dict, dict, dic
         raise ValueError('Frozen catalog belongs to another pipeline run or attempt')
 
     entries = {p['source']: p for p in catalog['packages']}
-    entry = entries[args.source]
-    required = dependencies(entries, args.source)
-    return snapshot_target, target, identity, entries, entry, required
+    if args.source not in entries:
+        raise ValueError(f'Unknown catalog source: {args.source}')
+
+    required = frozenset(dependencies(entries, args.source))
+    return BuildInputs(args.source, snapshot_target, target, identity, entries, required)
 
 
 def main() -> int:

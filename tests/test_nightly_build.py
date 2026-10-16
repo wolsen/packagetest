@@ -77,3 +77,57 @@ def test_repair_preserves_previously_planned_archive_alternative():
     entry = {'source': 'consumer', 'exact_build_depends': relationships}
     entries = {'consumer': entry, 'producer': {'binaries': ['python3-producer']}}
     validate_candidate_dependencies(entry, entries, relationships, set(), BuildContext())
+
+
+def test_named_build_inputs_reject_unknown_producers():
+    """Build context validation must reject references outside its frozen catalog."""
+    from packagetest.nightly_build import BuildInputs
+
+    with pytest.raises(ValueError, match='outside the frozen catalog'):
+        BuildInputs('demo', {}, {'suite': 'noble', 'architecture': 'amd64'},
+                    {'run_id': '1', 'run_attempt': '1'}, {'demo': {'source': 'demo'}},
+                    frozenset({'missing'}))
+
+
+def test_prepared_build_record_preserves_lock_identity_and_reuse_version_gate(tmp_path):
+    """Named source records retain lock content and enforce frozen reused versions."""
+    from packagetest.nightly_build import BuildInputs, PreparedBuildSource, _prepared_build_lock
+
+    dsc = tmp_path / 'demo.dsc'
+    dsc.write_text('Source: demo\nVersion: 2.0-1\nBinary: python3-demo\n')
+    entry = {'source': 'demo', 'upstream_sha': 'a' * 40, 'prepared_version': '2.0-1'}
+    inputs = BuildInputs('demo', {}, {'suite': 'noble', 'architecture': 'amd64'},
+                         {'run_id': '1', 'run_attempt': '1'}, {'demo': entry}, frozenset())
+    prepared = PreparedBuildSource.from_preparation({'dsc': str(dsc), 'metadata': {}})
+    lock = _prepared_build_lock(inputs, prepared, {})
+    assert lock['catalog_entry'] == entry
+    assert lock['target'] == inputs.target
+    assert lock['packages'][0]['expected_binaries'] == ['python3-demo']
+    assert lock['packages'][0]['version'] == '2.0-1'
+    assert inputs.context.architecture == 'amd64'
+
+    entry['prepared_version'] = '1.0-1'
+    with pytest.raises(ValueError, match='version differs'):
+        _prepared_build_lock(inputs, PreparedBuildSource(dsc, {}, reused=True), {})
+
+
+def test_dependency_only_preflight_never_prepares_source(tmp_path, monkeypatch):
+    """Named build context must preserve the early handoff-only execution path."""
+    from argparse import Namespace
+    from packagetest import nightly_build as module
+
+    inputs = module.BuildInputs(
+        'demo', {}, {'suite': 'noble', 'architecture': 'amd64'},
+        {'run_id': '1', 'run_attempt': '1'}, {'demo': {'source': 'demo'}}, frozenset())
+    monkeypatch.setattr(module, '_build_inputs', lambda args: inputs)
+    monkeypatch.setattr(module, 'collect_producers', lambda *args, **kwargs: {})
+
+    def unexpected(*args, **kwargs):
+        """Fail if dependency preflight reaches source preparation."""
+        raise AssertionError('Source preparation must follow dependency preflight')
+
+    monkeypatch.setattr(module, '_prepare_build_source', unexpected)
+    args = Namespace(inputs=tmp_path, run_id='1', run_attempt='1', check_dependencies_only=True)
+    state = {'result': 'PREPARING', 'stage': 'dependency-handoff'}
+    assert module._execute_build(args, state) == 0
+    assert state['result'] == 'READY'
