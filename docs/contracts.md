@@ -147,3 +147,23 @@ Git reuse additionally requires the upstream tag commit pin. Profile policy
 runs after package validation so cross-field UCA constraints remain enforced.
 These checks validate declared evidence; artifact bytes and build-environment
 availability are verified during execution.
+
+## Producer handoff responsibilities
+
+`collect_producers` discovers generation manifests and requires exactly one
+producer for each independently supplied lock. Unrelated generations are ignored.
+`ProducerBundle` checks run ID/attempt, successful generation status, target,
+readiness, saved lock equality and digest, and the unique successful package
+record with its expected version.
+
+Readiness requires a same-run `READY` record whose source belongs to the relevant
+producer set. The handoff consumes that verdict; it does not reclassify the
+underlying autopkgtest result. `require_readiness=False` supports testing a
+candidate before its test verdict exists. All build identity and artifact checks
+still apply.
+
+Artifact helpers reject bundle symlinks except `.build` log links, verify prepared
+source checksums against frozen upstream identity, and verify binary bytes,
+distribution, required build dependency versions, and manifest records. Returned
+paths are reconstructed from the downloaded bundle. `build_repository` rechecks
+bytes when copying verified binaries into the disposable testbed repository.

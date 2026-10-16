@@ -15,7 +15,6 @@
   "src/packagetest/failure_analysis.py:validate_source_patch": 28,
   "src/packagetest/failure_summary.py:summarize": 16,
   "src/packagetest/final_plan.py:main": 21,
-  "src/packagetest/handoff.py:collect_producers": 40,
   "src/packagetest/locked.py:LockedBuild.git_source": 25,
   "src/packagetest/locked.py:LockedBuild.run": 21,
   "src/packagetest/nightly_build.py:main": 29,

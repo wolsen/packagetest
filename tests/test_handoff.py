@@ -225,3 +225,104 @@ def test_producer_wrong_distribution_is_rejected(tmp_path):
     path.write_text(path.read_text().replace('Distribution: resolute', 'Distribution: noble'))
     with pytest.raises(ValueError, match='distribution mismatch'):
         collect(root, lock)
+
+
+def test_handoff_preserves_complete_provenance(tmp_path):
+    root, lock, deb = bundle(tmp_path)
+    assert collect(root, lock) == {'sample': [{
+        'file': deb.name, 'package': 'sample', 'version': '1.0-1',
+        'architecture': 'all', 'sha256': sha256(deb), 'path': str(deb.resolve()),
+        'source': 'sample', 'producer_lock_sha256': lock_digest(lock),
+        'ci': {'run_id': '123', 'run_attempt': '1'},
+    }]}
+
+
+def test_unrelated_generation_does_not_require_matching_run_or_readiness(tmp_path):
+    root, lock, _ = bundle(tmp_path)
+    unrelated = root.parent / 'unrelated'
+    unrelated.mkdir()
+    (unrelated / 'generation-manifest.json').write_text(json.dumps({
+        'packages': [{'source': 'other'}], 'result': 'FAILED',
+        'ci': {'run_id': 'old', 'run_attempt': '9'},
+    }))
+    assert set(collect(root, lock)) == {'sample'}
+
+
+@pytest.mark.parametrize('result', ['FAILED', 'BLOCKED', 'MISSING'])
+def test_readiness_requires_ready_verdict(tmp_path, result):
+    root, lock, _ = bundle(tmp_path)
+    path = root / 'producer-readiness.json'
+    readiness = json.loads(path.read_text())
+    readiness['result'] = result
+    path.write_text(json.dumps(readiness))
+    with pytest.raises(ValueError, match='Producer validation failed'):
+        collect(root, lock)
+
+
+def test_readiness_from_previous_attempt_is_rejected(tmp_path):
+    root, lock, _ = bundle(tmp_path)
+    path = root / 'producer-readiness.json'
+    readiness = json.loads(path.read_text())
+    readiness['ci']['run_attempt'] = '0'
+    path.write_text(json.dumps(readiness))
+    with pytest.raises(ValueError, match='wrong-run producer readiness'):
+        collect(root, lock)
+
+
+@pytest.mark.parametrize('change, message', [
+    ('duplicate', 'Invalid producer record'),
+    ('failed', 'Invalid producer record'),
+    ('version', 'Producer version mismatch'),
+])
+def test_package_record_must_be_unique_successful_and_exact(tmp_path, change, message):
+    root, lock, _ = bundle(tmp_path)
+    path = root / 'generation-manifest.json'
+    manifest = json.loads(path.read_text())
+    if change == 'duplicate':
+        manifest['packages'].append(manifest['packages'][0].copy())
+    elif change == 'failed':
+        manifest['packages'][0]['result'] = 'FAILED'
+    else:
+        manifest['packages'][0]['version'] = '2.0-1'
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match=message):
+        collect(root, lock)
+
+
+def test_saved_lock_must_equal_independent_lock_even_when_digest_matches(tmp_path):
+    root, lock, _ = bundle(tmp_path)
+    path = root / 'build-lock.json'
+    saved = json.loads(path.read_text())
+    saved['packages'][0]['version'] = '2.0-1'
+    path.write_text(json.dumps(saved))
+    with pytest.raises(ValueError, match='Producer lock mismatch'):
+        collect(root, lock)
+
+
+def test_deferred_readiness_does_not_skip_byte_verification(tmp_path):
+    root, lock, deb = bundle(tmp_path)
+    (root / 'producer-readiness.json').unlink()
+    deb.write_bytes(b'changed')
+    with pytest.raises(ValueError):
+        collect(root, lock, require_readiness=False)
+
+
+@pytest.mark.parametrize('change', ['missing', 'multiple'])
+def test_prepared_handoff_requires_exactly_one_dsc(tmp_path, change):
+    root, lock, _, dsc = prepared_bundle(tmp_path)
+    if change == 'missing':
+        dsc.unlink()
+    else:
+        (dsc.parent / 'extra.dsc').write_bytes(dsc.read_bytes())
+    with pytest.raises(ValueError, match='Prepared source checksum mismatch'):
+        collect(root, lock)
+
+
+def test_artifact_directory_symlink_is_rejected(tmp_path):
+    root, lock, deb = bundle(tmp_path)
+    original = deb.parent
+    outside = tmp_path / 'outside'
+    original.rename(outside)
+    original.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match='Symlink in producer bundle'):
+        collect(root, lock)
