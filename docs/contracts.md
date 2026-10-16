@@ -89,3 +89,35 @@ Replacement is sequential, not a transaction across both directories.
 partial output and stop immediately, subprocess timeouts stop the session, and
 other errors use the unchanged-evidence retry budget. Report rendering does not
 make execution or promotion decisions.
+
+## Nightly planning responsibilities
+
+`SourceDiscovery` owns a private catalog copy for one discovery pass. Injected
+ref and metadata readers pin and inspect each selected source once. Required
+candidates and unsatisfied upstream requirements expand the selection; inspection
+failures remain per-source evidence. Packaging source preference and archive
+version decisions are unchanged by scheduling.
+
+`CatalogScheduler` owns graph state for one scheduling pass. It records dependencies
+outside the selection as archive bootstrap edges, removes internal cycle edges,
+then restores reviewed mandatory candidate edges. Unresolved mandatory cycles and
+wave counts above capacity fail planning. Candidates in earlier waves replace
+cycle bootstrap edges when available. Sources and wave members are sorted;
+input catalogs are not mutated. `plan_catalog` remains the reusable entry point.
+
+`PlanPublisher` stamps run metadata and writes `catalog.json`, then hashes those
+exact bytes into `plan.json`. It renders the summary and emits workflow outputs
+without choosing dependencies. Discovery-only output has empty waves and phase
+`source-discovery`; dependency levels are deferred until source preparation.
+`--no-resolve` expands mandatory candidates without network access and remains
+an offline inspection mode, not a buildable frozen catalog.
+
+```mermaid
+flowchart LR
+    C[Catalog and requested roots] --> D[SourceDiscovery]
+    D --> F[Pinned catalog and dependency evidence]
+    F --> S[CatalogScheduler]
+    S --> P[PlanPublisher]
+    F -->|discovery only| P
+    P --> A[Catalog, plan, summary, workflow outputs]
+```

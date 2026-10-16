@@ -1,23 +1,34 @@
 """Freeze upstream refs once and plan independent snapshot build waves."""
+
 from __future__ import annotations
+
 import argparse
-from packagetest.config import default_config_path
-from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
+from collections import Counter
+from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
+
+from packagetest.config import default_config_path
+
+# Catalog records retain archive and upstream evidence with evolving JSON fields.
+# Keep that extensibility at the boundary; graph state has concrete types.
+Catalog = dict[str, Any]
+CandidateRule = dict[str, str]
 
 
 DEBIAN_PACKAGING_FALLBACK_WARNING = (
-    'No usable Ubuntu-maintained packaging or exact Ubuntu Cloud Archive PPA '
-    'source package was available. Debian packaging is being used as the final '
-    'fallback and requires human review.'
+    "No usable Ubuntu-maintained packaging or exact Ubuntu Cloud Archive PPA "
+    "source package was available. Debian packaging is being used as the final "
+    "fallback and requires human review."
 )
 
 
@@ -29,99 +40,175 @@ def is_uca_ppa_source(entry: dict) -> bool:
             and parsed.path.startswith('/ubuntu-cloud-archive/'))
 
 
-def resolve_upstream_dependency_closure(catalog, sources=None, candidate_dependencies=(),
-                                        freeze_entry=None, inspect_entry=None):
-    """Freeze roots and recursively add their upstream Python dependencies."""
+class SourceDiscovery:
+    """Resolve the upstream closure using injectable ref and metadata readers.
 
-    from packagetest.upstream_dependencies import (distribution_source_index,
-                                                   distribution_archive_index,
-                                                   inspect_revision,
-                                                   map_requirements)
-    from packagetest.catalog import dependency_names
-    catalog = json.loads(json.dumps(catalog))
-    entries = {entry['source']: entry for entry in catalog['packages']}
-    requested = set(sources) if sources else set(entries)
-    if requested - entries.keys():
-        raise ValueError(f'Unknown requested sources: {sorted(requested - entries.keys())}')
-    selected = set(requested)
-    reasons = {source: {'requested'} for source in requested}
-    index = distribution_source_index(catalog['packages'])
-    archive_index = distribution_archive_index(catalog.get('archive_python_packages', []))
-    freeze_entry = freeze_entry or freeze
-    inspect_entry = inspect_entry or inspect_revision
-    inspected = set()
+    Create one discovery object per run; each source is pinned and inspected once. Only the private catalog copy is
+    enriched; scheduling can subsequently operate without network access.
+    """
 
-    while True:
-        for constraint in candidate_dependencies:
-            if constraint['source'] in selected and constraint['dependency'] not in selected:
-                selected.add(constraint['dependency'])
-                reasons.setdefault(constraint['dependency'], set()).add(
-                    f'mandatory candidate for {constraint["source"]}')
-        frontier = sorted(selected - inspected)
-        if not frontier:
-            break
-        with ThreadPoolExecutor(max_workers=16) as workers:
-            frozen = list(workers.map(freeze_entry, (entries[source] for source in frontier)))
-        for entry in frozen:
-            entries[entry['source']] = entry
+    def __init__(
+        self,
+        catalog: Catalog,
+        sources: Iterable[str] | None,
+        candidate_dependencies: Iterable[CandidateRule],
+        *,
+        freeze_entry: Callable[[Catalog], Catalog],
+        inspect_entry: Callable[[Catalog], tuple[list[Catalog], list[str]]],
+    ) -> None:
+        from packagetest.upstream_dependencies import (
+            distribution_archive_index,
+            distribution_source_index,
+        )
 
-        def inspect(source):
-            entry = entries[source]
-            if entry.get('upstream_resolution_error'):
-                return source, None, [], entry['upstream_resolution_error']
-            try:
-                records, files = inspect_entry(entry)
-                return source, records, files, None
-            except Exception as exc:
-                return source, None, [], str(exc)
+        self.catalog = json.loads(json.dumps(catalog))
+        self.entries = {entry["source"]: entry for entry in self.catalog["packages"]}
+        self.requested = set(sources) if sources else set(self.entries)
+        if self.requested - self.entries.keys():
+            raise ValueError(
+                f"Unknown requested sources: {sorted(self.requested - self.entries.keys())}"
+            )
+        self.selected = set(self.requested)
+        self.reasons = {source: {"requested"} for source in self.requested}
+        self.index = distribution_source_index(self.catalog["packages"])
+        self.archive_index = distribution_archive_index(
+            self.catalog.get("archive_python_packages", [])
+        )
+        self.constraints = tuple(candidate_dependencies)
+        self.freeze_entry = freeze_entry
+        self.inspect_entry = inspect_entry
 
-        with ThreadPoolExecutor(max_workers=16) as workers:
-            results = list(workers.map(inspect, frontier))
-        for source, records, files, error in results:
-            entry = entries[source]
-            inspected.add(source)
-            if error:
-                entry['upstream_dependency_resolution_error'] = error
-                continue
-            mapped, dependencies = map_requirements(
-                records, index, source, entries, archive_index)
-            entry['upstream_dependency_files'] = files
-            entry['upstream_dependency_requirements'] = mapped
-            entry['upstream_dependencies'] = dependencies
-            packaged = dependency_names(entry.get('build_depends', ''))
-            entry['planned_archive_dependency_additions'] = [
-                {
-                    'binary': record['archive_binary'],
-                    'source': record['archive_source'],
-                    'archive_version': record['archive_version'],
-                    'kind': record['kind'],
-                    'requirement': record['requirement'],
-                    'file': record['file'],
-                    'line': record['line'],
-                }
+    def discover(self) -> tuple[Catalog, list[str], list[str], list[dict[str, str]]]:
+        inspected: set[str] = set()
+        while True:
+            self._select_required_candidates()
+            frontier = sorted(self.selected - inspected)
+            if not frontier:
+                break
+            with ThreadPoolExecutor(max_workers=16) as workers:
+                frozen = list(
+                    workers.map(
+                        self.freeze_entry, (self.entries[source] for source in frontier)
+                    )
+                )
+            for entry in frozen:
+                self.entries[entry["source"]] = entry
+            with ThreadPoolExecutor(max_workers=16) as workers:
+                results = list(workers.map(self._inspect, frontier))
+            for source, records, files, error in results:
+                inspected.add(source)
+                if error:
+                    self.entries[source]["upstream_dependency_resolution_error"] = error
+                else:
+                    self._record_requirements(source, records, files)
+        for source, entry in self.entries.items():
+            entry["selection_reasons"] = sorted(self.reasons.get(source, []))
+        self.catalog["packages"] = [
+            self.entries[source] for source in sorted(self.entries)
+        ]
+        errors = [
+            {
+                "source": source,
+                "error": self.entries[source]["upstream_dependency_resolution_error"],
+            }
+            for source in sorted(self.selected)
+            if self.entries[source].get("upstream_dependency_resolution_error")
+        ]
+        return self.catalog, sorted(self.selected), sorted(self.requested), errors
+
+    def _select_required_candidates(self) -> None:
+        for rule in self.constraints:
+            if (
+                rule["source"] in self.selected
+                and rule["dependency"] not in self.selected
+            ):
+                self.selected.add(rule["dependency"])
+                self.reasons.setdefault(rule["dependency"], set()).add(
+                    f"mandatory candidate for {rule['source']}"
+                )
+
+    def _inspect(self, source: str) -> tuple[str, list[Catalog], list[str], str | None]:
+        entry = self.entries[source]
+        if entry.get("upstream_resolution_error"):
+            return source, [], [], entry["upstream_resolution_error"]
+        try:
+            records, files = self.inspect_entry(entry)
+            return source, records, files, None
+        except Exception as exc:
+            # One unavailable project must remain visible as evidence without
+            # preventing independent projects from being discovered.
+            return source, [], [], str(exc)
+
+    def _record_requirements(
+        self, source: str, records: list[Catalog], files: list[str]
+    ) -> None:
+        from packagetest.catalog import dependency_names
+        from packagetest.upstream_dependencies import map_requirements
+
+        entry = self.entries[source]
+        mapped, dependencies = map_requirements(
+            records, self.index, source, self.entries, self.archive_index
+        )
+        entry["upstream_dependency_files"] = files
+        entry["upstream_dependency_requirements"] = mapped
+        entry["upstream_dependencies"] = dependencies
+        packaged = dependency_names(entry.get("build_depends", ""))
+        entry["planned_archive_dependency_additions"] = [
+            {
+                "binary": record["archive_binary"],
+                "source": record["archive_source"],
+                "archive_version": record["archive_version"],
+                "kind": record["kind"],
+                "requirement": record["requirement"],
+                "file": record["file"],
+                "line": record["line"],
+            }
+            for record in mapped
+            if record.get("kind") in {"test", "build-system"}
+            and record.get("archive_binary")
+            and record["archive_binary"] not in packaged
+            and record.get("archive_satisfies") is True
+        ]
+        entry["archive_satisfied_upstream_dependencies"] = sorted(
+            {
+                record["source"]
                 for record in mapped
-                if record.get('kind') in {'test', 'build-system'}
-                and record.get('archive_binary')
-                and record['archive_binary'] not in packaged
-                and record.get('archive_satisfies') is True
-            ]
-            entry['archive_satisfied_upstream_dependencies'] = sorted({
-                record['source'] for record in mapped
-                if record.get('source') and record.get('archive_satisfies') is True
-                and record.get('source') not in dependencies})
-            entry.pop('upstream_dependency_resolution_error', None)
-            entry['packaging_build_dependencies'] = list(entry.get('build_dependencies', []))
-            entry['build_dependencies'] = sorted(set(entry.get('build_dependencies', [])) | set(dependencies))
-            for dependency in dependencies:
-                reasons.setdefault(dependency, set()).add(f'upstream dependency of {source}')
-                selected.add(dependency)
+                if record.get("source")
+                and record.get("archive_satisfies") is True
+                and record.get("source") not in dependencies
+            }
+        )
+        entry.pop("upstream_dependency_resolution_error", None)
+        entry["packaging_build_dependencies"] = list(
+            entry.get("build_dependencies", [])
+        )
+        entry["build_dependencies"] = sorted(
+            set(entry.get("build_dependencies", [])) | set(dependencies)
+        )
+        for dependency in dependencies:
+            self.reasons.setdefault(dependency, set()).add(
+                f"upstream dependency of {source}"
+            )
+            self.selected.add(dependency)
 
-    for source, entry in entries.items():
-        entry['selection_reasons'] = sorted(reasons.get(source, []))
-    catalog['packages'] = [entries[source] for source in sorted(entries)]
-    errors = [{'source': source, 'error': entries[source]['upstream_dependency_resolution_error']}
-              for source in sorted(selected) if entries[source].get('upstream_dependency_resolution_error')]
-    return catalog, sorted(selected), sorted(requested), errors
+
+def resolve_upstream_dependency_closure(
+    catalog: Catalog,
+    sources: Iterable[str] | None = None,
+    candidate_dependencies: Iterable[CandidateRule] = (),
+    freeze_entry: Callable[[Catalog], Catalog] | None = None,
+    inspect_entry: Callable[[Catalog], tuple[list[Catalog], list[str]]] | None = None,
+) -> tuple[Catalog, list[str], list[str], list[dict[str, str]]]:
+    """Freeze roots and recursively add their upstream Python dependencies."""
+    from packagetest.upstream_dependencies import inspect_revision
+
+    return SourceDiscovery(
+        catalog,
+        sources,
+        candidate_dependencies,
+        freeze_entry=freeze_entry or freeze,
+        inspect_entry=inspect_entry or inspect_revision,
+    ).discover()
 
 
 def components(graph):
@@ -154,75 +241,163 @@ def components(graph):
     return result
 
 
-def plan_catalog(catalog, sources=None, max_waves=12, candidate_dependencies=()):
-    catalog = json.loads(json.dumps(catalog))
-    entries = {p['source']: p for p in catalog['packages']}
-    if len(entries) != len(catalog['packages']):
-        raise ValueError('Duplicate catalog sources')
-    selected = set(sources) if sources else set(entries)
-    if selected - entries.keys():
-        raise ValueError(f'Unknown requested sources: {sorted(selected - entries.keys())}')
-    graph = {s: set(entries[s]['build_dependencies']) & selected for s in selected}
-    groups = components(graph)
-    bootstrap = []
-    for source in sorted(graph):
-        outside = set(entries[source]['build_dependencies']) - selected
-        for dependency in sorted(outside):
-            satisfied = dependency in entries[source].get('archive_satisfied_upstream_dependencies', [])
-            bootstrap.append({'source': source, 'dependency': dependency,
-                              'reason': ('Ubuntu archive satisfies upstream requirement' if satisfied
-                                         else 'outside explicitly selected pilot')})
-    for group in groups:
-        if len(group) > 1 or group[0] in graph[group[0]]:
+class CatalogScheduler:
+    """Own graph state for one scheduling pass over a private catalog copy."""
+
+    def __init__(self, catalog: Catalog, sources: Iterable[str] | None = None) -> None:
+        self.catalog = json.loads(json.dumps(catalog))
+        self.entries = {entry["source"]: entry for entry in self.catalog["packages"]}
+        if len(self.entries) != len(self.catalog["packages"]):
+            raise ValueError("Duplicate catalog sources")
+        self.selected = set(sources) if sources else set(self.entries)
+        if self.selected - self.entries.keys():
+            raise ValueError(
+                f"Unknown requested sources: {sorted(self.selected - self.entries.keys())}"
+            )
+        self.graph: dict[str, set[str]] = {
+            source: set(self.entries[source]["build_dependencies"]) & self.selected
+            for source in self.selected
+        }
+        self.groups = components(self.graph)
+        self.bootstrap: list[Catalog] = []
+
+    def schedule(
+        self, max_waves: int = 12, candidate_dependencies: Iterable[CandidateRule] = ()
+    ) -> tuple[Catalog, Catalog]:
+        self._bootstrap_outside_selection()
+        self._break_cycles()
+        self._require_candidates(candidate_dependencies)
+        waves = self._waves(max_waves)
+        self._reuse_earlier_candidates(waves)
+        for index, wave in enumerate(waves):
+            for source in wave:
+                entry = self.entries[source]
+                entry["run_dependencies"] = sorted(self.graph[source])
+                entry["archive_bootstrap_dependencies"] = sorted(
+                    edge["dependency"]
+                    for edge in self.bootstrap
+                    if edge["source"] == source
+                )
+                entry["wave"] = index
+        self.catalog["packages"] = [
+            self.entries[source] for source in sorted(self.selected)
+        ]
+        return self.catalog, {
+            "sources": sorted(self.selected),
+            "waves": waves,
+            "archive_bootstrap_edges": self.bootstrap,
+            "cycle_components": [group for group in self.groups if len(group) > 1],
+        }
+
+    def _bootstrap_outside_selection(self) -> None:
+        for source in sorted(self.graph):
+            entry = self.entries[source]
+            outside = set(entry["build_dependencies"]) - self.selected
+            for dependency in sorted(outside):
+                satisfied = dependency in entry.get(
+                    "archive_satisfied_upstream_dependencies", []
+                )
+                self.bootstrap.append(
+                    {
+                        "source": source,
+                        "dependency": dependency,
+                        "reason": (
+                            "Ubuntu archive satisfies upstream requirement"
+                            if satisfied
+                            else "outside explicitly selected pilot"
+                        ),
+                    }
+                )
+
+    def _break_cycles(self) -> None:
+        for group in self.groups:
+            if len(group) == 1 and group[0] not in self.graph[group[0]]:
+                continue
             members = set(group)
             for source in group:
-                for dep in sorted(graph[source] & members):
-                    graph[source].remove(dep)
-                    bootstrap.append({'source': source, 'dependency': dep, 'reason': 'dependency cycle bootstrap', 'component': group})
-    # Some snapshot APIs are newer than the archive bootstrap packages. Retain
-    # reviewed mandatory candidate edges even inside a cyclic component; the
-    # reverse (often documentation-only) edge can still use the archive.
-    for constraint in candidate_dependencies:
-        source, dep = constraint['source'], constraint['dependency']
-        if source not in entries or dep not in entries:
-            raise ValueError(f'Unknown mandatory candidate dependency: {source} -> {dep}')
-        if dep not in entries[source]['build_dependencies']:
-            raise ValueError(f'Mandatory candidate is not a declared build dependency: {source} -> {dep}')
-        if source not in selected:
-            continue
-        if dep not in selected:
-            raise ValueError(f'{source} requires candidate {dep}; include it in the selected sources')
-        graph[source].add(dep)
-        bootstrap = [edge for edge in bootstrap if (edge['source'], edge['dependency']) != (source, dep)]
-        entries[source].setdefault('required_candidate_dependencies', {})[dep] = constraint['reason']
-    completed, waves = set(), []
-    while len(completed) < len(graph):
-        wave = sorted(s for s, deps in graph.items() if s not in completed and deps <= completed)
-        if not wave:
-            raise ValueError('Unresolved dependency cycle')
-        waves.append(wave)
-        completed.update(wave)
-    if len(waves) > max_waves:
-        raise ValueError(f'{len(waves)} dependency waves exceed workflow capacity {max_waves}')
-    # Reuse candidates that are already available without adding serialization.
-    # Removing every SCC edge is only a starting point: an earlier-wave member
-    # can safely replace an archive bootstrap dependency without creating cycles.
-    order = {source: index for index, wave in enumerate(waves) for source in wave}
-    remaining_bootstrap = []
-    for edge in bootstrap:
-        if edge['reason'] == 'dependency cycle bootstrap' and order[edge['dependency']] < order[edge['source']]:
-            graph[edge['source']].add(edge['dependency'])
-        else:
-            remaining_bootstrap.append(edge)
-    bootstrap = remaining_bootstrap
-    for index, wave in enumerate(waves):
-        for source in wave:
-            entries[source]['run_dependencies'] = sorted(graph[source])
-            entries[source]['archive_bootstrap_dependencies'] = sorted(e['dependency'] for e in bootstrap if e['source'] == source)
-            entries[source]['wave'] = index
-    catalog['packages'] = [entries[s] for s in sorted(selected)]
-    return catalog, {'sources': sorted(selected), 'waves': waves, 'archive_bootstrap_edges': bootstrap,
-                     'cycle_components': [g for g in groups if len(g) > 1]}
+                for dependency in sorted(self.graph[source] & members):
+                    self.graph[source].remove(dependency)
+                    self.bootstrap.append(
+                        {
+                            "source": source,
+                            "dependency": dependency,
+                            "reason": "dependency cycle bootstrap",
+                            "component": group,
+                        }
+                    )
+
+    def _require_candidates(self, constraints: Iterable[CandidateRule]) -> None:
+        # Reviewed API requirements override bootstrap choices, including SCC edges.
+        for constraint in constraints:
+            source, dependency = constraint["source"], constraint["dependency"]
+            if source not in self.entries or dependency not in self.entries:
+                raise ValueError(
+                    f"Unknown mandatory candidate dependency: {source} -> {dependency}"
+                )
+            if dependency not in self.entries[source]["build_dependencies"]:
+                raise ValueError(
+                    f"Mandatory candidate is not a declared build dependency: {source} -> {dependency}"
+                )
+            if source not in self.selected:
+                continue
+            if dependency not in self.selected:
+                raise ValueError(
+                    f"{source} requires candidate {dependency}; include it in the selected sources"
+                )
+            self.graph[source].add(dependency)
+            self.bootstrap = [
+                edge
+                for edge in self.bootstrap
+                if (edge["source"], edge["dependency"]) != (source, dependency)
+            ]
+            self.entries[source].setdefault("required_candidate_dependencies", {})[
+                dependency
+            ] = constraint["reason"]
+
+    def _waves(self, max_waves: int) -> list[list[str]]:
+        completed: set[str] = set()
+        waves: list[list[str]] = []
+        while len(completed) < len(self.graph):
+            wave = sorted(
+                source
+                for source, dependencies in self.graph.items()
+                if source not in completed and dependencies <= completed
+            )
+            if not wave:
+                raise ValueError("Unresolved dependency cycle")
+            waves.append(wave)
+            completed.update(wave)
+        if len(waves) > max_waves:
+            raise ValueError(
+                f"{len(waves)} dependency waves exceed workflow capacity {max_waves}"
+            )
+        return waves
+
+    def _reuse_earlier_candidates(self, waves: list[list[str]]) -> None:
+        # Restore only edges to earlier waves: candidate reuse adds no serialization.
+        order = {source: index for index, wave in enumerate(waves) for source in wave}
+        remaining = []
+        for edge in self.bootstrap:
+            if (
+                edge["reason"] == "dependency cycle bootstrap"
+                and order[edge["dependency"]] < order[edge["source"]]
+            ):
+                self.graph[edge["source"]].add(edge["dependency"])
+            else:
+                remaining.append(edge)
+        self.bootstrap = remaining
+
+
+def plan_catalog(
+    catalog: Catalog,
+    sources: Iterable[str] | None = None,
+    max_waves: int = 12,
+    candidate_dependencies: Iterable[CandidateRule] = (),
+) -> tuple[Catalog, Catalog]:
+    """Plan one catalog; source resolution and publication are separate stages."""
+    return CatalogScheduler(catalog, sources).schedule(
+        max_waves, candidate_dependencies
+    )
 
 
 def render_plan_summary(plan: dict, catalog: dict) -> str:
@@ -528,127 +703,249 @@ def freeze(entry):
     return freeze_packaging(entry)
 
 
-def main():
+def publish_job_summary(args: argparse.Namespace) -> None:
+    catalog = json.loads(args.catalog.read_text())
+    sources = [p["source"] for p in catalog["packages"]]
+    prefix = catalog.get("target", {}).get("id")
+    prefix = f"{prefix}-" if prefix else ""
+    rows = []
+    for source in sources:
+        row = {"source": source}
+        for phase in ("build", "autopkgtest"):
+            paths = list(
+                (args.summary_inputs / f"status-{prefix}{phase}-{source}").rglob(
+                    "result.json"
+                )
+            )
+            row[phase] = (
+                json.loads(paths[0].read_text())
+                if len(paths) == 1
+                else {
+                    "result": "MISSING",
+                    "error": "Job produced no unique status report",
+                }
+            )
+        rows.append(row)
+    args.output.mkdir(parents=True, exist_ok=True)
+    (args.output / "results.json").write_text(json.dumps(rows, indent=2) + "\n")
+    counts = {
+        phase: dict(sorted(Counter(row[phase]["result"] for row in rows).items()))
+        for phase in ("build", "autopkgtest")
+    }
+    (args.output / "counts.json").write_text(json.dumps(counts, indent=2) + "\n")
+    table = f"{len(rows)} requested sources. Regress-stack was not run.\n\n"
+    table += "| Phase | Results |\n|---|---|\n"
+    for phase, outcomes in counts.items():
+        table += (
+            f"| {phase} | "
+            + ", ".join(f"{status}: {count}" for status, count in outcomes.items())
+            + " |\n"
+        )
+    table += "\nSUPERFICIAL, SKIP, NO_TESTS, BLOCKED, and MISSING do not count as substantive test passes.\n\n"
+    table += "| Source | Build | Autopkgtest |\n|---|---|---|\n" + "".join(
+        f"| {row['source']} | {row['build']['result']} | {row['autopkgtest']['result']} |\n"
+        for row in rows
+    )
+    (args.output / "summary.md").write_text(table)
+    if os.getenv("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as handle:
+            handle.write(table)
+    print(table)
+
+
+def emit_dependency_pattern(args: argparse.Namespace) -> None:
+    catalog = json.loads(args.catalog.read_text())
+    entries = {p["source"]: p for p in catalog["packages"]}
+    prefix = catalog.get("target", {}).get("id")
+    prefix = f"{prefix}-" if prefix else ""
+    needed = set()
+
+    def add(source):
+        for dep in entries[source].get("run_dependencies", []):
+            if dep not in needed:
+                needed.add(dep)
+                add(dep)
+
+    add(args.dependency_pattern)
+    if args.include_self:
+        needed.add(args.dependency_pattern)
+    names = [f"build-{prefix}{source}" for source in sorted(needed)]
+    pattern = (
+        names[0]
+        if len(names) == 1
+        else "{" + ",".join(names) + "}"
+        if names
+        else "__no_dependencies__"
+    )
+    if os.getenv("GITHUB_OUTPUT"):
+        with open(os.environ["GITHUB_OUTPUT"], "a") as handle:
+            handle.write("pattern=" + pattern + "\n")
+            handle.write("needed=" + ("true" if names else "false") + "\n")
+    print(pattern)
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--catalog', type=Path, default=Path('nightly-plan/catalog-input.json'))
-    parser.add_argument('--output', type=Path, default=Path('nightly-plan'))
-    parser.add_argument('--sources', default='', help='Comma-separated pilot sources; omitted selects entire catalog')
-    parser.add_argument('--no-resolve', action='store_true', help='Offline graph inspection only; not a buildable frozen catalog')
-    parser.add_argument('--discovery-only', action='store_true',
-                        help='Freeze and select sources; defer dependency levels until source preparation')
-    parser.add_argument('--max-waves', type=int, default=256)
-    parser.add_argument('--candidate-dependencies', type=Path,
-                        default=default_config_path('hibiscus-candidate-dependencies.json'))
-    parser.add_argument('--dependency-pattern', help='Emit artifact download pattern for one frozen catalog source')
-    parser.add_argument('--include-self', action='store_true')
-    parser.add_argument('--summary-inputs', type=Path)
+    parser.add_argument(
+        "--catalog", type=Path, default=Path("nightly-plan/catalog-input.json")
+    )
+    parser.add_argument("--output", type=Path, default=Path("nightly-plan"))
+    parser.add_argument(
+        "--sources",
+        default="",
+        help="Comma-separated pilot sources; omitted selects entire catalog",
+    )
+    parser.add_argument(
+        "--no-resolve",
+        action="store_true",
+        help="Offline graph inspection only; not a buildable frozen catalog",
+    )
+    parser.add_argument(
+        "--discovery-only",
+        action="store_true",
+        help="Freeze and select sources; defer dependency levels until source preparation",
+    )
+    parser.add_argument("--max-waves", type=int, default=256)
+    parser.add_argument(
+        "--candidate-dependencies",
+        type=Path,
+        default=default_config_path("hibiscus-candidate-dependencies.json"),
+    )
+    parser.add_argument(
+        "--dependency-pattern",
+        help="Emit artifact download pattern for one frozen catalog source",
+    )
+    parser.add_argument("--include-self", action="store_true")
+    parser.add_argument("--summary-inputs", type=Path)
     args = parser.parse_args()
     if args.summary_inputs:
-        catalog = json.loads(args.catalog.read_text())
-        sources = [p['source'] for p in catalog['packages']]
-        prefix = catalog.get('target', {}).get('id')
-        prefix = f'{prefix}-' if prefix else ''
-        rows = []
-        for source in sources:
-            row = {'source': source}
-            for phase in ('build', 'autopkgtest'):
-                paths = list((args.summary_inputs /
-                              f'status-{prefix}{phase}-{source}').rglob('result.json'))
-                row[phase] = json.loads(paths[0].read_text()) if len(paths) == 1 else {'result': 'MISSING', 'error': 'Job produced no unique status report'}
-            rows.append(row)
-        args.output.mkdir(parents=True, exist_ok=True)
-        (args.output / 'results.json').write_text(json.dumps(rows, indent=2) + '\n')
-        counts = {phase: dict(sorted(Counter(row[phase]['result'] for row in rows).items()))
-                  for phase in ('build', 'autopkgtest')}
-        (args.output / 'counts.json').write_text(json.dumps(counts, indent=2) + '\n')
-        table = f'{len(rows)} requested sources. Regress-stack was not run.\n\n'
-        table += '| Phase | Results |\n|---|---|\n'
-        for phase, outcomes in counts.items():
-            table += f"| {phase} | " + ', '.join(f'{status}: {count}' for status, count in outcomes.items()) + ' |\n'
-        table += '\nSUPERFICIAL, SKIP, NO_TESTS, BLOCKED, and MISSING do not count as substantive test passes.\n\n'
-        table += '| Source | Build | Autopkgtest |\n|---|---|---|\n' + ''.join(f"| {row['source']} | {row['build']['result']} | {row['autopkgtest']['result']} |\n" for row in rows)
-        (args.output / 'summary.md').write_text(table)
-        if os.getenv('GITHUB_STEP_SUMMARY'):
-            with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as handle:
-                handle.write(table)
-        print(table)
-        return
-    if args.dependency_pattern:
-        catalog = json.loads(args.catalog.read_text())
-        entries = {p['source']: p for p in catalog['packages']}
-        prefix = catalog.get('target', {}).get('id')
-        prefix = f'{prefix}-' if prefix else ''
-        needed = set()
-        def add(source):
-            for dep in entries[source].get('run_dependencies', []):
-                if dep not in needed:
-                    needed.add(dep)
-                    add(dep)
-        add(args.dependency_pattern)
-        if args.include_self:
-            needed.add(args.dependency_pattern)
-        names = [f'build-{prefix}{source}' for source in sorted(needed)]
-        pattern = names[0] if len(names) == 1 else '{' + ','.join(names) + '}' if names else '__no_dependencies__'
-        if os.getenv('GITHUB_OUTPUT'):
-            with open(os.environ['GITHUB_OUTPUT'], 'a') as handle:
-                handle.write('pattern=' + pattern + '\n')
-                handle.write('needed=' + ('true' if names else 'false') + '\n')
-        print(pattern)
-        return
+        publish_job_summary(args)
+    elif args.dependency_pattern:
+        emit_dependency_pattern(args)
+    else:
+        run(args)
+
+
+def offline_selection(
+    requested: list[str] | None, constraints: Iterable[CandidateRule]
+) -> list[str] | None:
+    """Expand mandatory candidates without network access or upstream inspection."""
+    if not requested:
+        return None
+    selected = set(requested)
+    constraints = tuple(constraints)
+    while True:
+        additions = {
+            rule["dependency"] for rule in constraints if rule["source"] in selected
+        } - selected
+        if not additions:
+            return sorted(selected)
+        selected.update(additions)
+
+
+def run(args: argparse.Namespace) -> None:
+    """Coordinate discovery, scheduling, and publication for one invocation."""
     constraints = json.loads(args.candidate_dependencies.read_text())
     catalog = json.loads(args.catalog.read_text())
-    requested = [s.strip() for s in args.sources.split(',') if s.strip()] or None
+    requested = [s.strip() for s in args.sources.split(",") if s.strip()] or None
     dependency_errors = []
     if not args.no_resolve:
-        catalog, selected, roots, dependency_errors = resolve_upstream_dependency_closure(
-            catalog, requested, constraints)
+        catalog, selected, roots, dependency_errors = (
+            resolve_upstream_dependency_closure(catalog, requested, constraints)
+        )
     else:
-        selected = set(requested) if requested else None
-        if selected is not None:
-            while True:
-                additions = {constraint['dependency'] for constraint in constraints
-                             if constraint['source'] in selected} - selected
-                if not additions:
-                    break
-                selected.update(additions)
-            selected = sorted(selected)
-        roots = requested or [entry['source'] for entry in catalog['packages']]
+        selected = offline_selection(requested, constraints)
+        roots = requested or [entry["source"] for entry in catalog["packages"]]
     if args.discovery_only:
-        entries = {entry['source']: entry for entry in catalog['packages']}
+        entries = {entry["source"]: entry for entry in catalog["packages"]}
         selected = sorted(selected if selected is not None else entries)
-        catalog['packages'] = [entries[source] for source in selected]
-        plan = {'sources': selected, 'waves': [], 'archive_bootstrap_edges': [],
-                'cycle_components': [], 'phase': 'source-discovery'}
+        catalog["packages"] = [entries[source] for source in selected]
+        plan = {
+            "sources": selected,
+            "waves": [],
+            "archive_bootstrap_edges": [],
+            "cycle_components": [],
+            "phase": "source-discovery",
+        }
     else:
         catalog, plan = plan_catalog(catalog, selected, args.max_waves, constraints)
-    plan['requested_sources'] = sorted(roots)
-    catalog['requested_sources'] = sorted(roots)
-    catalog['resolved_at'] = datetime.now(timezone.utc).isoformat()
-    catalog['ci'] = {'run_id': os.getenv('GITHUB_RUN_ID', 'local'), 'run_attempt': os.getenv('GITHUB_RUN_ATTEMPT', '1')}
-    args.output.mkdir(parents=True, exist_ok=True)
-    content = json.dumps(catalog, indent=2) + '\n'
-    (args.output / 'catalog.json').write_text(content)
-    plan['catalog_sha256'] = hashlib.sha256(content.encode()).hexdigest()
-    plan['resolution_failures'] = ([{'source': p['source'], 'error': p['upstream_resolution_error']}
-                                    for p in catalog['packages'] if p.get('upstream_resolution_error')]
-                                   + dependency_errors)
-    plan['packaging_source_fallbacks'] = [
-        {'source': p['source'], 'error': p['packaging_resolution_error']}
-        for p in catalog['packages'] if p.get('packaging_source_kind') == 'archive']
-    (args.output / 'plan.json').write_text(json.dumps(plan, indent=2) + '\n')
-    summary = (render_discovery_summary(catalog, plan['sources'], plan['requested_sources'])
-               if args.discovery_only else render_plan_summary(plan, catalog))
-    (args.output / 'summary.md').write_text(summary)
-    if os.getenv('GITHUB_STEP_SUMMARY'):
-        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as handle:
-            handle.write(summary)
-    if os.getenv('GITHUB_OUTPUT'):
-        with open(os.environ['GITHUB_OUTPUT'], 'a') as handle:
-            handle.write('sources=' + json.dumps({'source': plan['sources']}, separators=(',', ':')) + '\n')
-            levels = dependency_level_matrix(plan['waves'])
-            handle.write('dependency_levels=' + json.dumps(levels, separators=(',', ':')) + '\n')
-    print(json.dumps({'packages': len(plan['sources']), 'waves': [len(w) for w in plan['waves']],
-                      'archive_bootstrap_edges': len(plan['archive_bootstrap_edges']), 'resolution_failures': len(plan['resolution_failures'])}))
+    PlanPublisher(args.output).publish(
+        catalog, plan, roots, dependency_errors, discovery_only=args.discovery_only
+    )
 
-if __name__ == '__main__':
+
+@dataclass(frozen=True)
+class PlanPublisher:
+    """Serialize plan evidence and render reports without choosing graph edges."""
+
+    output: Path
+
+    def publish(
+        self,
+        catalog: Catalog,
+        plan: Catalog,
+        roots: list[str],
+        dependency_errors: list[dict[str, str]],
+        *,
+        discovery_only: bool,
+    ) -> None:
+        plan["requested_sources"] = sorted(roots)
+        catalog["requested_sources"] = sorted(roots)
+        catalog["resolved_at"] = datetime.now(timezone.utc).isoformat()
+        catalog["ci"] = {
+            "run_id": os.getenv("GITHUB_RUN_ID", "local"),
+            "run_attempt": os.getenv("GITHUB_RUN_ATTEMPT", "1"),
+        }
+        self.output.mkdir(parents=True, exist_ok=True)
+        content = json.dumps(catalog, indent=2) + "\n"
+        (self.output / "catalog.json").write_text(content)
+        plan["catalog_sha256"] = hashlib.sha256(content.encode()).hexdigest()
+        plan["resolution_failures"] = [
+            {"source": p["source"], "error": p["upstream_resolution_error"]}
+            for p in catalog["packages"]
+            if p.get("upstream_resolution_error")
+        ] + dependency_errors
+        plan["packaging_source_fallbacks"] = [
+            {"source": p["source"], "error": p["packaging_resolution_error"]}
+            for p in catalog["packages"]
+            if p.get("packaging_source_kind") == "archive"
+        ]
+        (self.output / "plan.json").write_text(json.dumps(plan, indent=2) + "\n")
+        summary = (
+            render_discovery_summary(
+                catalog, plan["sources"], plan["requested_sources"]
+            )
+            if discovery_only
+            else render_plan_summary(plan, catalog)
+        )
+        (self.output / "summary.md").write_text(summary)
+        if os.getenv("GITHUB_STEP_SUMMARY"):
+            with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as handle:
+                handle.write(summary)
+        if os.getenv("GITHUB_OUTPUT"):
+            with open(os.environ["GITHUB_OUTPUT"], "a") as handle:
+                handle.write(
+                    "sources="
+                    + json.dumps({"source": plan["sources"]}, separators=(",", ":"))
+                    + "\n"
+                )
+                levels = dependency_level_matrix(plan["waves"])
+                handle.write(
+                    "dependency_levels="
+                    + json.dumps(levels, separators=(",", ":"))
+                    + "\n"
+                )
+        print(
+            json.dumps(
+                {
+                    "packages": len(plan["sources"]),
+                    "waves": [len(w) for w in plan["waves"]],
+                    "archive_bootstrap_edges": len(plan["archive_bootstrap_edges"]),
+                    "resolution_failures": len(plan["resolution_failures"]),
+                }
+            )
+        )
+
+
+if __name__ == "__main__":
     main()

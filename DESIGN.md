@@ -37,7 +37,9 @@ relationship replanning after repairs remains a limitation.
 | Area | Owner | Boundary |
 | --- | --- | --- |
 | Advisory release planning | `cli`, `planner`, `release_discovery` | User configuration to advisory plan |
-| Nightly planning | `nightly_plan`, `final_plan`, `prepared_plan.DependencyPlan` | Pinned catalog and prepared metadata to graph |
+| Source discovery | `nightly_plan.SourceDiscovery` | Catalog roots to pinned upstream dependency closure |
+| Nightly scheduling | `nightly_plan.CatalogScheduler`, `final_plan`, `prepared_plan.DependencyPlan` | Selected catalog and prepared metadata to dependency waves |
+| Plan publication | `nightly_plan.PlanPublisher` | Catalog and plan to hashed artifacts and workflow summaries |
 | Dependency syntax | `relations.BuildContext`, `DependencyRelation` | Target-aware restriction evaluation |
 | JSON identity | `contracts.BuildTarget`, `PreparedSource` | Validated immutable identity records |
 | Source orchestration | `nightly_source.SourcePreparer` | One workspace, command log, and preparation result |

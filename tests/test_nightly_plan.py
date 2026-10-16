@@ -379,3 +379,190 @@ def test_upstream_external_test_dependency_is_annotated_without_dag_node():
         'archive_version': '1.13.1-1', 'kind': 'test',
         'requirement': 'wsgi-intercept>=1.7', 'file': 'test-requirements.txt', 'line': 1,
     }]
+
+
+def test_scheduler_preserves_complete_plan_and_input():
+    data = catalog()
+    original = json.loads(json.dumps(data))
+    frozen, plan = module.plan_catalog(
+        data,
+        candidate_dependencies=[
+            {"source": "a", "dependency": "b", "reason": "new API"},
+        ],
+    )
+    assert data == original
+    assert plan == {
+        "sources": ["a", "b", "c", "d"],
+        "waves": [["b", "d"], ["a"], ["c"]],
+        "archive_bootstrap_edges": [
+            {
+                "source": "b",
+                "dependency": "a",
+                "reason": "dependency cycle bootstrap",
+                "component": ["a", "b"],
+            }
+        ],
+        "cycle_components": [["a", "b"]],
+    }
+    assert frozen == {
+        "series": "2026.2",
+        "packages": [
+            {
+                "source": "a",
+                "build_dependencies": ["b"],
+                "required_candidate_dependencies": {"b": "new API"},
+                "run_dependencies": ["b"],
+                "archive_bootstrap_dependencies": [],
+                "wave": 1,
+            },
+            {
+                "source": "b",
+                "build_dependencies": ["a"],
+                "run_dependencies": [],
+                "archive_bootstrap_dependencies": ["a"],
+                "wave": 0,
+            },
+            {
+                "source": "c",
+                "build_dependencies": ["a"],
+                "run_dependencies": ["a"],
+                "archive_bootstrap_dependencies": [],
+                "wave": 2,
+            },
+            {
+                "source": "d",
+                "build_dependencies": [],
+                "run_dependencies": [],
+                "archive_bootstrap_dependencies": [],
+                "wave": 0,
+            },
+        ],
+    }
+    reversed_data = {**data, "packages": list(reversed(data["packages"]))}
+    assert module.plan_catalog(reversed_data) == module.plan_catalog(data)
+
+
+def test_discovery_pins_once_and_isolates_metadata_failure():
+    data = {
+        "packages": [
+            {
+                "source": name,
+                "deliverable": name,
+                "binaries": [f"python3-{name}"],
+                "build_dependencies": [],
+            }
+            for name in ("a", "b", "c")
+        ]
+    }
+    original = json.loads(json.dumps(data))
+    frozen_sources = []
+    inspected_sources = []
+
+    def freeze(entry):
+        frozen_sources.append(entry["source"])
+        entry["upstream_sha"] = "a" * 40
+        return entry
+
+    def inspect(entry):
+        source = entry["source"]
+        inspected_sources.append(source)
+        if source == "c":
+            raise ValueError("metadata unavailable")
+        return (
+            [
+                {
+                    "distribution": "b" if source == "a" else "a",
+                    "requirement": "b" if source == "a" else "a",
+                    "kind": "runtime",
+                    "file": "requirements.txt",
+                    "line": 1,
+                }
+            ],
+            ["requirements.txt"],
+        )
+
+    enriched, selected, roots, errors = module.resolve_upstream_dependency_closure(
+        data, ["a", "c"], freeze_entry=freeze, inspect_entry=inspect
+    )
+    assert data == original
+    assert sorted(frozen_sources) == ["a", "b", "c"]
+    assert sorted(inspected_sources) == ["a", "b", "c"]
+    assert selected == ["a", "b", "c"]
+    assert roots == ["a", "c"]
+    assert errors == [{"source": "c", "error": "metadata unavailable"}]
+    assert enriched["packages"][1]["selection_reasons"] == ["upstream dependency of a"]
+
+
+@pytest.mark.parametrize("discovery_only", [False, True])
+def test_offline_cli_publishes_matching_catalog_plan_and_workflow_outputs(
+    tmp_path,
+    monkeypatch,
+    discovery_only,
+):
+    import hashlib
+    import sys
+
+    catalog_path = tmp_path / "input.json"
+    catalog_path.write_text(json.dumps(catalog()))
+    rules_path = tmp_path / "rules.json"
+    # Reverse order ensures offline closure requires more than one pass.
+    rules_path.write_text(
+        json.dumps(
+            [
+                {"source": "a", "dependency": "b", "reason": "new API"},
+                {"source": "c", "dependency": "a", "reason": "new API"},
+            ]
+        )
+    )
+    output = tmp_path / "output"
+    github_output = tmp_path / "github-output"
+    github_summary = tmp_path / "github-summary"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(github_output))
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(github_summary))
+    monkeypatch.setenv("GITHUB_RUN_ID", "123")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    argv = [
+        "nightly-plan",
+        "--catalog",
+        str(catalog_path),
+        "--output",
+        str(output),
+        "--candidate-dependencies",
+        str(rules_path),
+        "--sources",
+        "c",
+        "--no-resolve",
+    ]
+    if discovery_only:
+        argv.append("--discovery-only")
+    monkeypatch.setattr(sys, "argv", argv)
+
+    def unexpected_resolution(*args, **kwargs):
+        raise AssertionError("offline planning attempted source resolution")
+
+    monkeypatch.setattr(module, "freeze", unexpected_resolution)
+    module.main()
+    catalog_bytes = (output / "catalog.json").read_bytes()
+    frozen = json.loads(catalog_bytes)
+    plan = json.loads((output / "plan.json").read_text())
+    assert plan["catalog_sha256"] == hashlib.sha256(catalog_bytes).hexdigest()
+    assert plan["sources"] == ["a", "b", "c"]
+    assert plan["requested_sources"] == frozen["requested_sources"] == ["c"]
+    assert frozen["ci"] == {"run_id": "123", "run_attempt": "2"}
+    assert plan["resolution_failures"] == plan["packaging_source_fallbacks"] == []
+    assert plan["waves"] == ([] if discovery_only else [["b"], ["a"], ["c"]])
+    assert ("phase" in plan) == discovery_only
+    workflow = dict(
+        line.split("=", 1) for line in github_output.read_text().splitlines()
+    )
+    assert json.loads(workflow["sources"]) == {"source": ["a", "b", "c"]}
+    assert json.loads(workflow["dependency_levels"]) == {
+        "include": []
+        if discovery_only
+        else [
+            {"level": 1, "packages": '["b"]'},
+            {"level": 2, "packages": '["a"]'},
+            {"level": 3, "packages": '["c"]'},
+        ],
+    }
+    assert github_summary.read_text() == (output / "summary.md").read_text()
