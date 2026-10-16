@@ -8,6 +8,7 @@ fallback. Upstream Git supplies the new source tree.
 from __future__ import annotations
 
 import configparser
+from dataclasses import dataclass, field as dataclass_field
 from datetime import datetime, timezone
 import difflib
 import fnmatch
@@ -624,92 +625,176 @@ def _add_quilt_patch(tree: Path, name: str, content: str) -> None:
     series.write_text(existing + name + '\n')
 
 
-def _setuptools_discovery_adjustments(tree: Path, patch_tree: Path) -> list[dict]:
-    """Calculate setuptools changes from ``tree`` and add them to ``patch_tree``."""
-    path = tree / 'pyproject.toml'
-    if not path.is_file():
-        return []
-    text = path.read_text()
+def _setuptools_configuration(text: str) -> tuple[list, list] | None:
+    """Read discovery configuration while treating invalid TOML as non-actionable."""
     try:
         setuptools = tomllib.loads(text).get('tool', {}).get('setuptools', {})
     except tomllib.TOMLDecodeError:
-        return []
+        return None
+
     packages = setuptools.get('packages', {}) if isinstance(setuptools, dict) else {}
+    return _configured_packages(packages)
+
+
+def _configured_packages(packages: dict | list) -> tuple[list, list]:
+    """Separate find patterns from explicitly listed setuptools packages."""
     includes = packages.get('find', {}).get('include', []) if isinstance(packages, dict) else []
     explicit = packages if isinstance(packages, list) else []
-    replacements = {}
-    explicit_additions = set()
-    omitted = {}
-    package_roots = []
-    configured = list(includes if isinstance(includes, list) else []) + list(explicit)
-    for include in configured:
-        if (not isinstance(include, str)
-                or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.]*\*?', include)):
-            continue
-        package_name = include.removesuffix('*')
-        package = tree.joinpath(*package_name.split('.'))
-        if package.is_dir():
-            package_roots.append((package_name, package))
-        subpackages = sorted(
-            child.relative_to(tree).as_posix().replace('/', '.')
-            for child in package.rglob('*')
-            if child.is_dir() and (child / '__init__.py').is_file()
-        ) if package.is_dir() else []
+    return includes if isinstance(includes, list) else [], explicit
+
+
+def _package_directory(tree: Path, include: object) -> tuple[str, Path] | None:
+    """Resolve supported literal package patterns to existing source directories."""
+    if not isinstance(include, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.]*\*?', include):
+        return None
+
+    name = include.removesuffix('*')
+    path = tree.joinpath(*name.split('.'))
+    if not path.is_dir():
+        return None
+
+    return name, path
+
+
+def _importable_subdirectories(root: Path) -> list[Path]:
+    """Find traditional Python subpackages beneath an existing package root."""
+    return [child for child in root.rglob('*')
+            if child.is_dir() and (child / '__init__.py').is_file()]
+
+
+def _runtime_package_file(path: Path) -> bool:
+    """Identify visible non-Python files eligible for package-data inclusion."""
+    return (path.is_file() and not path.name.startswith('.')
+            and path.suffix not in {'.py', '.pyi', '.pyc'} and path.name != 'py.typed')
+
+
+def _runtime_package_files(directory: Path) -> list[str]:
+    """List eligible runtime data in a stable order for generated TOML."""
+    return sorted(child.name for child in directory.iterdir() if _runtime_package_file(child))
+
+
+@dataclass
+class SetuptoolsDiscovery:
+    """Accumulate missing subpackages and runtime data without modifying source."""
+
+    tree: Path
+    explicit: list
+    replacements: dict[str, str] = dataclass_field(default_factory=dict)
+    explicit_additions: set[str] = dataclass_field(default_factory=set)
+    omitted: dict[str, list[str]] = dataclass_field(default_factory=dict)
+    package_roots: list[tuple[str, Path]] = dataclass_field(default_factory=list)
+    package_data: dict[str, list[str]] = dataclass_field(default_factory=dict)
+
+    def inspect(self, configured: list, text: str) -> None:
+        """Scan configured roots and infer data only when no data table is present."""
+        for include in configured:
+            self.inspect_root(include)
+
+        if '[tool.setuptools.package-data]' not in text:
+            self.inspect_data()
+
+    def inspect_root(self, include: object) -> None:
+        """Record the root and any importable packages excluded by its configuration."""
+        resolved = _package_directory(self.tree, include)
+        if resolved is None:
+            return
+
+        name, root = resolved
+        self.package_roots.append((name, root))
+        subpackages = sorted(child.relative_to(self.tree).as_posix().replace('/', '.')
+                             for child in _importable_subdirectories(root))
         if subpackages:
-            if include in explicit:
-                explicit_additions.update(set(subpackages) - set(explicit))
-            elif not include.endswith('*'):
-                replacements[include] = include + '*'
-            omitted[include] = subpackages
-    package_data = {}
-    has_package_data = '[tool.setuptools.package-data]' in text
-    if not has_package_data:
-        for root_name, package_root in package_roots:
-            package_dirs = [package_root] + [
-                child for child in package_root.rglob('*')
-                if child.is_dir() and (child / '__init__.py').is_file()
-            ]
-            for package_dir in package_dirs:
-                files = sorted(
-                    child.name for child in package_dir.iterdir()
-                    if child.is_file() and not child.name.startswith('.')
-                    and child.suffix not in {'.py', '.pyi', '.pyc'}
-                    and child.name != 'py.typed'
-                )
+            self.include_subpackages(include, subpackages)
+
+    def include_subpackages(self, include: str, subpackages: list[str]) -> None:
+        """Preserve explicit lists and widen only exact find patterns."""
+        if include in self.explicit:
+            self.explicit_additions.update(set(subpackages) - set(self.explicit))
+        elif not include.endswith('*'):
+            self.replacements[include] = include + '*'
+
+        self.omitted[include] = subpackages
+
+    def inspect_data(self) -> None:
+        """Collect runtime files by their owning importable package."""
+        for root_name, root in self.package_roots:
+            for directory in [root, *_importable_subdirectories(root)]:
+                files = _runtime_package_files(directory)
                 if files:
-                    relative = package_dir.relative_to(package_root).parts
-                    package_name = '.'.join((root_name, *relative))
-                    package_data[package_name] = files
-    if not replacements and not explicit_additions and not package_data:
-        return []
-    revised = text
+                    relative = directory.relative_to(root).parts
+                    self.package_data['.'.join((root_name, *relative))] = files
+
+    def has_changes(self) -> bool:
+        """Report whether discovery found an actionable metadata omission."""
+        return bool(self.replacements or self.explicit_additions or self.package_data)
+
+    def rewrite(self, text: str) -> str:
+        """Render discovery changes while preserving TOML structure and comments."""
+        revised = _widen_package_patterns(text, self.replacements)
+        if self.explicit_additions:
+            revised = _expand_explicit_packages(revised, self.explicit_additions)
+
+        if self.package_data:
+            revised = _append_package_data(revised, self.package_data)
+
+        return revised
+
+    def record(self, name: str) -> dict:
+        """Expose the exact proposed metadata changes for human review."""
+        return {
+            'action': 'add-quilt-patch', 'name': name,
+            'reason': 'Setuptools metadata omits importable subpackages or runtime package data.',
+            'replacements': self.replacements, 'omitted_subpackages': self.omitted,
+            'explicit_package_additions': sorted(self.explicit_additions),
+            'package_data': self.package_data, 'human_review_required': True,
+        }
+
+
+def _widen_package_patterns(text: str, replacements: dict[str, str]) -> str:
+    """Widen exact single-line find patterns only when their location is unambiguous."""
     for old, new in replacements.items():
         pattern = rf'(?m)^(\s*include\s*=\s*\[[^\n]*)(["\']){re.escape(old)}\2([^\n]*\]\s*)$'
-        revised, count = re.subn(
+        text, count = re.subn(
             pattern, lambda match: match.group(1) + match.group(2) + new
-            + match.group(2) + match.group(3), revised, count=1)
+            + match.group(2) + match.group(3), text, count=1)
         if count != 1:
             raise ValueError(f'Cannot safely widen setuptools package discovery for {old}')
-    if explicit_additions:
-        try:
-            document = tomlkit.parse(revised)
-            package_array = document['tool']['setuptools']['packages']
-            if not isinstance(package_array, tomlkit.items.Array):
-                raise TypeError('tool.setuptools.packages is not an array')
-            for package in sorted(explicit_additions):
-                package_array.append(package)
-            revised = tomlkit.dumps(document)
-        except (TOMLKitParseError, KeyError, TypeError) as error:
-            raise ValueError(
-                'Cannot safely expand explicit setuptools package discovery') from error
-    if package_data:
-        if not revised.endswith('\n'):
-            revised += '\n'
-        revised += '\n[tool.setuptools.package-data]\n'
-        for package, files in sorted(package_data.items()):
-            revised += f'{json.dumps(package)} = {json.dumps(files)}\n'
+
+    return text
+
+
+def _expand_explicit_packages(text: str, additions: set[str]) -> str:
+    """Append missing explicit packages through the comment-preserving TOML parser."""
+    try:
+        document = tomlkit.parse(text)
+        packages = document['tool']['setuptools']['packages']
+        if not isinstance(packages, tomlkit.items.Array):
+            raise TypeError('tool.setuptools.packages is not an array')
+
+        for package in sorted(additions):
+            packages.append(package)
+
+        return tomlkit.dumps(document)
+    except (TOMLKitParseError, KeyError, TypeError) as error:
+        raise ValueError('Cannot safely expand explicit setuptools package discovery') from error
+
+
+def _append_package_data(text: str, package_data: dict[str, list[str]]) -> str:
+    """Append a deterministically ordered package-data table without altering existing text."""
+    if not text.endswith('\n'):
+        text += '\n'
+
+    text += '\n[tool.setuptools.package-data]\n'
+    for package, files in sorted(package_data.items()):
+        text += f'{json.dumps(package)} = {json.dumps(files)}\n'
+
+    return text
+
+
+def _publish_setuptools_patch(patch_tree: Path, original: str, revised: str) -> str:
+    """Add a reviewable quilt patch rather than modifying upstream configuration directly."""
     diff = ''.join(difflib.unified_diff(
-        text.splitlines(keepends=True), revised.splitlines(keepends=True),
+        original.splitlines(keepends=True), revised.splitlines(keepends=True),
         fromfile='a/pyproject.toml', tofile='b/pyproject.toml', n=3))
     name = 'complete-setuptools-packaging.patch'
     header = (
@@ -720,14 +805,28 @@ def _setuptools_discovery_adjustments(tree: Path, patch_tree: Path) -> list[dict
         'Author: Packaging Build Agent <packaging-agent@example.invalid>\n'
     )
     _add_quilt_patch(patch_tree, name, header + diff)
-    return [{
-        'action': 'add-quilt-patch', 'name': name,
-        'reason': 'Setuptools metadata omits importable subpackages or runtime package data.',
-        'replacements': replacements, 'omitted_subpackages': omitted,
-        'explicit_package_additions': sorted(explicit_additions),
-        'package_data': package_data,
-        'human_review_required': True,
-    }]
+    return name
+
+
+def _setuptools_discovery_adjustments(tree: Path, patch_tree: Path) -> list[dict]:
+    """Propose missing setuptools packages and data based on the supplied source state."""
+    path = tree / 'pyproject.toml'
+    if not path.is_file():
+        return []
+
+    text = path.read_text()
+    configuration = _setuptools_configuration(text)
+    if configuration is None:
+        return []
+
+    includes, explicit = configuration
+    discovery = SetuptoolsDiscovery(tree, explicit)
+    discovery.inspect([*includes, *explicit], text)
+    if not discovery.has_changes():
+        return []
+
+    name = _publish_setuptools_patch(patch_tree, text, discovery.rewrite(text))
+    return [discovery.record(name)]
 
 
 def setuptools_discovery_adjustments(tree: Path) -> list[dict]:

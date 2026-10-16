@@ -996,3 +996,23 @@ def test_snapshot_component_cannot_replace_upstream_directory(tmp_path):
     (tree / 'assets').mkdir()
     with pytest.raises(ValueError, match='collides'):
         preserve_orig_components(dsc, 'sample', '2.0', tree, tmp_path)
+
+
+@pytest.mark.parametrize('configuration', [
+    'invalid = [',
+    '[tool.setuptools.packages.find]\ninclude = ["sample", 3, "../outside"]\n\n[tool.setuptools.package-data]\nsample = ["*.json"]\n',
+    '[tool.setuptools]\npackages = []\n',
+])
+def test_setuptools_discovery_leaves_nonactionable_configuration_unchanged(tmp_path, configuration):
+    """Invalid metadata or already declared data must not produce speculative patches."""
+    from packagetest.nightly_source import setuptools_discovery_adjustments
+
+    package = tmp_path / 'sample'
+    package.mkdir()
+    (package / '__init__.py').write_text('')
+    (package / 'schema.json').write_text('{}')
+    project = tmp_path / 'pyproject.toml'
+    project.write_text(configuration)
+    assert setuptools_discovery_adjustments(tmp_path) == []
+    assert project.read_text() == configuration
+    assert not (tmp_path / 'debian/patches/complete-setuptools-packaging.patch').exists()

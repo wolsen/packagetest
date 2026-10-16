@@ -79,7 +79,6 @@
   "src/packagetest/nightly_source.py:_add_quilt_patch": 6,
   "src/packagetest/nightly_source.py:_entry_points_from_text": 17,
   "src/packagetest/nightly_source.py:_official_commit_delta": 6,
-  "src/packagetest/nightly_source.py:_setuptools_discovery_adjustments": 42,
   "src/packagetest/nightly_source.py:autopkgtest_packaging_adjustments": 21,
   "src/packagetest/nightly_source.py:checkout_packaging_tree": 23,
   "src/packagetest/nightly_source.py:extract_snapshot": 9,
