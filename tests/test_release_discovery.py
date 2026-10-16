@@ -493,3 +493,22 @@ def test_deliverable_parser_retains_first_complete_project_identity() -> None:
 
     assert [(item.version, item.project_repo, item.project_hash) for item in releases] == [
         ('1.0', 'openstack/first', 'bbbbbbb'), ('2.0', None, None)]
+
+
+@pytest.mark.parametrize('payload', ['{}', '"invalid"', '[null]', '[{"sha": 42}]'])
+def test_snapshot_resolution_rejects_malformed_commit_records(payload):
+    """Untrusted API shapes must become discovery errors before a ref enters a plan."""
+    resolver = OpenStackReleaseResolver(fetcher=lambda url: '{"default_branch":"main"}' if '/commits?' not in url else payload)
+    with pytest.raises(ReleaseDiscoveryError):
+        resolver._resolve_snapshot_ref(
+            upstream_repo='https://opendev.org/openstack/demo', project_repo='openstack/demo',
+            release_id=None, deliverable_scope='_independent',
+            snapshot_at='2026-09-18T05:32:15+00:00', deliverable_content='')
+
+
+@pytest.mark.parametrize('payload', ['[]', '"invalid"', '{"default_branch": 42}'])
+def test_repository_resolution_rejects_nontext_branch_identity(payload):
+    """An invalid repository response must not escape through a declared string return."""
+    resolver = OpenStackReleaseResolver(fetcher=lambda url: payload)
+    with pytest.raises(ReleaseDiscoveryError):
+        resolver._default_branch_for_upstream_repo('https://opendev.org/openstack/demo')

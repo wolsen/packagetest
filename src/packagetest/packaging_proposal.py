@@ -6,16 +6,20 @@ import argparse
 import json
 from pathlib import Path
 
+from .contracts import object_mapping
+
 ACCEPTED_TEST_RESULTS = {"PASS", "SUPERFICIAL", "NO_TESTS"}
 
 
-def finalize(proposal_path: Path, build_path: Path, test_path: Path) -> dict | None:
+def finalize(
+    proposal_path: Path, build_path: Path, test_path: Path
+) -> dict[str, object] | None:
     """Attach build and test evidence and mark a proposal validated only after both gates pass."""
     if not proposal_path.exists():
         return None
-    proposal = json.loads(proposal_path.read_text())
-    build = json.loads(build_path.read_text())
-    test = json.loads(test_path.read_text())
+    proposal = object_mapping(json.loads(proposal_path.read_text()), "proposal result")
+    build = object_mapping(json.loads(build_path.read_text()), "build result")
+    test = object_mapping(json.loads(test_path.read_text()), "test result")
     proposal["validation"] = {
         "build": {
             "result": build.get("result"),

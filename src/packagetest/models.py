@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 
 class CommandRecord(TypedDict):
@@ -30,6 +30,12 @@ class PlannedBuildRecord(TypedDict):
     upstream_repo: str
     packaging_repo: str
     source_creation_method: str
+    resolved_upstream_version: NotRequired[str]
+    resolved_upstream_tag_or_sha: NotRequired[str]
+    resolved_upstream_sha: NotRequired[str]
+    release_series: NotRequired[str | None]
+    release_deliverable_path: NotRequired[str]
+    release_resolution_error: NotRequired[str]
 
 
 class BuildPlanRecord(TypedDict):

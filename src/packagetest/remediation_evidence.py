@@ -5,9 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from itertools import chain
 from pathlib import Path, PurePath
+
+from .contracts import object_mapping, string_list, text_field
 
 LINTIAN_LEVELS = {
     "E": ("error", 0),
@@ -68,10 +70,13 @@ def _lintian_details(
     return lines
 
 
-def lintian_evidence(payload: dict, *, supporting_limit: int = 20) -> str:
+def lintian_evidence(
+    payload: Mapping[str, object], *, supporting_limit: int = 20
+) -> str:
     """Report tags which meet the recorded Lintian failure policy first."""
-    command = payload.get("failed_command") or payload.get("command", {}).get(
-        "command", []
+    capture = object_mapping(payload.get("command") or {}, "command evidence")
+    command = string_list(
+        payload.get("failed_command") or capture.get("command", []), "failed_command"
     )
     policy = _fail_on(command)
     threshold = _lintian_threshold(policy)
@@ -79,8 +84,8 @@ def lintian_evidence(payload: dict, *, supporting_limit: int = 20) -> str:
         filter(
             None,
             [
-                payload.get("command", {}).get("stdout", ""),
-                payload.get("command", {}).get("stderr", ""),
+                text_field(capture, "stdout"),
+                text_field(capture, "stderr"),
             ],
         )
     )
@@ -135,13 +140,13 @@ def extract_test_failure_evidence(text: str, *, limit: int = 12_000) -> str:
 
 def structured_failure(path: Path) -> str:
     """Extract the most useful evidence from a LockedBuild failure record."""
-    payload = json.loads(path.read_text())
+    payload = object_mapping(json.loads(path.read_text()), "failure evidence")
     if payload.get("category") == "LINTIAN":
         return lintian_evidence(payload)
 
-    command = payload.get("command") or {}
+    command = object_mapping(payload.get("command") or {}, "command evidence")
     output = "\n".join(
-        filter(None, [command.get("stdout", ""), command.get("stderr", "")])
+        filter(None, [text_field(command, "stdout"), text_field(command, "stderr")])
     )
     if any(token in output for token in ("FAIL: ", "ERROR: ", "FAILED (")):
         return extract_test_failure_evidence(output)

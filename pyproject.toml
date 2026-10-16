@@ -60,6 +60,12 @@ files = [
     "src/packagetest/repositories.py",
     "src/packagetest/snapshot_targets.py",
     "src/packagetest/versioning.py",
+    "src/packagetest/cli.py",
+    "src/packagetest/packaging_proposal.py",
+    "src/packagetest/release_discovery.py",
+    "src/packagetest/remediation_evidence.py",
+    "src/packagetest/targets.py",
+
 
 ]
 strict = true

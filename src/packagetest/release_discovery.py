@@ -12,6 +12,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, build_opener
 
+from .contracts import object_mapping, records
 from .models import PackageDefinition
 
 DEFAULT_OPENSTACK_RELEASES_BASE_URL = (
@@ -77,7 +78,8 @@ class HTTPTextClient:
         """Translate HTTP failures without retrying a definitive server response."""
         try:
             with self.opener.open(request, timeout=self.timeout) as response:
-                return response.read().decode("utf-8")
+                payload: bytes = response.read()
+                return payload.decode("utf-8")
         except HTTPError as exc:
             if exc.code == 404:
                 raise ReleaseNotFoundError(f"Failed to fetch {url}: HTTP 404") from exc
@@ -535,7 +537,7 @@ class OpenStackReleaseResolver:
         self.fetcher = fetcher
         self._series_status: list[OpenStackSeries] | None = None
         self._deliverable_cache: dict[str, str] = {}
-        self._repo_metadata_cache: dict[str, dict] = {}
+        self._repo_metadata_cache: dict[str, dict[str, object]] = {}
         self._resolved_cache: dict[
             tuple[str, str, str, str, str | None], ResolvedRelease
         ] = {}
@@ -669,8 +671,8 @@ class OpenStackReleaseResolver:
         query = urlencode({"sha": branch, "until": snapshot_at, "limit": 1})
         payload = self.fetcher(_canonical_commit_api_url(upstream_repo, query))
         try:
-            commits = json.loads(payload)
-        except json.JSONDecodeError as exc:
+            commits = records(json.loads(payload), "commit API response")
+        except ValueError as exc:
             raise ReleaseDiscoveryError(
                 f"Invalid commit API response for {project_repo} at {snapshot_at}"
             ) from exc
@@ -681,7 +683,7 @@ class OpenStackReleaseResolver:
             )
 
         sha = commits[0].get("sha")
-        if not sha:
+        if not isinstance(sha, str) or not sha:
             raise ReleaseDiscoveryError(
                 f"Snapshot response did not include a commit SHA for {project_repo}"
             )
@@ -695,8 +697,10 @@ class OpenStackReleaseResolver:
             if cached is None:
                 payload = self.fetcher(_canonical_repo_api_url(upstream_repo))
                 try:
-                    cached = json.loads(payload)
-                except json.JSONDecodeError as exc:
+                    cached = object_mapping(
+                        json.loads(payload), "repository API response"
+                    )
+                except ValueError as exc:
                     raise ReleaseDiscoveryError(
                         f"Invalid repository API response for {upstream_repo}"
                     ) from exc
@@ -704,7 +708,7 @@ class OpenStackReleaseResolver:
                 self._repo_metadata_cache[upstream_repo] = cached
 
         default_branch = cached.get("default_branch")
-        if not default_branch:
+        if not isinstance(default_branch, str) or not default_branch:
             raise ReleaseDiscoveryError(
                 f"Repository API response did not include a default branch for {upstream_repo}"
             )

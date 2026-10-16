@@ -6,12 +6,13 @@ import argparse
 import json
 import logging
 import sys
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from .config import default_config_path, load_package_definitions
 from .locked import LockedBuild, load_lock
-from .models import BuildPlan
+from .models import BuildPlan, PlannedBuildRecord
 from .planner import build_plan
 from .release_discovery import (
     OpenStackReleaseResolver,
@@ -27,7 +28,9 @@ def _default_config_path() -> Path:
     return default_config_path("vertical_slice.json")
 
 
-def _add_release_metadata(row: dict, resolved_release: ResolvedRelease | None) -> None:
+def _add_release_metadata(
+    row: PlannedBuildRecord, resolved_release: ResolvedRelease | None
+) -> None:
     """Attach discovered upstream identity to one advisory plan row."""
     if resolved_release is not None:
         row["resolved_upstream_version"] = resolved_release.version
@@ -210,7 +213,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     _configure_logging(getattr(args, "debug_logging", False))
-    return args.func(args)
+    handler: Callable[[argparse.Namespace], int] = args.func
+    return handler(args)
 
 
 if __name__ == "__main__":
