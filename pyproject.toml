@@ -21,3 +21,6 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "packaging_component: exercises a real Debian packaging tool rather than a mocked process boundary",
+]

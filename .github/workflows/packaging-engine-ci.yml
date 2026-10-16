@@ -18,7 +18,7 @@ permissions:
   contents: read
 jobs:
   unit:
-    name: Python unit tests
+    name: Pure Python unit tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -45,11 +45,43 @@ jobs:
           sudo timeout --signal=TERM --kill-after=30s 10m \
             env DEBIAN_FRONTEND=noninteractive apt-get "${apt_options[@]}" \
             install -y python3-packaging python3-pytest python3-tomlkit
-          PYTHONPATH=src python3 -m pytest -q
+          PYTHONPATH=src python3 -m pytest -q -m "not packaging_component"
+
+  packaging-component:
+    name: Packaging component tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Python and Debian packaging test dependencies
+        run: |
+          apt_options=(
+            -o Acquire::Retries=3
+            -o Acquire::http::Timeout=30
+            -o Acquire::https::Timeout=30
+            -o DPkg::Lock::Timeout=300
+          )
+          for attempt in 1 2 3; do
+            if sudo timeout --signal=TERM --kill-after=30s 5m \
+                apt-get "${apt_options[@]}" update; then
+              break
+            fi
+            if [[ "$attempt" == 3 ]]; then
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
+          sudo timeout --signal=TERM --kill-after=30s 10m \
+            env DEBIAN_FRONTEND=noninteractive apt-get "${apt_options[@]}" \
+            install -y python3-packaging python3-pytest python3-tomlkit quilt
+      - name: Run Debian packaging component tests
+        run: PYTHONPATH=src python3 -m pytest -q -m packaging_component
 
   build:
     name: Packaging regression ${{ matrix.build_case }}
-    needs: [unit]
+    needs: [unit, packaging-component]
     strategy:
       fail-fast: false
       max-parallel: 3

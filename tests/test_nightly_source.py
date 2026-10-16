@@ -755,6 +755,7 @@ command = "demo:main"
     assert ' # package list' in patch
 
 
+@pytest.mark.packaging_component
 def test_setuptools_adjustment_uses_source_after_existing_quilt_patches(tmp_path):
     from packagetest.nightly_source import setuptools_discovery_adjustments
     package = tmp_path / 'demo'
@@ -793,6 +794,7 @@ packages = ["demo"]
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+@pytest.mark.packaging_component
 def test_setuptools_adjustment_defers_when_existing_quilt_patch_fails(tmp_path):
     from packagetest.nightly_source import setuptools_discovery_adjustments
     package = tmp_path / 'demo'

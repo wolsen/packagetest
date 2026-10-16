@@ -182,11 +182,16 @@ def test_workflows_restore_one_daily_updated_sbuild_rootfs_per_package():
     assert "inputs.builder-ready == 'true' && (steps.initial_build.outcome == 'failure'" in action
 
 
-def test_packaging_engine_ci_runs_unit_tests_once_and_a_small_regression_matrix():
+def test_packaging_engine_ci_splits_unit_and_packaging_component_tests():
     workflow = Path('.github/workflows/packaging-engine-ci.yml').read_text()
     library = Path('scripts/run-library.sh').read_text()
     assert 'name: Packaging engine CI' in workflow
-    assert 'name: Python unit tests' in workflow
+    assert 'name: Pure Python unit tests' in workflow
+    assert 'name: Packaging component tests' in workflow
+    assert '-m "not packaging_component"' in workflow
+    assert '-m packaging_component' in workflow
+    assert 'install -y python3-packaging python3-pytest python3-tomlkit quilt' in workflow
+    assert 'needs: [unit, packaging-component]' in workflow
     assert 'for attempt in 1 2 3' in workflow
     assert 'Acquire::Retries=3' in workflow
     assert 'timeout --signal=TERM --kill-after=30s 5m' in workflow
