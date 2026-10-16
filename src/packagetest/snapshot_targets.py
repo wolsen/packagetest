@@ -8,7 +8,13 @@ from pathlib import Path
 import re
 from typing import NotRequired, TypedDict
 
-from .contracts import BuildTarget, object_mapping, string_mapping
+from .contracts import (
+    BuildTarget,
+    object_mapping,
+    string_mapping,
+    required_text,
+    string_list,
+)
 from .repositories import Repository
 
 
@@ -210,20 +216,22 @@ def load_target(path: Path, name: str) -> SnapshotTarget:
         raise ValueError(f"Unknown snapshot target: {name}") from exc
 
 
-def build_target(target: SnapshotTarget) -> dict[str, object]:
+def build_target(target: Mapping[str, object]) -> dict[str, object]:
     """Export the sbuild target identity while preserving UCA and profile policy."""
     result: dict[str, object] = {
-        "id": target["id"],
-        "kind": target["kind"],
-        "suite": target["suite"],
-        "architecture": target["architecture"],
+        "id": required_text(target, "id"),
+        "kind": required_text(target, "kind"),
+        "suite": required_text(target, "suite"),
+        "architecture": required_text(target, "architecture"),
         "backend": "schroot",
         "chroot": f"{target['builder_profile']}-{target['architecture']}-sbuild",
-        "distribution": target["distribution"],
-        "openstack_series": target["openstack_series"],
+        "distribution": required_text(target, "distribution"),
+        "openstack_series": required_text(target, "openstack_series"),
     }
     if target.get("build_profiles"):
-        result["build_profiles"] = target["build_profiles"]
+        result["build_profiles"] = string_list(
+            target["build_profiles"], "build_profiles"
+        )
 
     if target.get("cloud_archive"):
         result["cloud_archive"] = target["cloud_archive"]

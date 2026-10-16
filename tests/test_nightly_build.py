@@ -150,3 +150,19 @@ def test_absent_unaccepted_producer_is_recorded_as_dependency_block(tmp_path, mo
 
     assert state['result'] == 'BLOCKED'
     assert state['stage'] == 'dependency-handoff'
+
+
+def test_dependency_closure_rejects_a_string_instead_of_producer_names():
+    """A malformed graph must not traverse individual characters as source names."""
+    from packagetest.nightly_build import dependencies
+
+    with pytest.raises(ValueError, match='must be a list'):
+        dependencies({'demo': {'run_dependencies': 'producer'}}, 'demo')
+
+
+def test_fresh_preparation_rejects_nonobject_evidence():
+    """Lock construction requires named preparation evidence rather than a JSON array."""
+    from packagetest.nightly_build import PreparedBuildSource
+
+    with pytest.raises(ValueError, match='must be an object'):
+        PreparedBuildSource.from_preparation({'dsc': 'demo.dsc', 'metadata': []})

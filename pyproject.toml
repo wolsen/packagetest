@@ -54,6 +54,7 @@ files = [
     "src/packagetest/config.py",
     "src/packagetest/final_plan.py",
     "src/packagetest/models.py",
+    "src/packagetest/nightly_build.py",
     "src/packagetest/planner.py",
     "src/packagetest/repositories.py",
     "src/packagetest/snapshot_targets.py",
