@@ -13,7 +13,5 @@
   "src/packagetest/nightly_source.py:source_evolution": 17,
   "src/packagetest/nightly_source.py:upstream_dependency_adjustments": 19,
   "src/packagetest/nightly_source.py:write_packaging_proposal": 10,
-  "src/packagetest/nightly_source.py:write_source_evolution": 8,
-  "src/packagetest/patches.py:already_applied_patches": 11,
-  "src/packagetest/patches.py:integrated_upstream_patches": 14
+  "src/packagetest/nightly_source.py:write_source_evolution": 8
 }

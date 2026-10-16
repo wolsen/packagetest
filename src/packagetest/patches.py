@@ -9,6 +9,37 @@ import subprocess
 from .artifacts import sha256
 
 
+def _applied_patch_evidence(tree: Path, patch: Path) -> dict | None:
+    """Require reverse success and forward failure with zero fuzz before omitting a patch."""
+    data = patch.read_bytes()
+    args = ['patch', '--dry-run', '--force', '--fuzz=0', '-p1']
+    reverse = subprocess.run(args + ['--reverse'], input=data, cwd=tree, capture_output=True)
+    if reverse.returncode:
+        return None
+
+    forward = subprocess.run(args, input=data, cwd=tree, capture_output=True)
+    if forward.returncode:
+        return {'sha256': sha256(patch), 'reverse_probe': reverse.stdout.decode(errors='replace')}
+
+    return None
+
+
+def _omit_applied_entries(lines: list[str], tree: Path) -> list[dict]:
+    """Comment only option-free series entries proven fully present in upstream."""
+    omitted = []
+    for index, line in enumerate(lines):
+        name = _single_patch_name(line)
+        if name is None:
+            continue
+
+        evidence = _applied_patch_evidence(tree, tree / 'debian/patches' / name)
+        if evidence is not None:
+            lines[index] = '# Fully present upstream (verified reverse dry run): ' + str(name)
+            omitted.append({'action': 'omit-already-applied-patch', 'name': str(name), **evidence})
+
+    return omitted
+
+
 def already_applied_patches(tree: Path) -> list[dict]:
     """Omit a quilt patch only if its complete inverse applies without fuzz.
 
@@ -18,28 +49,71 @@ def already_applied_patches(tree: Path) -> list[dict]:
     series = tree / 'debian/patches/series'
     if not series.exists():
         return []
+
     lines = series.read_text().splitlines()
-    omitted = []
-    for index, line in enumerate(lines):
-        words = line.split()
-        if not words or words[0].startswith('#') or len(words) != 1:
-            continue
-        name = Path(words[0])
-        if name.is_absolute() or '..' in name.parts:
-            raise ValueError('Unsafe quilt patch path')
-        patch = tree / 'debian/patches' / name
-        data = patch.read_bytes()
-        args = ['patch', '--dry-run', '--force', '--fuzz=0', '-p1']
-        reverse = subprocess.run(args + ['--reverse'], input=data, cwd=tree, capture_output=True)
-        if reverse.returncode:
-            continue
-        forward = subprocess.run(args, input=data, cwd=tree, capture_output=True)
-        if forward.returncode:
-            lines[index] = '# Fully present upstream (verified reverse dry run): ' + str(name)
-            omitted.append({'action': 'omit-already-applied-patch', 'name': str(name),
-                            'sha256': sha256(patch), 'reverse_probe': reverse.stdout.decode(errors='replace')})
+    omitted = _omit_applied_entries(lines, tree)
     if omitted:
         series.write_text('\n'.join(lines) + '\n')
+
+    return omitted
+
+
+def _active_patch_name(line: str) -> Path | None:
+    """Read an active quilt filename while retaining supported series options."""
+    words = line.split()
+    if not words or words[0].startswith('#'):
+        return None
+
+    return _safe_patch_name(words[0])
+
+
+def _forwarded_change_id(patch: Path) -> str | None:
+    """Require one Change-Id in the patch header, excluding diff payload text."""
+    if not patch.is_file() or patch.is_symlink():
+        return None
+
+    text = patch.read_text(errors='replace')
+    first_section = re.search(r'(?m)^(?:diff --git |---\s)', text)
+    header = text[:first_section.start()] if first_section else text
+    change_ids = set(re.findall(r'(?m)^Change-Id:\s*(I[0-9a-fA-F]{40})\s*$', header))
+    if len(change_ids) != 1:
+        return None
+
+    return next(iter(change_ids))
+
+
+def _integrated_patch_evidence(patch: Path, checkout: Path, upstream_sha: str) -> dict | None:
+    """Find a forwarded Gerrit change within the frozen upstream commit ancestry."""
+    change_id = _forwarded_change_id(patch)
+    if change_id is None:
+        return None
+
+    result = subprocess.run(
+        ['git', 'log', upstream_sha, '-n', '1', '--format=%H',
+         '--fixed-strings', '--grep=' + f'Change-Id: {change_id}'],
+        cwd=checkout, text=True, capture_output=True, timeout=30, check=True)
+    commit = result.stdout.strip()
+    if not re.fullmatch(r'[0-9a-f]{40}', commit):
+        return None
+
+    return {'sha256': sha256(patch), 'change_id': change_id,
+            'upstream_commit': commit, 'human_review_required': True}
+
+
+def _omit_integrated_entries(lines: list[str], tree: Path, checkout: Path, upstream_sha: str) -> list[dict]:
+    """Comment forwarded changes only after collecting immutable integration evidence."""
+    omitted = []
+    for index, line in enumerate(lines):
+        name = _active_patch_name(line)
+        if name is None:
+            continue
+
+        evidence = _integrated_patch_evidence(tree / 'debian/patches' / name, checkout, upstream_sha)
+        if evidence is not None:
+            lines[index] = (f"# Integrated upstream as {evidence['upstream_commit'][:12]} "
+                            f"({evidence['change_id']}): {line}")
+            omitted.append({'action': 'omit-integrated-upstream-patch', 'name': str(name), **evidence})
+
     return omitted
 
 
@@ -54,48 +128,16 @@ def integrated_upstream_patches(tree: Path, checkout: Path,
     """
     if not re.fullmatch(r'[0-9a-f]{40}', upstream_sha):
         raise ValueError('Integrated-patch check requires a frozen upstream SHA')
+
     series = tree / 'debian/patches/series'
     if not series.is_file():
         return []
+
     lines = series.read_text().splitlines()
-    omitted = []
-    for index, line in enumerate(lines):
-        words = line.split()
-        if not words or words[0].startswith('#'):
-            continue
-        name = Path(words[0])
-        if name.is_absolute() or '..' in name.parts:
-            raise ValueError('Unsafe quilt patch path')
-        patch = tree / 'debian/patches' / name
-        if not patch.is_file() or patch.is_symlink():
-            continue
-        text = patch.read_text(errors='replace')
-        first_section = re.search(r'(?m)^(?:diff --git |---\s)', text)
-        header = text[:first_section.start()] if first_section else text
-        change_ids = set(re.findall(
-            r'(?m)^Change-Id:\s*(I[0-9a-fA-F]{40})\s*$', header))
-        if len(change_ids) != 1:
-            continue
-        change_id = next(iter(change_ids))
-        result = subprocess.run(
-            ['git', 'log', upstream_sha, '-n', '1', '--format=%H',
-             '--fixed-strings', '--grep=' + f'Change-Id: {change_id}'],
-            cwd=checkout, text=True, capture_output=True, timeout=30, check=True)
-        commit = result.stdout.strip()
-        if not re.fullmatch(r'[0-9a-f]{40}', commit):
-            continue
-        lines[index] = (f'# Integrated upstream as {commit[:12]} '
-                        f'({change_id}): {line}')
-        omitted.append({
-            'action': 'omit-integrated-upstream-patch',
-            'name': str(name),
-            'sha256': sha256(patch),
-            'change_id': change_id,
-            'upstream_commit': commit,
-            'human_review_required': True,
-        })
+    omitted = _omit_integrated_entries(lines, tree, checkout, upstream_sha)
     if omitted:
         series.write_text('\n'.join(lines) + '\n')
+
     return omitted
 
 
