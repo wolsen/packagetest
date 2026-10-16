@@ -72,14 +72,31 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def prepared_tree(outputs: Path) -> Path:
+def prepared_tree(outputs: Path, *, catalog: Path | None = None,
+                  source: str | None = None, ci: dict | None = None) -> Path:
+    """Use an existing preparation tree or recover the same-run frozen source bundle."""
     roots = [
         path.parent.parent
         for path in outputs.glob("source-preparation/*/debian/control")
     ]
+    if not roots:
+        return _restore_source_tree(outputs / 'source-preparation', catalog, source, ci)
+
     if len(roots) != 1:
         raise ValueError(f"expected one prepared source tree, found {len(roots)}")
     return roots[0]
+
+
+def _restore_source_tree(bundle: Path, catalog: Path | None, source: str | None,
+                         ci: dict | None) -> Path:
+    """Find the frozen catalog entry before asking source recovery to verify its bytes."""
+    from packagetest.prepared_source import restore_prepared_tree
+
+    if catalog is None:
+        raise ValueError('Recovering a repair source bundle requires the frozen catalog')
+
+    entries = {entry['source']: entry for entry in json.loads(catalog.read_text())['packages']}
+    return restore_prepared_tree(bundle, entries[source], ci)
 
 
 def _apply_repair_decisions(decisions: list[dict], working: Path) -> set[str]:
@@ -925,7 +942,9 @@ class RemediationRun:
         self.initial_phase = self.phase
         self.evidence = failure_evidence(self.args.outputs, self.args.tests)
         (self.args.report / "failure-evidence.txt").write_text(self.evidence + "\n")
-        self.tree = prepared_tree(self.args.outputs)
+        self.tree = prepared_tree(
+            self.args.outputs, catalog=getattr(self.args, 'catalog', None), source=self.args.source,
+            ci={'run_id': str(self.args.run_id), 'run_attempt': str(self.args.run_attempt)})
         copy_initial_evidence(self.args.outputs, self.args.tests, self.args.report)
         self.progress = RepairProgress()
         self.selected: int | None = None

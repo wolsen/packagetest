@@ -139,7 +139,7 @@ runs:
       run: |
         rm -rf bundles test-bundles
         mkdir -p bundles test-bundles
-        sudo tar --exclude=work --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
+        sudo tar --exclude=work --exclude='source-preparation/remediation-source' --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
         sudo tar -czf "test-bundles/$SOURCE.tar.gz" -C test-results .
         sudo chmod a+r "bundles/$SOURCE.tar.gz" "test-bundles/$SOURCE.tar.gz"
 

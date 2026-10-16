@@ -168,6 +168,32 @@ distribution, required build dependency versions, and manifest records. Returned
 paths are reconstructed from the downloaded bundle. `build_repository` rechecks
 bytes when copying verified binaries into the disposable testbed repository.
 
+## Repair baseline recovery
+
+Package remediation accepts an existing preparation tree or the immutable
+bundle downloaded into `outputs/source-preparation`. Bundle recovery requires
+the frozen catalog entry and current run ID/attempt. The manifest's source,
+run identity, `.dsc` checksum, and catalog-entry checksum must agree with the
+final dependency plan. The shared bundle verifier checks the descriptor,
+component checksums, artifact inventory, and symlink restrictions before
+extraction.
+
+`dpkg-source --skip-patches -x` materializes the verified source in temporary
+staging. Its Debian source identity is checked before it becomes
+`source-preparation/remediation-source`. Quilt patches remain unapplied so
+repair rendering uses the original upstream context. A failed extraction
+leaves no reusable repair tree. This local baseline is excluded from the
+published build bundle; the immutable source files and repair evidence remain.
+
+```mermaid
+flowchart LR
+    A[Frozen prepared-source bundle] --> B[Verify run, plan, and source bytes]
+    B --> C[Extract without applying quilt]
+    C --> D[Render and validate packaging repair]
+    D --> E[Fresh preparation and build]
+    E --> F[Autopkgtest and readiness gates]
+```
+
 ## Source patch repair
 
 A `dpkg-source` report that a patch has fuzz or is malformed does not distinguish

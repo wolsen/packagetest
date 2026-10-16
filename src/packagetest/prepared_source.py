@@ -6,12 +6,16 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import sys
+import tempfile
 import traceback
 
 from packagetest.artifacts import checksum_entries, fields, sha256, verify_source
 from packagetest.catalog import paragraphs
+from packagetest.contracts import PreparedSource
 from packagetest.nightly_source import prepare_source
+from packagetest.prepared_plan import verify_prepared_bundle
 from packagetest.snapshot_targets import catalog_target
 
 
@@ -155,6 +159,40 @@ def _copy_failure_evidence(work: Path, output: Path) -> None:
         logs = work / 'logs'
         if logs.is_dir():
             shutil.copytree(logs, evidence / 'logs', dirs_exist_ok=True)
+
+
+def _validate_restore_identity(manifest: dict, entry: dict, ci: dict | None) -> None:
+    """Bind the repair baseline to the same source, run, and finalized source hashes."""
+    if manifest.get('source') != entry['source'] or manifest.get('ci') != ci:
+        raise ValueError('Repair source bundle belongs to another source or pipeline run')
+
+    expected = entry['prepared_source']
+    for key in ('dsc_sha256', 'catalog_entry_sha256'):
+        if manifest.get(key) != expected.get(key):
+            raise ValueError('Repair source bundle differs from the frozen dependency plan')
+
+
+def restore_prepared_tree(bundle: Path, entry: dict, ci: dict | None) -> Path:
+    """Extract a verified frozen source bundle as the baseline for packaging repairs."""
+    path = bundle / 'prepared-source.json'
+    manifest = json.loads(path.read_text())
+    identity = PreparedSource.from_mapping(manifest)
+    _validate_restore_identity(manifest, entry, ci)
+    verify_prepared_bundle(path, identity, manifest)
+    dsc = identity.verified_path(bundle / 'source')
+    destination = bundle / 'remediation-source'
+    with tempfile.TemporaryDirectory(prefix='.remediation-', dir=bundle) as temporary:
+        tree = Path(temporary) / 'source'
+        # Repairs target packaging against the original upstream files. Applying
+        # quilt here would hide the context needed to refresh a failing patch.
+        subprocess.run(['dpkg-source', '--skip-patches', '-x', str(dsc), str(tree)],
+                       text=True, capture_output=True, check=True, timeout=180)
+        if fields(tree / 'debian/control').get('Source') != identity.source:
+            raise ValueError('Restored repair tree has the wrong Debian source identity')
+
+        tree.rename(destination)
+
+    return destination
 
 
 def main() -> int:

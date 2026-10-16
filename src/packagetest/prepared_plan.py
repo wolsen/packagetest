@@ -59,7 +59,7 @@ def _validate_manifest_provenance(manifest: dict, source: str, entries: dict, ca
         raise ValueError(f'Prepared source Git pins changed: {source}')
 
 
-def _verify_prepared_bundle(path: Path, identity: PreparedSource, manifest: dict) -> None:
+def verify_prepared_bundle(path: Path, identity: PreparedSource, manifest: dict) -> None:
     """Verify descriptor bytes and every source artifact before recording its root."""
     source = identity.source
     source_dir = path.parent / 'source'
@@ -97,7 +97,7 @@ def load_prepared(root: Path, catalog: dict) -> dict[str, dict]:
         identity = PreparedSource.from_mapping(manifest)
         source = identity.source
         _validate_manifest_identity(manifest, source, entries, manifests, catalog)
-        _verify_prepared_bundle(path, identity, manifest)
+        verify_prepared_bundle(path, identity, manifest)
         manifests[source] = {**manifest, 'artifact_root': str(path.parent.resolve())}
 
     missing = entries.keys() - manifests.keys()
