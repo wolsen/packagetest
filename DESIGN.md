@@ -51,7 +51,7 @@ relationship replanning after repairs remains a limitation.
 | Remediation evidence | `remediation_evidence` | Ordered, bounded logs and source excerpts |
 | Package remediation | `ProposalPlanner`, `CandidateExecutor`, `ArtifactPromoter` | Validated decisions, isolated build/test gates, and canonical artifact replacement |
 | Retry coordination | `RepairProgress`, `RemediationSession` | Attempt records, unchanged-evidence retries, and budgets |
-| Source remediation | `source_remediation` | Repairs before immutable source preparation |
+| Source remediation | `source_remediation.SourceRepairSession` | Cumulative quilt decisions, bounded retries, and prepared-source selection |
 | Reporting | `pipeline_report`, `packaging_proposal`, `failure_summary` | Evidence to human-readable reports |
 
 Objects own state and invariants. `LockedBuild` accepts an injected

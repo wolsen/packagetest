@@ -200,3 +200,65 @@ def test_deterministic_repair_reaches_preparation_without_model(tmp_path, monkey
     if state == 'superseded':
         assert attempt['classification'] == 'superseded-upstream'
         assert 'old patch payload no longer exists' in attempt['classification_evidence']
+
+
+@pytest.mark.parametrize('outcome', ['no_fix', 'rejected', 'prepared', 'preparation_failed'])
+def test_model_fallback_preserves_attempt_evidence(tmp_path, monkeypatch, outcome):
+    """Fallback records validation failures, explicit no-fix decisions, and preparation results."""
+    import argparse
+    from packagetest import remediation as helper
+
+    initial = tmp_path / 'initial'
+    tree = initial / 'glance-33.0'
+    (tree / 'debian').mkdir(parents=True)
+    (tree / 'debian/control').write_text('Source: glance\n')
+    output = tmp_path / 'output'
+    output.mkdir()
+    report = tmp_path / 'report'
+    report.mkdir()
+    args = argparse.Namespace(
+        initial_work=initial, source='glance', output=output, report=report,
+        work=tmp_path / 'retry', catalog=tmp_path / 'catalog.json', run_id='123', run_attempt='1',
+        llama_cli=tmp_path / 'llama', model=tmp_path / 'model', model_timeout=180, max_model_calls=1,
+    )
+    decision = {'action': 'no_fix' if outcome == 'no_fix' else 'refresh_quilt_patch',
+                'subject': 'test.patch', 'replacement': '', 'evidence': 'failed patch'}
+    monkeypatch.setattr(helper, 'llama_generate', lambda *args: (json.dumps(decision), {'backend': 'fixture'}))
+    monkeypatch.setattr(module, 'normalize_repair_decision', lambda decision, *args: decision)
+    validation = {'result': 'REJECTED', 'error': 'unsafe repair'} if outcome == 'rejected' else {'result': 'ACCEPTED'}
+    monkeypatch.setattr(module, 'validate_repair_decision', lambda *args: validation)
+    monkeypatch.setattr(helper, 'render_cumulative_repair', lambda *args: 'fixture patch')
+    monkeypatch.setattr(module, 'validate_source_patch', lambda *args: {'result': 'APPLIES'})
+
+    def prepare(command, **kwargs):
+        """Produce only the preparation artifacts needed to exercise promotion and retries."""
+        candidate = Path(command[command.index('--output') + 1])
+        candidate.mkdir(parents=True)
+        if outcome == 'prepared':
+            (candidate / 'prepared-source.json').write_text('{}')
+            return subprocess.CompletedProcess(command, 0)
+
+        (candidate / 'result.json').write_text('{"error": "another patch failed"}')
+        return subprocess.CompletedProcess(command, 1)
+
+    monkeypatch.setattr(module.subprocess, 'run', prepare)
+    session = module.SourceRepairSession(args)
+    session.model_repairs()
+
+    assert len(session.attempts) == 1
+    record = session.attempts[0]
+    assert record['result'] == {
+        'no_fix': 'NO_FIX', 'rejected': 'MODEL_ERROR',
+        'prepared': 'REPAIRED', 'preparation_failed': 'PREPARATION_FAILED',
+    }[outcome]
+    assert json.loads((report / 'attempt-1/decision-validation.json').read_text()) == validation
+    assert session.selected == (1 if outcome == 'prepared' else None)
+    assert (output / 'prepared-source.json').exists() == (outcome == 'prepared')
+
+    if outcome == 'preparation_failed':
+        assert 'another patch failed' in session.evidence
+        assert json.loads(session.feedback) == record
+
+    if outcome == 'rejected':
+        assert record['error'] == 'unsafe repair'
+        assert session.decisions == []
