@@ -459,3 +459,37 @@ def test_snapshot_resolution_wraps_invalid_commit_api_payload():
     resolver = OpenStackReleaseResolver(base_url="https://example.invalid", fetcher=fetcher)
     with pytest.raises(ReleaseDiscoveryError, match="Invalid commit API response"):
         resolver.resolve(package=package, openstack_target="2027.1", snapshot_at="2026-09-18T05:32:15+00:00")
+
+
+def test_series_parser_resets_fields_and_keeps_first_status() -> None:
+    """Fields before a name are ignored and cannot leak into the next series."""
+    entries = parse_series_status_yaml('''  status: ignored
+- name: first
+  release-id: 2026.1
+  status: maintained
+  status: end-of-life
+  release-id: 2026.2
+- name: second
+''')
+
+    assert [(item.name, item.release_id, item.status) for item in entries] == [
+        ('first', '2026.2', 'maintained'), ('second', None, 'unknown')]
+
+
+def test_deliverable_parser_retains_first_complete_project_identity() -> None:
+    """Orphan hashes and later projects cannot replace the first repository/hash pair."""
+    from packagetest.release_discovery import releases_from_deliverable_yaml
+
+    releases = releases_from_deliverable_yaml('''- repo: ignored/before-version
+- version: 1.0
+  hash: aaaaaaa
+- repo: openstack/first
+  hash: bbbbbbb
+- repo: openstack/later
+  hash: ccccccc
+- version: 2.0
+  hash: ddddddd
+''')
+
+    assert [(item.version, item.project_repo, item.project_hash) for item in releases] == [
+        ('1.0', 'openstack/first', 'bbbbbbb'), ('2.0', None, None)]

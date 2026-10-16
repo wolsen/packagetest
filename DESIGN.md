@@ -36,7 +36,8 @@ relationship replanning after repairs remains a limitation.
 
 | Area | Owner | Boundary |
 | --- | --- | --- |
-| Advisory release planning | `cli`, `planner`, `release_discovery` | User configuration to advisory plan |
+| Advisory release planning | `cli`, `planner.DependencyOrder`, `release_discovery.OpenStackReleaseResolver` | User configuration to advisory plan |
+| Release metadata parsing | `SeriesStatusParser`, `DeliverableReleaseParser` | Ordered metadata fields to series and release identities |
 | Catalog construction | `catalog.ArchiveSelection`, `CatalogBuilder` | Archive priority and release membership to transitive package closure |
 | Source discovery | `nightly_plan.SourceDiscovery` | Catalog roots to pinned upstream dependency closure |
 | Requirement mapping | `upstream_dependencies.RequirementMapper` | One consumer’s source/binary provider evidence to candidate dependencies |
@@ -53,6 +54,7 @@ relationship replanning after repairs remains a limitation.
 | Package remediation | `ProposalPlanner`, `CandidateExecutor`, `ArtifactPromoter` | Validated decisions, isolated build/test gates, and canonical artifact replacement |
 | Retry coordination | `RemediationRun`, `RepairProgress`, `RemediationSession` | Current failure evidence, attempt records, unchanged-evidence retries, and budgets |
 | Source remediation | `source_remediation.SourceRepairSession` | Cumulative quilt decisions, bounded retries, and prepared-source selection |
+| Advisory failure analysis | `analyze-packaging-failure.AdvisoryAnalysis` | Prior response and validation evidence across two advisory attempts |
 | Reporting | `pipeline_report`, `packaging_proposal`, `failure_summary` | Evidence to human-readable reports |
 
 Objects own state and invariants. `LockedBuild` accepts an injected

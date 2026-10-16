@@ -1,6 +1,9 @@
 import hashlib
 import json
 import sys
+from pathlib import Path
+
+import pytest
 
 
 from packagetest import pipeline_report as module
@@ -144,3 +147,63 @@ def test_functional_gate_accepts_future_regress_stack_result(tmp_path):
 
     assert 'Core services passed smoke tests.' in page
     assert 'Functional validation <span class="badge good">PASS</span>' in page
+
+
+@pytest.mark.parametrize(('update', 'error'), [
+    ({'source': 'unknown'}, 'proposal names unknown source'),
+    ({'source': '../alpha'}, 'invalid Debian source name'),
+    ({'actions': ['unstructured']}, 'invalid action list'),
+    ({'actions': {}}, 'invalid action list'),
+    ({'patch': 'not metadata'}, 'invalid patch metadata'),
+    ({'patch': {'file': '../outside.patch'}}, 'unsafe patch path'),
+    ({'patch': {}}, 'unsafe patch path'),
+])
+def test_rejected_proposal_cannot_leave_a_download(
+        tmp_path: Path, update: dict, error: str) -> None:
+    """Invalid proposal identity, structure, or paths never publish stale patch downloads."""
+    proposals = write_inputs(tmp_path)
+    metadata = proposals / 'packaging-proposal-alpha/packaging-proposal.json'
+    proposal = json.loads(metadata.read_text())
+    proposal.update(update)
+    metadata.write_text(json.dumps(proposal))
+    output = tmp_path / 'summary'
+    (output / 'patches').mkdir(parents=True)
+    (output / 'patches/alpha.patch').write_text('stale previous proposal')
+
+    accepted, warnings = module.load_proposals(proposals, {'alpha', 'beta'}, output)
+
+    assert accepted == {}
+    assert len(warnings) == 1
+    assert error in warnings[0]['error']
+    assert not (output / 'patches/alpha.patch').exists()
+
+
+def test_duplicate_proposal_retains_first_verified_artifact(tmp_path: Path) -> None:
+    """A later duplicate cannot overwrite a previously accepted source patch."""
+    proposals = write_inputs(tmp_path)
+    original = proposals / 'packaging-proposal-alpha'
+    duplicate = proposals / 'z-duplicate'
+    duplicate.mkdir()
+    proposal = json.loads((original / 'packaging-proposal.json').read_text())
+    patch = b'different duplicate content'
+    (duplicate / 'packaging-proposal.patch').write_bytes(patch)
+    proposal['patch']['sha256'] = hashlib.sha256(patch).hexdigest()
+    (duplicate / 'packaging-proposal.json').write_text(json.dumps(proposal))
+    output = tmp_path / 'summary'
+
+    accepted, warnings = module.load_proposals(proposals, {'alpha'}, output)
+
+    assert list(accepted) == ['alpha']
+    assert warnings[0]['error'] == 'duplicate proposal for alpha'
+    assert (output / 'patches/alpha.patch').read_bytes() == (
+        original / 'packaging-proposal.patch').read_bytes()
+
+
+def test_missing_baseline_does_not_claim_snapshot_matches_tag() -> None:
+    """An unavailable official delta remains distinct from a measured empty delta."""
+    page = module.render_evolution({'commit_delta': {
+        'basis': 'no-target-archive-baseline', 'commits': []},
+        'introduced_entry_points': []})
+
+    assert 'No official comparison is available.' in page
+    assert 'Snapshot matches the comparison tag.' not in page
