@@ -7,25 +7,54 @@ import hashlib
 import json
 import shutil
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
-from .artifacts import fields, sha256, verify_binaries, verify_source
+from .artifacts import BinaryArtifact, fields, sha256, verify_binaries, verify_source
+from .contracts import (
+    object_mapping,
+    records,
+    required_text,
+    string_list,
+    string_mapping,
+    text_field,
+)
 
 
-def lock_digest(lock: dict) -> str:
+class ProducerBinary(BinaryArtifact):
+    """Verified binary bytes with reconstructed local paths and same-run provenance."""
+
+    path: str
+    source: str
+    producer_lock_sha256: str
+    ci: dict[str, str]
+
+
+class RepositoryProvenance(TypedDict):
+    """Verified package records and the scope of a disposable local APT repository."""
+
+    schema_version: int
+    packages: list[dict[str, object]]
+    apt_source: str
+    trust_scope: str
+
+
+def lock_digest(lock: Mapping[str, object]) -> str:
     """Hash canonical lock JSON to bind uploaded artifacts to consumer expectations."""
     return hashlib.sha256(
         json.dumps(lock, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
 
 
-def _dependency_graph(packages: list[dict]) -> dict[str, set[str]]:
+def _dependency_graph(packages: Sequence[Mapping[str, object]]) -> dict[str, set[str]]:
     """Construct a complete source graph and reject duplicate or absent producers."""
     graph = {
-        package["source"]: set(package.get("depends_on", [])) for package in packages
+        required_text(package, "source"): set(
+            string_list(package.get("depends_on", []), "depends_on")
+        )
+        for package in packages
     }
     if len(graph) != len(packages):
         raise ValueError("Duplicate source in dependency graph")
@@ -48,7 +77,7 @@ def _ready_packages(graph: dict[str, set[str]], completed: set[str]) -> list[str
     )
 
 
-def dependency_waves(packages: list[dict]) -> list[list[str]]:
+def dependency_waves(packages: Sequence[Mapping[str, object]]) -> list[list[str]]:
     """Return maximum-width topological waves, rejecting incomplete graphs."""
     graph = _dependency_graph(packages)
     waves = []
@@ -64,12 +93,16 @@ def dependency_waves(packages: list[dict]) -> list[list[str]]:
     return waves
 
 
-def stamp_generation(manifest_path: Path, *, run_id: str, run_attempt: str) -> dict:
+def stamp_generation(
+    manifest_path: Path, *, run_id: str, run_attempt: str
+) -> dict[str, object]:
     """Attach CI identity before upload; the receiving job supplies expected identity."""
     if not str(run_id) or not str(run_attempt):
         raise ValueError("Missing CI run identity")
 
-    manifest = json.loads(manifest_path.read_text())
+    manifest = object_mapping(
+        json.loads(manifest_path.read_text()), "generation manifest"
+    )
     identity = {"run_id": str(run_id), "run_attempt": str(run_attempt)}
     if manifest.get("ci", identity) != identity:
         raise ValueError("Generation already belongs to another CI run")
@@ -84,10 +117,10 @@ class ProducerBundle:
     """Downloaded generation metadata; trust comes from the consumer's lock."""
 
     manifest_path: Path
-    manifest: dict[str, Any]
+    manifest: dict[str, object]
 
     def validate_generation(
-        self, identity: dict[str, str], target: dict[str, Any], relevant: set[str]
+        self, identity: dict[str, str], target: dict[str, object], relevant: set[str]
     ) -> None:
         """Require a successful generation for the expected CI run and build target."""
         manifest_path, manifest = self.manifest_path, self.manifest
@@ -115,14 +148,16 @@ class ProducerBundle:
                 f"{readiness_path}"
             )
 
-        readiness = json.loads(readiness_path.read_text())
+        readiness = object_mapping(
+            json.loads(readiness_path.read_text()), "producer readiness"
+        )
         if readiness.get("ci") != identity:
             raise ValueError(
                 f"Stale or wrong-run producer readiness for {sorted(relevant)}: "
                 f"{readiness_path}"
             )
 
-        if readiness.get("source") not in relevant:
+        if text_field(readiness, "source") not in relevant:
             raise ValueError(
                 f"Producer readiness source mismatch for {sorted(relevant)}: "
                 f"{readiness_path}"
@@ -140,9 +175,9 @@ class ProducerBundle:
     def validate_lock(
         self,
         source: str,
-        expected: dict[str, Any],
-        saved_lock: dict[str, Any],
-        target: dict[str, Any],
+        expected: dict[str, object],
+        saved_lock: dict[str, object],
+        target: dict[str, object],
     ) -> None:
         """Require agreement between the consumer lock, upload, and manifest digest."""
         if (
@@ -155,10 +190,10 @@ class ProducerBundle:
     def package_record(
         self,
         source: str,
-        expected: dict[str, Any],
-        saved_lock: dict[str, Any],
-        target: dict[str, Any],
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        expected: dict[str, object],
+        saved_lock: dict[str, object],
+        target: dict[str, object],
+    ) -> tuple[dict[str, object], dict[str, object]]:
         """Bind the uploaded record to the independently supplied package lock."""
         self.validate_lock(source, expected, saved_lock, target)
         package = _unique_package(expected["packages"], source)
@@ -174,11 +209,11 @@ class ProducerBundle:
     def verify_package(
         self,
         source: str,
-        expected: dict[str, Any],
-        saved_lock: dict[str, Any],
-        target: dict[str, Any],
+        expected: dict[str, object],
+        saved_lock: dict[str, object],
+        target: dict[str, object],
         identity: dict[str, str],
-    ) -> list[dict[str, Any]]:
+    ) -> list[ProducerBinary]:
         """Verify locked package evidence and return binaries with local paths and provenance."""
         package, record = self.package_record(source, expected, saved_lock, target)
         directory = self.manifest_path.parent / "artifacts" / source / "binary"
@@ -197,9 +232,13 @@ class ProducerBundle:
         ]
 
 
-def _unique_package(packages: list[dict[str, Any]], source: str) -> dict[str, Any]:
+def _unique_package(packages: object, source: str) -> dict[str, object]:
     """Resolve one source record without silently selecting a duplicate."""
-    matches = [package for package in packages if package["source"] == source]
+    matches = [
+        package
+        for package in records(packages, "producer packages")
+        if package["source"] == source
+    ]
     if len(matches) != 1:
         raise ValueError(f"Invalid producer record: {source}")
 
@@ -220,7 +259,7 @@ def _validate_bundle_links(root: Path, source: str) -> None:
 
 
 def _validate_frozen_upstream(
-    source: str, acquisition: dict[str, Any], catalog_entry: dict[str, Any]
+    source: str, acquisition: dict[str, object], catalog_entry: dict[str, object]
 ) -> None:
     """Bind prepared input identity to the independently frozen catalog entry."""
     if (
@@ -232,42 +271,51 @@ def _validate_frozen_upstream(
 
 
 def _verify_prepared_source(
-    source: str, package: dict[str, Any], expected: dict[str, Any], source_dir: Path
+    source: str,
+    package: dict[str, object],
+    expected: dict[str, object],
+    source_dir: Path,
 ) -> None:
     """Verify prepared source identity, descriptor checksum, and referenced source bytes."""
-    acquisition = package.get("input", {})
+    acquisition = object_mapping(package.get("input", {}), "source input")
     if acquisition.get("kind") != "prepared-snapshot":
         return
 
-    _validate_frozen_upstream(source, acquisition, expected.get("catalog_entry", {}))
+    _validate_frozen_upstream(
+        source,
+        acquisition,
+        object_mapping(expected.get("catalog_entry", {}), "catalog_entry"),
+    )
     dscs = list(source_dir.glob("*.dsc"))
     if len(dscs) != 1 or sha256(dscs[0]) != acquisition.get("dsc_sha256"):
         raise ValueError(f"Prepared source checksum mismatch: {source}")
 
     # A matching descriptor alone does not prove its referenced tarballs are intact.
-    verify_source(dscs[0], source, package["version"])
+    verify_source(dscs[0], source, required_text(package, "version"))
 
 
 def _verify_producer_binaries(
     source: str,
-    package: dict[str, Any],
-    record: dict[str, Any],
+    package: dict[str, object],
+    record: dict[str, object],
     directory: Path,
-    target: dict[str, Any],
-) -> list[dict[str, Any]]:
+    target: dict[str, object],
+) -> list[BinaryArtifact]:
     """Verify binary bytes and require their build metadata to match the locked producer."""
     verified = verify_binaries(
         directory,
         source=source,
-        version=package["version"],
-        expected=package["expected_binaries"],
-        arch=target["architecture"],
+        version=required_text(package, "version"),
+        expected=string_list(package["expected_binaries"], "expected_binaries"),
+        arch=required_text(target, "architecture"),
     )
     distribution = target.get("distribution", target["suite"])
     if fields(directory / verified["changes"]).get("Distribution") != distribution:
         raise ValueError(f"Producer binary distribution mismatch: {source}")
 
-    for dependency, version in package.get("required_build_versions", {}).items():
+    for dependency, version in string_mapping(
+        package.get("required_build_versions", {}), "required_build_versions"
+    ).items():
         if verified["build_dependency_versions"].get(dependency) != version:
             raise ValueError(
                 f"Producer did not use required dependency: {dependency}={version}"
@@ -281,15 +329,20 @@ def _verify_producer_binaries(
 
 def _validated_bundles(
     download_root: Path,
-    expected_locks: dict[str, dict[str, Any]],
+    expected_locks: dict[str, dict[str, object]],
     identity: dict[str, str],
-    target: dict[str, Any],
+    target: dict[str, object],
     require_readiness: bool,
-) -> Iterator[tuple[ProducerBundle, set[str], dict[str, Any]]]:
+) -> Iterator[tuple[ProducerBundle, set[str], dict[str, object]]]:
     """Discover relevant generations and validate them before exposing their locks."""
     for manifest_path in sorted(download_root.rglob("generation-manifest.json")):
-        manifest = json.loads(manifest_path.read_text())
-        sources = {package["source"] for package in manifest.get("packages", [])}
+        manifest = object_mapping(
+            json.loads(manifest_path.read_text()), "generation manifest"
+        )
+        sources = {
+            required_text(package, "source")
+            for package in records(manifest.get("packages", []), "producer packages")
+        }
         relevant = sources & expected_locks.keys()
         if not relevant:
             continue
@@ -299,19 +352,22 @@ def _validated_bundles(
         if require_readiness:
             bundle.validate_readiness(identity, relevant)
 
-        saved_lock = json.loads((manifest_path.parent / "build-lock.json").read_text())
+        saved_lock = object_mapping(
+            json.loads((manifest_path.parent / "build-lock.json").read_text()),
+            "producer lock",
+        )
         yield bundle, relevant, saved_lock
 
 
 def collect_producers(
     download_root: Path,
-    expected_locks: dict[str, dict[str, Any]],
+    expected_locks: dict[str, dict[str, object]],
     *,
     run_id: str,
     run_attempt: str,
-    target: dict[str, Any],
+    target: dict[str, object],
     require_readiness: bool = True,
-) -> dict[str, list[dict[str, Any]]]:
+) -> dict[str, list[ProducerBinary]]:
     """Collect exactly one verified bundle per expected producer.
 
     Discovery ignores unrelated generations. Relevant generations must match
@@ -319,7 +375,7 @@ def collect_producers(
     Paths are reconstructed from bundle layout, never uploaded absolute paths.
     """
     identity = {"run_id": str(run_id), "run_attempt": str(run_attempt)}
-    found: dict[str, list[dict[str, Any]]] = {}
+    found: dict[str, list[ProducerBinary]] = {}
     for bundle, relevant, saved_lock in _validated_bundles(
         download_root, expected_locks, identity, target, require_readiness
     ):
@@ -338,16 +394,16 @@ def collect_producers(
     return found
 
 
-def _validated_binary_path(binary: dict) -> Path:
+def _validated_binary_path(binary: Mapping[str, object]) -> Path:
     """Recheck a handoff path and its bytes before copying into a test repository."""
-    path = Path(binary["path"])
+    path = Path(required_text(binary, "path"))
     if path.is_symlink() or not path.is_file() or sha256(path) != binary["sha256"]:
         raise ValueError(f"Dependency artifact changed: {path}")
 
     return path
 
 
-def _validate_binary_filename(path: Path, binary: dict) -> None:
+def _validate_binary_filename(path: Path, binary: Mapping[str, object]) -> None:
     """Require the recorded Debian filename instead of accepting arbitrary local files."""
     if path.name != binary["file"] or not path.name.endswith(".deb"):
         raise ValueError(f"Invalid binary path: {path}")
@@ -365,10 +421,10 @@ class ProducerRepository:
         self.destination = destination
         self.pool = destination / "pool"
         self.pool.mkdir()
-        self.records: list[dict] = []
+        self.records: list[dict[str, object]] = []
         self.identities: set[tuple[str, str]] = set()
 
-    def populate(self, producers: dict[str, list[dict]]) -> None:
+    def populate(self, producers: Mapping[str, Sequence[Mapping[str, object]]]) -> None:
         """Copy producers in stable order and reject an empty repository."""
         for source, binaries in sorted(producers.items()):
             for binary in binaries:
@@ -377,16 +433,19 @@ class ProducerRepository:
         if not self.records:
             raise ValueError("Cannot reconstruct an empty package repository")
 
-    def copy_binary(self, source: str, binary: dict) -> None:
+    def copy_binary(self, source: str, binary: Mapping[str, object]) -> None:
         """Bind copied bytes to one unique binary package and architecture."""
         path = _validated_binary_path(binary)
-        identity = (binary["package"], binary["architecture"])
+        identity = (
+            required_text(binary, "package"),
+            required_text(binary, "architecture"),
+        )
         if identity in self.identities:
             raise ValueError(f"Duplicate binary package: {identity}")
 
         self.identities.add(identity)
         _validate_binary_filename(path, binary)
-        self.copy_checked(path, binary["sha256"])
+        self.copy_checked(path, required_text(binary, "sha256"))
         self.records.append({**binary, "source": source, "path": f"pool/{path.name}"})
 
     def copy_checked(self, path: Path, expected_sha256: str) -> None:
@@ -414,9 +473,9 @@ class ProducerRepository:
 
         (self.destination / "Release").write_text(release)
 
-    def write_provenance(self) -> dict:
+    def write_provenance(self) -> RepositoryProvenance:
         """Publish relative artifact paths and the disposable testbed trust scope."""
-        result = {
+        result: RepositoryProvenance = {
             "schema_version": 1,
             "packages": self.records,
             "apt_source": f"deb [trusted=yes] file:{self.destination.resolve()} ./",
@@ -428,7 +487,9 @@ class ProducerRepository:
         return result
 
 
-def build_repository(producers: dict[str, list[dict]], destination: Path) -> dict:
+def build_repository(
+    producers: Mapping[str, Sequence[Mapping[str, object]]], destination: Path
+) -> RepositoryProvenance:
     """Reconstruct a flat APT repo from verified handoffs, rechecking copied bytes.
 
     This unsigned repository is restricted to a disposable testbed. Its provenance

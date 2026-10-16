@@ -420,3 +420,20 @@ def test_consolidated_producer_archive_preserves_verified_handoff(tmp_path):
     component.write_bytes(b'corrupt source component')
     with pytest.raises(ValueError, match='corrupt artifact'):
         collect_producers(downloaded, {'sample': lock}, run_id='123', run_attempt='1', target=lock['target'])
+
+
+def test_dependency_waves_rejects_malformed_dependency_collections():
+    """A string relation must not become a set of one-character producer names."""
+    with pytest.raises(ValueError, match='must be a list'):
+        dependency_waves([{'source': 'sample', 'depends_on': 'producer'}])
+
+
+def test_readiness_rejects_an_array_source_identity(tmp_path):
+    """Malformed readiness JSON must fail validation before producer bytes are consumed."""
+    root, lock, _ = bundle(tmp_path)
+    path = root / 'producer-readiness.json'
+    readiness = json.loads(path.read_text())
+    readiness['source'] = ['sample']
+    path.write_text(json.dumps(readiness))
+    with pytest.raises(ValueError, match='source must be a string'):
+        collect(root, lock)
