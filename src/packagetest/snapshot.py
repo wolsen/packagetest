@@ -7,9 +7,40 @@ import gzip
 import io
 import re
 import tarfile
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import IO, Protocol, TypedDict, cast
+
+from .contracts import object_mapping, records, required_text, text_field
+
+
+class SnapshotCommit(TypedDict):
+    """One release-relative Git commit retained as immutable snapshot evidence."""
+
+    sha: str
+    timestamp: int
+    author: str
+    subject: str
+
+
+def snapshot_commits(history: str) -> list[SnapshotCommit]:
+    """Parse the NUL-separated Git format shared by snapshot discovery and verification."""
+    return [
+        SnapshotCommit(
+            sha=fields[0], timestamp=int(fields[1]), author=fields[2], subject=fields[3]
+        )
+        for line in history.splitlines()
+        for fields in [line.split("\0", 3)]
+    ]
+
+
+def _snapshot_input(
+    package: Mapping[str, object],
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Read snapshot acquisition objects without losing their extension evidence."""
+    acquisition = object_mapping(package["input"], "source input")
+    return acquisition, object_mapping(acquisition["snapshot"], "snapshot input")
 
 
 class SnapshotBuilder(Protocol):
@@ -18,7 +49,7 @@ class SnapshotBuilder(Protocol):
     work: Path
 
     def command(
-        self, *argv: str, cwd: Path | None = None, env: dict | None = None
+        self, *argv: str, cwd: Path | None = None, env: dict[str, str] | None = None
     ) -> str:
         """Run a command and return its complete output or raise on failure."""
         ...
@@ -54,10 +85,23 @@ def snapshot_pep440_version(version: str) -> str:
     return normalized
 
 
+def _member_bytes(archive: tarfile.TarFile, member: tarfile.TarInfo) -> bytes:
+    """Require a regular readable member before trusting generated metadata or file bytes."""
+    if not member.isfile():
+        raise ValueError(f"Snapshot member must be a regular file: {member.name}")
+
+    stream = archive.extractfile(member)
+    if stream is None:
+        raise ValueError(f"Snapshot member has no file data: {member.name}")
+
+    with stream:
+        return stream.read()
+
+
 def _sdist_metadata(archive: tarfile.TarFile, members: list[tarfile.TarInfo]) -> str:
     """Read the first root-relative PKG-INFO after required-name validation."""
     root_info = next(m for m in members if m.name.split("/", 1)[-1] == "PKG-INFO")
-    metadata = archive.extractfile(root_info).read().decode()
+    metadata = _member_bytes(archive, root_info).decode()
     return metadata
 
 
@@ -111,23 +155,35 @@ def _write_sdist_member(
 ) -> None:
     """Validate one member and copy its data with deterministic archive headers."""
     _validate_sdist_member(member)
-    data = archive.extractfile(member).read() if member.isfile() else None
+    data = _member_bytes(archive, member) if member.isfile() else None
     _normalize_sdist_header(member, epoch, archive_format)
     target.addfile(member, io.BytesIO(data) if data is not None else None)
 
 
-def _snapshot_checkout(build: SnapshotBuilder, package: dict) -> tuple[Path, str, str]:
+def _snapshot_checkout(
+    build: SnapshotBuilder, package: Mapping[str, object]
+) -> tuple[Path, str, str]:
     """Checkout and validate the pinned upstream commit and release ancestry."""
-    spec = package["input"]["snapshot"]
-    upstream = build.work / "snapshot" / package["source"]
+    acquisition, spec = _snapshot_input(package)
+    upstream = build.work / "snapshot" / required_text(package, "source")
     upstream.parent.mkdir(parents=True, exist_ok=True)
-    build.command("git", "clone", "--no-checkout", spec["repository"], str(upstream))
-    build.command("git", "checkout", "--detach", spec["sha"], cwd=upstream)
+    build.command(
+        "git",
+        "clone",
+        "--no-checkout",
+        required_text(spec, "repository"),
+        str(upstream),
+    )
+    build.command(
+        "git", "checkout", "--detach", required_text(spec, "sha"), cwd=upstream
+    )
     actual_sha = build.command("git", "rev-parse", "HEAD", cwd=upstream)
     base_sha = build.command(
         "git", "rev-parse", f"refs/tags/{spec['base_tag']}^{{commit}}", cwd=upstream
     )
-    if actual_sha != spec["sha"] or base_sha != spec["base_tag_sha"]:
+    if actual_sha != required_text(spec, "sha") or base_sha != required_text(
+        spec, "base_tag_sha"
+    ):
         raise ValueError("Snapshot Git pins differ from checkout")
 
     build.command(
@@ -137,27 +193,32 @@ def _snapshot_checkout(build: SnapshotBuilder, package: dict) -> tuple[Path, str
 
 
 def _validate_snapshot_history(
-    spec: dict, package: dict, count: int, commits: list[dict], epoch: int, version: str
+    spec: Mapping[str, object],
+    package: Mapping[str, object],
+    count: int,
+    commits: list[SnapshotCommit],
+    epoch: int,
+    version: str,
 ) -> None:
     """Require the observed history, timestamp, and Debian version to match the lock."""
     if (
         count != spec["commits_since_tag"]
         or commits != spec.get("commits", commits)
-        or epoch != int(spec["commit_timestamp"])
-        or version != package["input"]["upstream_version"]
+        or epoch != int(required_text(spec, "commit_timestamp"))
+        or version != required_text(_snapshot_input(package)[0], "upstream_version")
     ):
         raise ValueError("Snapshot date/count/version differs from lock")
 
 
 def _snapshot_history(
     build: SnapshotBuilder,
-    package: dict,
+    package: Mapping[str, object],
     upstream: Path,
     actual_sha: str,
     base_sha: str,
 ) -> tuple[int, str]:
     """Inventory release-relative history and validate both version representations."""
-    spec = package["input"]["snapshot"]
+    acquisition, spec = _snapshot_input(package)
     count = int(
         build.command(
             "git", "rev-list", "--count", f"{base_sha}..{actual_sha}", cwd=upstream
@@ -171,22 +232,15 @@ def _snapshot_history(
         f"{base_sha}..{actual_sha}",
         cwd=upstream,
     )
-    commits = [
-        {
-            "sha": fields[0],
-            "timestamp": int(fields[1]),
-            "author": fields[2],
-            "subject": fields[3],
-        }
-        for line in history.splitlines()
-        for fields in [line.split("\0", 3)]
-    ]
+    commits = snapshot_commits(history)
     epoch = int(
         build.command("git", "show", "-s", "--format=%ct", actual_sha, cwd=upstream)
     )
-    version = snapshot_version(spec["base_tag"], epoch, count, actual_sha)
+    version = snapshot_version(
+        required_text(spec, "base_tag"), epoch, count, actual_sha
+    )
     _validate_snapshot_history(spec, package, count, commits, epoch, version)
-    if spec["pep440_version"] != snapshot_pep440_version(version):
+    if required_text(spec, "pep440_version") != snapshot_pep440_version(version):
         raise ValueError(
             "Snapshot PEP 440 version differs from Debian upstream version"
         )
@@ -195,15 +249,15 @@ def _snapshot_history(
 
 
 def _snapshot_environment(
-    spec: dict, upstream: Path, epoch: int
+    spec: Mapping[str, object], upstream: Path, epoch: int
 ) -> tuple[dict[str, str], str]:
     """Validate the version backend and set reproducible build environment variables."""
     env = {
-        "PBR_VERSION": spec["pep440_version"],
+        "PBR_VERSION": required_text(spec, "pep440_version"),
         "SOURCE_DATE_EPOCH": str(epoch),
         "TZ": "UTC",
     }
-    version_backend = spec.get("version_backend", "pbr")
+    version_backend = text_field(spec, "version_backend", "pbr")
     if version_backend == "setuptools-scm":
         import tomllib
 
@@ -213,7 +267,7 @@ def _snapshot_environment(
                 "Source does not declare the pinned setuptools-scm backend"
             )
 
-        env["SETUPTOOLS_SCM_PRETEND_VERSION"] = spec["pep440_version"]
+        env["SETUPTOOLS_SCM_PRETEND_VERSION"] = required_text(spec, "pep440_version")
     elif version_backend != "pbr":
         raise ValueError("Unsupported snapshot version backend")
 
@@ -300,17 +354,22 @@ def canonical_sdist(
             ) as compressed,
         ):
             with tarfile.open(
-                fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT
+                # Older supported typeshed versions do not model GzipFile as IO[bytes].
+                fileobj=cast(IO[bytes], compressed),
+                mode="w",
+                format=tarfile.PAX_FORMAT,
             ) as target:
                 for member in sorted(members, key=lambda m: m.name):
                     _write_sdist_member(archive, target, member, epoch, archive_format)
 
 
-def build_snapshot(build: SnapshotBuilder, package: dict, destination: Path) -> dict:
+def build_snapshot(
+    build: SnapshotBuilder, package: Mapping[str, object], destination: Path
+) -> dict[str, object]:
     """Build and verify a reproducible sdist from checksum-pinned tools and Git history."""
     from .artifacts import sha256
 
-    spec = package["input"]["snapshot"]
+    acquisition, spec = _snapshot_input(package)
     upstream, actual_sha, base_sha = _snapshot_checkout(build, package)
     epoch, version = _snapshot_history(build, package, upstream, actual_sha, base_sha)
     venv = upstream.parent / "venv"
@@ -319,7 +378,7 @@ def build_snapshot(build: SnapshotBuilder, package: dict, destination: Path) -> 
     requirements.write_text(
         "".join(
             f"{r['name']}=={r['version']} --hash=sha256:{r['sha256']}\n"
-            for r in spec["build_requirements"]
+            for r in records(spec["build_requirements"], "build requirements")
         )
     )
     build.command(
@@ -346,8 +405,8 @@ def build_snapshot(build: SnapshotBuilder, package: dict, destination: Path) -> 
         archives[0],
         destination,
         epoch=epoch,
-        version=spec["pep440_version"],
-        archive_format=spec.get("archive_format", "legacy"),
+        version=required_text(spec, "pep440_version"),
+        archive_format=text_field(spec, "archive_format", "legacy"),
         required_metadata=required_metadata,
     )
     digest = sha256(destination)

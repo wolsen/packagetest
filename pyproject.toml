@@ -65,6 +65,8 @@ files = [
     "src/packagetest/release_discovery.py",
     "src/packagetest/remediation_evidence.py",
     "src/packagetest/targets.py",
+    "src/packagetest/snapshot.py",
+    "src/packagetest/snapshot_lock.py",
 
 
 ]

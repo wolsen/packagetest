@@ -98,3 +98,18 @@ def test_declared_changelog_opt_out_still_requires_exact_version(tmp_path):
     with pytest.raises(ValueError, match='version differs'):
         canonical_sdist(source, tmp_path / 'wrong.tar.gz', epoch=1,
                         version='0.0.0', required_metadata=('AUTHORS', 'PKG-INFO'))
+
+
+@pytest.mark.parametrize('member_type', [tarfile.DIRTYPE, tarfile.SYMTYPE, tarfile.LNKTYPE])
+def test_generated_metadata_must_be_a_regular_archive_member(tmp_path, member_type):
+    """Reject directory and link metadata before opening a normalized output archive."""
+    source = tmp_path / 'source.tar.gz'
+    with tarfile.open(source, 'w:gz') as archive:
+        member = tarfile.TarInfo('project/PKG-INFO')
+        member.type = member_type
+        member.linkname = 'project/AUTHORS'
+        archive.addfile(member)
+    output = tmp_path / 'output.tar.gz'
+    with pytest.raises(ValueError, match='must be a regular file'):
+        canonical_sdist(source, output, epoch=1, version='1.0', required_metadata=['PKG-INFO'])
+    assert not output.exists()
