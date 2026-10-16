@@ -43,6 +43,11 @@ select = ["E9", "F"]
 "scripts/*.py" = ["E402"]
 
 [tool.mypy]
-files = ["src/packagetest/contracts.py", "src/packagetest/relations.py"]
+files = [
+    "src/packagetest/contracts.py",
+    "src/packagetest/relations.py",
+    "src/packagetest/prepared_plan.py",
+    "src/packagetest/prepared_source.py",
+]
 strict = true
 follow_imports = "silent"

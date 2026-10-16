@@ -1037,7 +1037,7 @@ def prepared_export_inputs(tmp_path: Path) -> tuple[dict, dict, dict]:
     lock = tmp_path / 'lock.json'
     lock.write_text('{"frozen": true}\n')
     prepared = {'dsc': str(dsc), 'tree': str(tree), 'lock': str(lock),
-                'metadata': {'packaging_source': 'archive'}}
+                'metadata': {'packaging_source': {'kind': 'archive'}}}
     entry = {'source': 'demo', 'upstream_sha': 'a' * 40}
     catalog = {'ci': {'run_id': '1', 'run_attempt': '2'}}
     return prepared, entry, catalog
