@@ -177,3 +177,17 @@ caught directly from the renderer and converted to a proposal commenting out the
 patch in `debian/patches/series`. Other rendering errors retain their original
 diagnostic. Source preparation is rerun with the validated proposal before the
 candidate can replace the failed output; its patch application remains zero-fuzz.
+
+## Catalog selection
+
+`ArchiveSelection` records each compressed input's checksum and selects source
+records by comparison priority, then by Debian version within the same priority.
+Equal versions retain the first record encountered. Comparison records remain
+separate from Ubuntu fallback records, so absence from a configured target overlay
+is represented explicitly.
+
+`CatalogBuilder` maps cycle deliverables using verified OpenStack ownership,
+records exclusions, and adds transitive independent build producers. Package
+records preserve archive checksums, ordered packaging branch candidates, and
+series-scoped upstream selection. Archive preflight uses HEAD with size checks;
+only HTTP 405 and 501 trigger a bounded range-GET availability probe.

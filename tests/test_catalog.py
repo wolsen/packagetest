@@ -409,3 +409,42 @@ def test_archive_selection_decodes_and_preserves_index_provenance(tmp_path, suff
     assert selection.sources['example']['_packagetest_archive_pocket'] == 'security'
     assert selection.comparison_sources == {}
     assert selection.indexes == [{'filename': path.name, 'sha256': hashlib.sha256(encoded).hexdigest()}]
+
+
+@pytest.mark.parametrize('status', [405, 501])
+def test_archive_preflight_falls_back_only_when_head_is_unsupported(status):
+    """A server without HEAD support receives a bounded range GET probe."""
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    requests = []
+
+    def opener(request, timeout):
+        """Simulate an archive server that serves files but rejects HEAD."""
+        requests.append(request)
+        if request.get_method() == 'HEAD':
+            raise HTTPError(request.full_url, status, 'unsupported', {}, None)
+
+        return nullcontext(SimpleNamespace(headers={}))
+
+    data = {'packages': [{'source': 'example', 'archive_source': {'url': 'https://archive.example/source.dsc'}}]}
+    validate_archive_sources(data, opener=opener, max_workers=1)
+    assert [request.get_method() for request in requests] == ['HEAD', 'GET']
+    assert requests[1].get_header('Range') == 'bytes=0-0'
+
+
+def test_archive_preflight_retains_size_mismatch_diagnostic():
+    """An existing file with changed size still fails source availability validation."""
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    def opener(request, timeout):
+        """Return a successful HEAD response whose size disagrees with the index."""
+        return nullcontext(SimpleNamespace(headers={'Content-Length': '124'}))
+
+    data = {'packages': [{'source': 'example', 'archive_source': {
+        'url': 'https://archive.example/source.dsc',
+        'files': [{'url': 'https://archive.example/source.dsc', 'size': 123}],
+    }}]}
+    with pytest.raises(ValueError, match='expected 123 bytes, archive reports 124'):
+        validate_archive_sources(data, opener=opener, max_workers=1)

@@ -4,7 +4,6 @@
   "src/packagetest/artifacts.py:verify_binaries": 29,
   "src/packagetest/autopkgtest.py:classify": 24,
   "src/packagetest/autopkgtest.py:run": 21,
-  "src/packagetest/catalog.py:package_record": 29,
   "src/packagetest/commands.py:CommandRunner.run": 17,
   "src/packagetest/failure_analysis.py:_apply_hunks_with_normalized_context": 18,
   "src/packagetest/failure_analysis.py:_apply_independent_change_groups": 31,
