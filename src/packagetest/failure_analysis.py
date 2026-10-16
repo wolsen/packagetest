@@ -232,6 +232,7 @@ def normalize_repair_decision(decision: dict, tree: Path, evidence: str = "") ->
 
 
 def _replace_file_patch(path: str, before: str, after: str) -> str:
+    """Render a Git-formatted file diff, rejecting proposals with no content change."""
     if before == after:
         raise ValueError(f"repair did not change {path}")
     body = "".join(difflib.unified_diff(
@@ -925,52 +926,63 @@ def _add_control_dependency(text: str, field: str, package: str) -> str:
     return "".join(lines)
 
 
-def render_source_repair(decision: dict, tree: Path) -> str:
-    """Render a narrow, trusted Debian packaging patch from a model decision."""
-    action = decision["action"]
-    if action == "no_fix":
-        return ""
-    if action == "remove_rule_argument":
-        argument = decision["subject"].strip()
-        if not re.fullmatch(r"--[A-Za-z0-9][A-Za-z0-9 _=.+-]*", argument):
-            raise ValueError(f"unsafe rule argument: {argument!r}")
-        path = tree / "debian/rules"
-        before = path.read_text()
-        lines = before.splitlines(keepends=True)
-        matching = [index for index, line in enumerate(lines) if line.strip().rstrip("\\").strip() == argument]
-        if len(matching) != 1:
-            raise ValueError(f"expected one exact {argument!r} line in debian/rules, found {len(matching)}")
-        del lines[matching[0]]
-        return _replace_file_patch("debian/rules", before, "".join(lines))
-    if action == "refresh_quilt_patch":
-        return _refresh_quilt_patch(tree, decision["subject"].strip())
-    if action == "drop_quilt_patch":
-        name = decision["subject"].strip()
-        path = tree / "debian/patches/series"
-        before = path.read_text()
-        lines = before.splitlines(keepends=True)
-        matching = [index for index, line in enumerate(lines)
-                    if line.split() and not line.lstrip().startswith("#") and line.split()[0] == name]
-        if len(matching) != 1:
-            raise ValueError(f"expected one active {name!r} entry in debian/patches/series, found {len(matching)}")
-        index = matching[0]
-        lines[index] = "# Superseded upstream after snapshot rebase: " + lines[index]
-        return _replace_file_patch("debian/patches/series", before, "".join(lines))
-    if action == "replace_packaging_path":
-        old, new = decision["subject"].strip(), decision["replacement"].strip()
-        replacement = tree / new
-        if not replacement.is_file() or replacement.is_symlink():
-            raise ValueError(f"replacement upstream path does not exist: {new}")
-        path = tree / "debian/rules"
-        before = path.read_text()
-        if before.count(old) != 1:
-            raise ValueError(f"expected one {old!r} reference in debian/rules, found {before.count(old)}")
-        if (tree / old).exists():
-            raise ValueError(f"original upstream path still exists: {old}")
-        return _replace_file_patch("debian/rules", before, before.replace(old, new, 1))
+def _render_argument_removal(decision: dict, tree: Path) -> str:
+    """Remove one exact, safe command argument line from Debian rules."""
+    argument = decision["subject"].strip()
+    if not re.fullmatch(r"--[A-Za-z0-9][A-Za-z0-9 _=.+-]*", argument):
+        raise ValueError(f"unsafe rule argument: {argument!r}")
+
+    path = tree / "debian/rules"
+    before = path.read_text()
+    lines = before.splitlines(keepends=True)
+    matching = [index for index, line in enumerate(lines) if line.strip().rstrip("\\").strip() == argument]
+    if len(matching) != 1:
+        raise ValueError(f"expected one exact {argument!r} line in debian/rules, found {len(matching)}")
+
+    del lines[matching[0]]
+    return _replace_file_patch("debian/rules", before, "".join(lines))
+
+
+def _render_quilt_drop(decision: dict, tree: Path) -> str:
+    """Comment exactly one active series entry with its supersession explanation."""
+    name = decision["subject"].strip()
+    path = tree / "debian/patches/series"
+    before = path.read_text()
+    lines = before.splitlines(keepends=True)
+    matching = [index for index, line in enumerate(lines)
+                if _series_line_matches(line, name)]
+    if len(matching) != 1:
+        raise ValueError(f"expected one active {name!r} entry in debian/patches/series, found {len(matching)}")
+
+    index = matching[0]
+    lines[index] = "# Superseded upstream after snapshot rebase: " + lines[index]
+    return _replace_file_patch("debian/patches/series", before, "".join(lines))
+
+
+def _render_path_replacement(decision: dict, tree: Path) -> str:
+    """Replace one missing rules path with an existing regular source file."""
+    old, new = decision["subject"].strip(), decision["replacement"].strip()
+    replacement = tree / new
+    if not replacement.is_file() or replacement.is_symlink():
+        raise ValueError(f"replacement upstream path does not exist: {new}")
+
+    path = tree / "debian/rules"
+    before = path.read_text()
+    if before.count(old) != 1:
+        raise ValueError(f"expected one {old!r} reference in debian/rules, found {before.count(old)}")
+
+    if (tree / old).exists():
+        raise ValueError(f"original upstream path still exists: {old}")
+
+    return _replace_file_patch("debian/rules", before, before.replace(old, new, 1))
+
+
+def _render_dependency_addition(decision: dict, tree: Path) -> str:
+    """Render build and, unless build-only, Python runtime dependency additions."""
     package = decision["subject"].strip().lower()
     if not re.fullmatch(r"python3-[a-z0-9][a-z0-9+.-]*", package):
         raise ValueError(f"unsupported dependency package: {package!r}")
+
     path = tree / "debian/control"
     before = path.read_text()
     paragraphs = re.split(r"(\n\s*\n)", before)
@@ -978,16 +990,51 @@ def render_source_repair(decision: dict, tree: Path) -> str:
         paragraphs[0], "Build-Depends-Indep" if "Build-Depends-Indep:" in paragraphs[0] else "Build-Depends", package)
     if decision.get("scope") == "build":
         return _replace_file_patch("debian/control", before, "".join(paragraphs))
-    changed_runtime = False
+
+    _add_runtime_dependencies(paragraphs, package)
+    return _replace_file_patch("debian/control", before, "".join(paragraphs))
+
+
+def _series_line_matches(line: str, name: str) -> bool:
+    """Match an active series entry while preserving its optional quilt flags."""
+    return bool(line.split()) and not line.lstrip().startswith("#") and line.split()[0] == name
+
+
+def _python_runtime_paragraph(paragraph: str) -> bool:
+    """Identify Python 3 binary stanzas with an existing runtime dependency field."""
+    return bool(re.search(r"(?m)^Package:\s+python3-", paragraph)) and "Depends:" in paragraph
+
+
+def _add_runtime_dependencies(paragraphs: list[str], package: str) -> None:
+    """Update eligible runtime stanzas and reject proposals that change none of them."""
+    changed = False
     for index in range(2, len(paragraphs), 2):
         paragraph = paragraphs[index]
-        if re.search(r"(?m)^Package:\s+python3-", paragraph) and "Depends:" in paragraph:
+        if _python_runtime_paragraph(paragraph):
             updated = _add_control_dependency(paragraph, "Depends", package)
-            changed_runtime = changed_runtime or updated != paragraph
+            changed = changed or updated != paragraph
             paragraphs[index] = updated
-    if not changed_runtime:
+
+    if not changed:
         raise ValueError("no Python 3 binary package dependency stanza was updated")
-    return _replace_file_patch("debian/control", before, "".join(paragraphs))
+
+
+def render_source_repair(decision: dict, tree: Path) -> str:
+    """Render a narrow packaging proposal using the selected action's constraints."""
+    action = decision["action"]
+    if action == "no_fix":
+        return ""
+
+    if action == "refresh_quilt_patch":
+        return _refresh_quilt_patch(tree, decision["subject"].strip())
+
+    renderers = {
+        "remove_rule_argument": _render_argument_removal,
+        "drop_quilt_patch": _render_quilt_drop,
+        "replace_packaging_path": _render_path_replacement,
+    }
+    render = renderers.get(action, _render_dependency_addition)
+    return render(decision, tree)
 
 
 def parse_model_response(text: str) -> ModelResponse:

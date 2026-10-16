@@ -16,7 +16,6 @@
   "src/packagetest/failure_analysis.py:normalize_repair_decision": 13,
   "src/packagetest/failure_analysis.py:parse_model_response": 8,
   "src/packagetest/failure_analysis.py:parse_repair_decision": 10,
-  "src/packagetest/failure_analysis.py:render_source_repair": 27,
   "src/packagetest/failure_analysis.py:repository_context": 13,
   "src/packagetest/failure_analysis.py:safe_evidence_text": 11,
   "src/packagetest/failure_summary.py:_print_command_trace": 13,
