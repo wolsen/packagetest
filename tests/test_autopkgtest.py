@@ -156,3 +156,58 @@ def test_candidate_hook_supports_variant_switches_and_rejects_archive_fallback(t
     assert json.loads(completed.stdout.removeprefix('PACKAGETEST_INSTALLED_CANDIDATES ')) == installed
     if result:
         assert 'Candidate version mismatch' in completed.stderr
+
+
+def test_timeout_kills_and_reaps_testbed_process_group(tmp_path, monkeypatch):
+    """A timeout must stop testbed descendants before the report records failure."""
+    import signal
+    import subprocess
+    from unittest.mock import MagicMock
+    from packagetest import autopkgtest
+
+    process = MagicMock()
+    process.__enter__.return_value = process
+    process.pid = 1234
+    process.wait.side_effect = [subprocess.TimeoutExpired('autopkgtest', 3601), 0]
+    monkeypatch.setattr(autopkgtest.subprocess, 'Popen', lambda *args, **kwargs: process)
+    killed = []
+    monkeypatch.setattr(autopkgtest.os, 'killpg', lambda pid, sig: killed.append((pid, sig)))
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        autopkgtest._execute_test(['autopkgtest'], tmp_path, 1)
+
+    assert killed == [(1234, signal.SIGKILL)]
+    assert process.wait.call_args_list[0].kwargs == {'timeout': 3601}
+    assert process.wait.call_args_list[1].kwargs == {}
+
+
+def test_dependency_repository_rejects_escaped_candidate(tmp_path):
+    """Valid bytes outside the dependency repository must never enter the testbed."""
+    from packagetest import autopkgtest
+
+    repository = tmp_path / 'repository'
+    repository.mkdir()
+    escaped = tmp_path / 'escaped.deb'
+    escaped.write_bytes(b'candidate')
+    record = {'path': '../escaped.deb', 'sha256': autopkgtest.sha256(escaped)}
+    (repository / 'provenance.json').write_text(json.dumps({'packages': [record]}))
+
+    with pytest.raises(ValueError, match='Corrupt dependency repository artifact'):
+        autopkgtest._merge_dependencies({}, repository)
+
+
+def test_dependency_repository_rejects_conflicting_filename(tmp_path):
+    """Dependency provenance cannot replace a build candidate with different bytes."""
+    from packagetest import autopkgtest
+
+    repository = tmp_path / 'repository'
+    repository.mkdir()
+    candidate = tmp_path / 'candidate.deb'
+    candidate.write_bytes(b'build')
+    dependency = repository / candidate.name
+    dependency.write_bytes(b'dependency')
+    record = {'path': dependency.name, 'sha256': autopkgtest.sha256(dependency)}
+    (repository / 'provenance.json').write_text(json.dumps({'packages': [record]}))
+
+    with pytest.raises(ValueError, match='Conflicting candidate'):
+        autopkgtest._merge_dependencies({candidate.name: candidate}, repository)

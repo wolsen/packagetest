@@ -208,120 +208,211 @@ if errors:
 
 
 def checked_file(directory: Path, record: dict) -> Path:
+    """Resolve a basename artifact only after checking its recorded digest."""
     name = record['file']
     if Path(name).name != name:
         raise ValueError('Artifact filename is not a basename')
+
     path = directory / name
     if not path.is_file() or sha256(path) != record['sha256']:
         raise ValueError(f'Missing or corrupt artifact: {path}')
+
     return path
 
 
+def _source_descriptor(base: Path, package: dict, source: str) -> Path:
+    """Verify source artifacts and require exactly one matching Debian descriptor."""
+    sources = [checked_file(base / 'source', record) for record in package['source_artifacts']]
+    dscs = [path for path in sources if path.suffix == '.dsc']
+    if len(dscs) != 1:
+        raise ValueError('Expected one source descriptor')
+
+    verify_source(dscs[0], source, package['version'])
+    return dscs[0]
+
+
+def _binary_inputs(base: Path, package: dict, source: str, architecture: str) -> list[Path]:
+    """Verify each candidate binary and its package, version, and architecture metadata."""
+    binaries = [checked_file(base / 'binary', record) for record in package['binaries']]
+    verify_binaries(base / 'binary', source=source, version=package['version'],
+                    expected=[b['package'] for b in package['binaries']], arch=architecture)
+    return binaries
+
+
 def manifest_inputs(path: Path, source: str) -> tuple[dict, dict, Path, list[Path]]:
+    """Load successful build inputs and verify their source and binary provenance."""
     manifest = json.loads(path.read_text())
     package = next(p for p in manifest['packages'] if p['source'] == source)
     if package['result'] != 'SUCCEEDED':
         raise ValueError(f'Cannot test unsuccessful build: {source}')
+
     base = path.parent / 'artifacts' / source
-    sources = [checked_file(base / 'source', record) for record in package['source_artifacts']]
-    dscs = [p for p in sources if p.suffix == '.dsc']
-    if len(dscs) != 1:
-        raise ValueError('Expected one source descriptor')
-    verify_source(dscs[0], source, package['version'])
-    binaries = [checked_file(base / 'binary', record) for record in package['binaries']]
-    verify_binaries(base / 'binary', source=source, version=package['version'],
-                    expected=[b['package'] for b in package['binaries']], arch=manifest['target']['architecture'])
-    return manifest, package, dscs[0], binaries
+    dsc = _source_descriptor(base, package, source)
+    binaries = _binary_inputs(base, package, source, manifest['target']['architecture'])
+    return manifest, package, dsc, binaries
+
+
+def _dependency_candidate(repository: Path, record: dict) -> Path:
+    """Reject escaped, missing, or modified dependency repository artifacts."""
+    relative = Path(record['path'])
+    path = (repository / relative).resolve()
+    if not path.is_relative_to(repository.resolve()) or not path.is_file() or sha256(path) != record['sha256']:
+        raise ValueError(f'Corrupt dependency repository artifact: {relative}')
+
+    return path
+
+
+def _merge_dependencies(candidates: dict[str, Path], repository: Path) -> dict:
+    """Merge verified dependencies without accepting conflicting candidate filenames."""
+    provenance = json.loads((repository / 'provenance.json').read_text())
+    for record in provenance['packages']:
+        path = _dependency_candidate(repository, record)
+        if path.name in candidates and sha256(candidates[path.name]) != record['sha256']:
+            raise ValueError(f'Conflicting candidate: {path.name}')
+
+        candidates[path.name] = path
+
+    return provenance
+
+
+def _candidate_versions(candidates: dict[str, Path], repo: Path) -> dict[str, str]:
+    """Pin each candidate version and install the testbed's provenance-check hook."""
+    pins = []
+    versions = {}
+    for path in candidates.values():
+        name, version = subprocess.check_output(['dpkg-deb', '-f', str(path), 'Package', 'Version'], text=True).strip().splitlines()
+        # dpkg-deb emits field labels when multiple fields are requested.
+        name, version = name.removeprefix('Package: '), version.removeprefix('Version: ')
+        if name in versions and versions[name] != version:
+            raise ValueError(f'Multiple versions in candidate repository: {name}')
+
+        versions[name] = version
+        pins.append(f'Package: {name}\nPin: version {version}\nPin-Priority: 1001\n')
+
+    (repo / 'preferences').write_text('\n'.join(pins))
+    (repo / 'verify-installed.py').write_text(candidate_check_script(versions))
+    return versions
+
+
+def _candidate_repository(output: Path, candidates: dict[str, Path]) -> tuple[Path, dict[str, str]]:
+    """Copy and index the verified binary set before generating version preferences."""
+    repo = output / 'candidate-repository'
+    repo.mkdir()
+    for name, path in candidates.items():
+        shutil.copy2(path, repo / name)
+
+    with (repo / 'Packages').open('w') as handle:
+        subprocess.run(['dpkg-scanpackages', '.', '/dev/null'], cwd=repo, stdout=handle, check=True)
+
+    return repo, _candidate_versions(candidates, repo)
+
+
+def _cloud_setup(target: dict) -> str:
+    """Render optional cloud archive setup with a shell-quoted source entry."""
+    cloud = target.get('cloud_archive')
+    cloud_setup = ''
+    if cloud:
+        source = (f"deb [signed-by={cloud['keyring']}] {cloud['repository']} "
+                  f"{cloud['distribution']} {cloud['component']}")
+        cloud_setup = (
+            'DEBIAN_FRONTEND=noninteractive apt-get install -y ubuntu-cloud-keyring\n'
+            + "printf '%s\\n' " + shlex.quote(source)
+            + ' > /etc/apt/sources.list.d/ubuntu-cloud-archive.list\n')
+
+    return cloud_setup
+
+
+def _testbed_setup(output: Path, target: dict) -> Path:
+    """Write the suite check, repository configuration, and installed-version hook."""
+    cloud_setup = _cloud_setup(target)
+    setup = output / 'setup.sh'
+    setup.write_text('set -eu\n'
+                     'test "$(. /etc/os-release; echo "$VERSION_CODENAME")" = ' + shlex.quote(target['suite']) + '\n'
+                     "printf '%s\\n' 'deb [trusted=yes] file:/opt/packagetest-candidate ./' > /etc/apt/sources.list.d/packagetest.list\n"
+                     'cp /opt/packagetest-candidate/preferences /etc/apt/preferences.d/packagetest\n'
+                     'apt-get update\n'
+                     + cloud_setup +
+                     'apt-get update\n'
+                     'DEBIAN_FRONTEND=noninteractive apt-get install -y apt-utils\n'
+                     'command -v python3\n'
+                     "printf '%s\\n' 'post-invoke=python3 /opt/packagetest-candidate/verify-installed.py' > /etc/dpkg/dpkg.cfg.d/packagetest-versions\n")
+    return setup
+
+
+def _test_command(output: Path, repo: Path, setup: Path, dsc: Path, candidates: dict[str, Path],
+                  backend: str, image: str, timeout: int) -> list[str]:
+    """Build isolated testbed arguments with explicit candidate inputs and timeouts."""
+    command = ['autopkgtest', '--no-built-binaries', '--no-apt-fallback',
+               '--output-dir=' + str(output / 'testbed'), '--summary=' + str(output / 'summary'),
+               '--timeout-test=' + str(timeout), '--timeout-install=1800',
+               '--copy=' + str(repo.resolve()) + ':/opt/packagetest-candidate',
+               '--setup-commands=' + str(setup.resolve()), str(dsc),
+               *[str(p) for p in candidates.values()], '--', backend]
+    if backend == 'qemu':
+        command += ['--ram-size=4096', '--cpus=2', str(Path(image).resolve())]
+    else:
+        command += [image]
+
+    return command
+
+
+def _execute_test(command: list[str], output: Path, timeout: int) -> int:
+    """Capture test output and reap the complete process group after a timeout."""
+    with (output / 'console.log').open('w') as log:
+        with subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True) as process:
+            try:
+                returncode = process.wait(timeout=timeout + 3600)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+                raise
+
+    return returncode
+
+
+def _run_tests(manifest_path: Path, source: str, output: Path, report: dict, *, backend: str,
+               image: str, dependency_repository: Path | None, timeout: int) -> None:
+    """Prepare verified candidates, run the isolated testbed, and collect its evidence."""
+    manifest, package, dsc, binaries = manifest_inputs(manifest_path.resolve(), source)
+    report.update(generation_id=manifest['generation_id'], version=package['version'],
+                  lock_sha256=manifest['lock_sha256'], target=manifest['target'])
+    if backend not in {'qemu', 'lxd'}:
+        raise ValueError('Only isolated qemu and lxd testbeds are supported')
+
+    candidates = {path.name: path for path in binaries}
+    if dependency_repository:
+        report['dependency_provenance'] = _merge_dependencies(candidates, dependency_repository)
+
+    repo, versions = _candidate_repository(output, candidates)
+    setup = _testbed_setup(output, manifest['target'])
+    command = _test_command(output, repo, setup, dsc, candidates, backend, image, timeout)
+    report.update(command=command,
+                  expected_versions={binary['package']: binary['version'] for binary in package['binaries']},
+                  candidate_versions=versions,
+                  installation_policy='autopkgtest resolves each test Depends; dpkg hook verifies installed candidate subsets')
+    returncode = _execute_test(command, output, timeout)
+    _record_test_results(report, output, returncode)
+
+
+def _record_test_results(report: dict, output: Path, returncode: int) -> None:
+    """Attach summary classification and bounded test diagnostics to the run report."""
+    summary_path = output / 'summary'
+    summary = summary_path.read_text() if summary_path.exists() else ''
+    report.update(summary=summary, **classify(returncode, summary))
+    report['test_diagnostics'] = collect_test_diagnostics(output / 'testbed', report['tests'])
 
 
 def run(manifest_path: Path, source: str, output: Path, *, backend: str, image: str,
         dependency_repository: Path | None = None, timeout: int = 7200) -> dict:
+    """Run installed-package tests and persist failure evidence even when setup fails."""
     output.mkdir(parents=True, exist_ok=False)
     report = {'schema_version': 1, 'source': source, 'result': 'INFRA_ERROR', 'backend': backend, 'image': image}
     try:
-        manifest, package, dsc, binaries = manifest_inputs(manifest_path.resolve(), source)
-        report.update(generation_id=manifest['generation_id'], version=package['version'],
-                      lock_sha256=manifest['lock_sha256'], target=manifest['target'])
-        if backend not in {'qemu', 'lxd'}:
-            raise ValueError('Only isolated qemu and lxd testbeds are supported')
-        candidates = {p.name: p for p in binaries}
-        if dependency_repository:
-            provenance = json.loads((dependency_repository / 'provenance.json').read_text())
-            for record in provenance['packages']:
-                relative = Path(record['path'])
-                path = (dependency_repository / relative).resolve()
-                if not path.is_relative_to(dependency_repository.resolve()) or not path.is_file() or sha256(path) != record['sha256']:
-                    raise ValueError(f'Corrupt dependency repository artifact: {relative}')
-                if path.name in candidates and sha256(candidates[path.name]) != record['sha256']:
-                    raise ValueError(f'Conflicting candidate: {path.name}')
-                candidates[path.name] = path
-            report['dependency_provenance'] = provenance
-        repo = output / 'candidate-repository'
-        repo.mkdir()
-        for name, path in candidates.items():
-            shutil.copy2(path, repo / name)
-        with (repo / 'Packages').open('w') as handle:
-            subprocess.run(['dpkg-scanpackages', '.', '/dev/null'], cwd=repo, stdout=handle, check=True)
-        expected = {b['package']: b['version'] for b in package['binaries']}
-        pin = []
-        versions = {}
-        for path in candidates.values():
-            name, version = subprocess.check_output(['dpkg-deb', '-f', str(path), 'Package', 'Version'], text=True).strip().splitlines()
-            # dpkg-deb emits field labels when multiple fields are requested.
-            name, version = name.removeprefix('Package: '), version.removeprefix('Version: ')
-            if name in versions and versions[name] != version:
-                raise ValueError(f'Multiple versions in candidate repository: {name}')
-            versions[name] = version
-            pin.append(f'Package: {name}\nPin: version {version}\nPin-Priority: 1001\n')
-        (repo / 'preferences').write_text('\n'.join(pin))
-        (repo / 'verify-installed.py').write_text(candidate_check_script(versions))
-        cloud = manifest['target'].get('cloud_archive')
-        cloud_setup = ''
-        if cloud:
-            source = (f"deb [signed-by={cloud['keyring']}] {cloud['repository']} "
-                      f"{cloud['distribution']} {cloud['component']}")
-            cloud_setup = (
-                'DEBIAN_FRONTEND=noninteractive apt-get install -y ubuntu-cloud-keyring\n'
-                + "printf '%s\\n' " + shlex.quote(source)
-                + ' > /etc/apt/sources.list.d/ubuntu-cloud-archive.list\n')
-        setup = output / 'setup.sh'
-        setup.write_text('set -eu\n'
-                         'test "$(. /etc/os-release; echo "$VERSION_CODENAME")" = ' + shlex.quote(manifest['target']['suite']) + '\n'
-                         "printf '%s\\n' 'deb [trusted=yes] file:/opt/packagetest-candidate ./' > /etc/apt/sources.list.d/packagetest.list\n"
-                         'cp /opt/packagetest-candidate/preferences /etc/apt/preferences.d/packagetest\n'
-                         'apt-get update\n'
-                         + cloud_setup +
-                         'apt-get update\n'
-                         'DEBIAN_FRONTEND=noninteractive apt-get install -y apt-utils\n'
-                         'command -v python3\n'
-                         "printf '%s\\n' 'post-invoke=python3 /opt/packagetest-candidate/verify-installed.py' > /etc/dpkg/dpkg.cfg.d/packagetest-versions\n")
-        command = ['autopkgtest', '--no-built-binaries', '--no-apt-fallback',
-                   '--output-dir=' + str(output / 'testbed'), '--summary=' + str(output / 'summary'),
-                   '--timeout-test=' + str(timeout), '--timeout-install=1800',
-                   '--copy=' + str(repo.resolve()) + ':/opt/packagetest-candidate',
-                   '--setup-commands=' + str(setup.resolve()), str(dsc),
-                   *[str(p) for p in candidates.values()], '--', backend]
-        if backend == 'qemu':
-            command += ['--ram-size=4096', '--cpus=2', str(Path(image).resolve())]
-        else:
-            command += [image]
-        report.update(command=command, expected_versions=expected, candidate_versions=versions,
-                      installation_policy='autopkgtest resolves each test Depends; dpkg hook verifies installed candidate subsets')
-        with (output / 'console.log').open('w') as log:
-            with subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True) as process:
-                try:
-                    returncode = process.wait(timeout=timeout + 3600)
-                except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
-                    process.wait()
-                    raise
-        summary_path = output / 'summary'
-        summary = summary_path.read_text() if summary_path.exists() else ''
-        report.update(summary=summary, **classify(returncode, summary))
-        report['test_diagnostics'] = collect_test_diagnostics(
-            output / 'testbed', report['tests'])
+        _run_tests(manifest_path, source, output, report, backend=backend, image=image,
+                   dependency_repository=dependency_repository, timeout=timeout)
     except (OSError, ValueError, KeyError, StopIteration, subprocess.SubprocessError) as error:
         report.update(result='INFRA_ERROR', error=str(error))
     finally:
         (output / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
+
     return report

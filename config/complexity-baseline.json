@@ -10,8 +10,6 @@
   "src/packagetest/artifacts.py:checksum_entries": 10,
   "src/packagetest/artifacts.py:fields": 12,
   "src/packagetest/artifacts.py:verify_binaries": 29,
-  "src/packagetest/autopkgtest.py:manifest_inputs": 10,
-  "src/packagetest/autopkgtest.py:run": 21,
   "src/packagetest/cli.py:plan_cmd": 6,
   "src/packagetest/commands.py:CommandRunner.run": 17,
   "src/packagetest/contracts.py:BuildTarget.from_mapping": 7,
