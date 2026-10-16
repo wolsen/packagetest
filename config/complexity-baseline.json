@@ -1,9 +1,4 @@
 {
-  "src/packagetest/commands.py:CommandRunner.run": 17,
-  "src/packagetest/locked.py:LockedBuild.failure": 11,
-  "src/packagetest/locked.py:LockedBuild.git_source": 25,
-  "src/packagetest/locked.py:LockedBuild.preflight": 7,
-  "src/packagetest/locked.py:LockedBuild.run": 21,
   "src/packagetest/nightly_build.py:main": 29,
   "src/packagetest/nightly_build.py:required_versions": 7,
   "src/packagetest/nightly_build.py:validate_candidate_dependencies": 11,
@@ -46,7 +41,5 @@
   "src/packagetest/prepared_plan.py:dependency_inputs": 9,
   "src/packagetest/prepared_plan.py:exact_dependencies": 26,
   "src/packagetest/prepared_plan.py:load_prepared": 18,
-  "src/packagetest/prepared_plan.py:relation_groups": 7,
-  "src/packagetest/snapshot.py:build_snapshot": 23,
-  "src/packagetest/snapshot.py:canonical_sdist": 18
+  "src/packagetest/prepared_plan.py:relation_groups": 7
 }
