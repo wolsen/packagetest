@@ -18,7 +18,20 @@ logger = logging.getLogger(__name__)
 def _default_config_path() -> Path:
     return default_config_path("vertical_slice.json")
 
+def _add_release_metadata(row: dict, resolved_release: ResolvedRelease | None) -> None:
+    """Attach discovered upstream identity to one advisory plan row."""
+    if resolved_release is not None:
+        row["resolved_upstream_version"] = resolved_release.version
+        row["resolved_upstream_tag_or_sha"] = resolved_release.upstream_ref
+        if resolved_release.snapshot_at:
+            row["resolved_upstream_sha"] = resolved_release.upstream_ref
+
+        row["release_series"] = resolved_release.series
+        row["release_deliverable_path"] = resolved_release.deliverable_path
+
+
 def plan_cmd(args: argparse.Namespace) -> int:
+    """Build and print an advisory plan with per-source release diagnostics."""
     logger.debug("Starting plan command with args: %s", vars(args))
     definitions = load_package_definitions(Path(args.config))
     plan = build_plan(
@@ -33,16 +46,10 @@ def plan_cmd(args: argparse.Namespace) -> int:
     payload = plan.as_dict()
     for row in payload["planned_builds"]:
         source = row["source_package"]
-        resolved_release = resolved_releases.get(source)
-        if resolved_release is not None:
-            row["resolved_upstream_version"] = resolved_release.version
-            row["resolved_upstream_tag_or_sha"] = resolved_release.upstream_ref
-            if resolved_release.snapshot_at:
-                row["resolved_upstream_sha"] = resolved_release.upstream_ref
-            row["release_series"] = resolved_release.series
-            row["release_deliverable_path"] = resolved_release.deliverable_path
+        _add_release_metadata(row, resolved_releases.get(source))
         if source in resolution_errors:
             row["release_resolution_error"] = resolution_errors[source]
+
     print(json.dumps(payload, indent=2, sort_keys=True))
     logger.debug("Plan command completed with %d release resolution errors", len(resolution_errors))
     return 1 if resolution_errors else 0

@@ -24,9 +24,19 @@ def clone_releases(destination: Path, repository: str, ref: str) -> None:
     ], check=True)
 
 
+def _annotate_index_urls(catalog: dict, suite: str, extra_indexes: list[dict]) -> None:
+    """Record download origins for both source and Python package indexes."""
+    index_urls = {item['filename']: item['url']
+                  for item in [*ubuntu_source_indexes(suite), *extra_indexes]}
+    for key in ('archive_indexes', 'archive_python_indexes'):
+        for item in catalog[key]:
+            item['url'] = index_urls[item['filename']]
+
+
 def generate(*, output: Path, workspace: Path, suite: str, series: str,
              codename: str, releases_repository: str, releases_ref: str,
              validate_sources: bool = True, target: dict | None = None) -> dict:
+    """Freeze release and archive metadata, optionally validating source artifacts."""
     releases = workspace / 'releases'
     indexes = workspace / 'indexes'
     workspace.mkdir(parents=True, exist_ok=False)
@@ -37,14 +47,11 @@ def generate(*, output: Path, workspace: Path, suite: str, series: str,
     catalog = make_catalog(releases, index_paths, series=series,
                            codename=codename, suite=suite, target=target,
                            index_metadata=metadata)
-    index_urls = {item['filename']: item['url']
-                  for item in [*ubuntu_source_indexes(suite), *extra_indexes]}
-    for key in ('archive_indexes', 'archive_python_indexes'):
-        for item in catalog[key]:
-            item['url'] = index_urls[item['filename']]
+    _annotate_index_urls(catalog, suite, extra_indexes)
     populate_binary_catalog(catalog, indexes)
     if validate_sources:
         validate_archive_sources(catalog)
+
     write_catalog(catalog, output)
     return catalog
 

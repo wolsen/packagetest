@@ -27,24 +27,38 @@ class Resolver:
         return (self.runner.log_path.parent / f'{self.runner.sequence:04d}.stdout.log').read_text().strip()
 
 
-def select_commit(resolver, checkout: Path, ref: str, cutoff: str | None) -> dict:
+def _commit_at_cutoff(resolver: Resolver, checkout: Path, tip: str, cutoff: str | None) -> str:
+    """Select from first-parent history without assuming monotonic commit dates."""
+    if not cutoff:
+        return tip
+
+    when = datetime.fromisoformat(cutoff.replace('Z', '+00:00'))
+    if when.tzinfo is None:
+        raise ValueError('Snapshot cutoff requires an explicit timezone')
+
+    history = resolver.command('git', 'log', '--first-parent', '--format=%H %ct', tip, cwd=checkout)
+    return _first_commit_before(history, int(when.timestamp()))
+
+
+def _first_commit_before(history: str, limit: int) -> str:
+    """Choose the first eligible branch state, allowing timestamp reversals."""
+    for line in history.splitlines():
+        sha, timestamp = line.split()
+        if int(timestamp) <= limit:
+            return sha
+
+    raise ValueError('No branch commit exists at or before cutoff')
+
+
+def select_commit(resolver: Resolver, checkout: Path, ref: str, cutoff: str | None) -> dict:
+    """Resolve the branch state and record its complete release-relative commit inventory."""
     resolver.command('git', 'check-ref-format', '--branch', ref)
     tip = resolver.command('git', 'rev-parse', f'refs/remotes/origin/{ref}^{{commit}}', cwd=checkout)
-    sha = tip
-    if cutoff:
-        when = datetime.fromisoformat(cutoff.replace('Z', '+00:00'))
-        if when.tzinfo is None:
-            raise ValueError('Snapshot cutoff requires an explicit timezone')
-        limit = int(when.timestamp())
-        # Enumerate instead of --before: Git traversal may stop at a timestamp
-        # reversal. Only first-parent history defines the selected branch state.
-        history = resolver.command('git', 'log', '--first-parent', '--format=%H %ct', tip, cwd=checkout)
-        sha = next((line.split()[0] for line in history.splitlines() if int(line.split()[1]) <= limit), None)
-        if sha is None:
-            raise ValueError('No branch commit exists at or before cutoff')
+    sha = _commit_at_cutoff(resolver, checkout, tip, cutoff)
     base = resolver.command('git', 'describe', '--tags', '--abbrev=0', '--match=[0-9]*', sha, cwd=checkout)
     if not re.fullmatch(r'[0-9][a-zA-Z0-9.+~\-]*', base):
         raise ValueError('Snapshot base is not a supported release tag')
+
     base_sha = resolver.command('git', 'rev-parse', f'refs/tags/{base}^{{commit}}', cwd=checkout)
     count = int(resolver.command('git', 'rev-list', '--count', f'{base_sha}..{sha}', cwd=checkout))
     history = resolver.command(
@@ -55,8 +69,10 @@ def select_commit(resolver, checkout: Path, ref: str, cutoff: str | None) -> dic
         commit_sha, timestamp, author, subject = line.split('\0', 3)
         commits.append({'sha': commit_sha, 'timestamp': int(timestamp),
                         'author': author, 'subject': subject})
+
     if len(commits) != count:
         raise ValueError('Snapshot commit inventory differs from Git revision count')
+
     epoch = int(resolver.command('git', 'show', '-s', '--format=%ct', sha, cwd=checkout))
     version = snapshot_version(base, epoch, count, sha)
     return {'ref': ref, 'resolved_branch_tip': tip, 'cutoff': cutoff, 'sha': sha,

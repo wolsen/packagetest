@@ -1,3 +1,4 @@
+"""Select and order source packages for advisory build plans."""
 from __future__ import annotations
 
 import uuid
@@ -15,23 +16,8 @@ def build_plan(
     include_dependency_closure: bool = True,
     snapshot_at: str | None = None,
 ) -> BuildPlan:
-    selected: set[str] = set()
-    if include_dependency_closure:
-        to_visit = deque(requested_sources)
-        while to_visit:
-            source = to_visit.popleft()
-            if source in selected:
-                continue
-            if source not in definitions:
-                raise KeyError(f"Unknown source package: {source}")
-            selected.add(source)
-            to_visit.extend(definitions[source].build_depends_on_sources)
-    else:
-        for source in requested_sources:
-            if source not in definitions:
-                raise KeyError(f"Unknown source package: {source}")
-            selected.add(source)
-
+    """Select requested sources and produce a dependency-ordered advisory plan."""
+    selected = _select_sources(definitions, requested_sources, include_dependency_closure)
     order = _topological_order(definitions, selected)
     planned = [
         PlannedBuild(
@@ -51,24 +37,65 @@ def build_plan(
     )
 
 
-def _topological_order(definitions: dict[str, PackageDefinition], selected: set[str]) -> list[str]:
-    indegree = {s: 0 for s in selected}
-    children: dict[str, list[str]] = {s: [] for s in selected}
-    for source in selected:
-        for dep in definitions[source].build_depends_on_sources:
-            if dep in selected:
-                indegree[source] += 1
-                children[dep].append(source)
+def _select_sources(definitions: dict[str, PackageDefinition], requested: list[str],
+                    include_dependencies: bool) -> set[str]:
+    """Validate requested sources and optionally walk their transitive dependencies."""
+    selected: set[str] = set()
+    to_visit = deque(requested)
+    while to_visit:
+        source = to_visit.popleft()
+        if source in selected:
+            continue
 
-    queue = deque(sorted(s for s, i in indegree.items() if i == 0))
-    out: list[str] = []
-    while queue:
-        node = queue.popleft()
-        out.append(node)
-        for child in sorted(children[node]):
-            indegree[child] -= 1
-            if indegree[child] == 0:
+        if source not in definitions:
+            raise KeyError(f"Unknown source package: {source}")
+
+        selected.add(source)
+        if include_dependencies:
+            to_visit.extend(definitions[source].build_depends_on_sources)
+
+    return selected
+
+
+class DependencyOrder:
+    """Own remaining edge counts while ordering one selected dependency graph."""
+
+    def __init__(self, definitions: dict[str, PackageDefinition], selected: set[str]) -> None:
+        """Index only edges whose producers are part of this build selection."""
+        self.indegree = {source: 0 for source in selected}
+        self.children: dict[str, list[str]] = {source: [] for source in selected}
+        for source in selected:
+            self._register(source, definitions[source].build_depends_on_sources)
+
+    def _register(self, source: str, dependencies: list[str]) -> None:
+        """Retain duplicate edges so each has a corresponding release operation."""
+        for dependency in dependencies:
+            if dependency in self.indegree:
+                self.indegree[source] += 1
+                self.children[dependency].append(source)
+
+    def _release_children(self, node: str, queue: deque[str]) -> None:
+        """Release newly ready consumers in stable lexical order."""
+        for child in sorted(self.children[node]):
+            self.indegree[child] -= 1
+            if self.indegree[child] == 0:
                 queue.append(child)
-    if len(out) != len(selected):
-        raise ValueError("Dependency graph contains a cycle")
-    return out
+
+    def ordered(self) -> list[str]:
+        """Consume ready nodes and reject any remaining cyclic component."""
+        queue = deque(sorted(source for source, count in self.indegree.items() if count == 0))
+        out: list[str] = []
+        while queue:
+            node = queue.popleft()
+            out.append(node)
+            self._release_children(node, queue)
+
+        if len(out) != len(self.indegree):
+            raise ValueError("Dependency graph contains a cycle")
+
+        return out
+
+
+def _topological_order(definitions: dict[str, PackageDefinition], selected: set[str]) -> list[str]:
+    """Return producers before consumers using the selected subgraph only."""
+    return DependencyOrder(definitions, selected).ordered()

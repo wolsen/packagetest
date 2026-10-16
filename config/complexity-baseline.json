@@ -3,11 +3,9 @@
   "scripts/analyze-packaging-failure.py:main": 6,
   "scripts/analyze-packaging-failure.py:run": 18,
   "scripts/analyze-packaging-failure.py:write_summary": 7,
-  "scripts/generate-nightly-catalog.py:generate": 7,
   "scripts/model-contract-test.py:main": 16,
   "scripts/package-readiness.py:main": 7,
   "scripts/plan-failure-analysis.py:main": 6,
-  "src/packagetest/cli.py:plan_cmd": 6,
   "src/packagetest/commands.py:CommandRunner.run": 17,
   "src/packagetest/failure_summary.py:_print_command_trace": 13,
   "src/packagetest/failure_summary.py:summarize": 16,
@@ -62,8 +60,6 @@
   "src/packagetest/pipeline_report.py:render_evolution": 10,
   "src/packagetest/pipeline_report.py:render_html": 19,
   "src/packagetest/pipeline_report.py:render_proposal": 13,
-  "src/packagetest/planner.py:_topological_order": 12,
-  "src/packagetest/planner.py:build_plan": 10,
   "src/packagetest/prepared_plan.py:_split_relations": 11,
   "src/packagetest/prepared_plan.py:apply_prepared_metadata": 7,
   "src/packagetest/prepared_plan.py:dependency_inputs": 9,
@@ -79,6 +75,5 @@
   "src/packagetest/release_discovery.py:releases_from_deliverable_yaml": 11,
   "src/packagetest/release_discovery.py:resolve_release_from_deliverable_yaml": 28,
   "src/packagetest/snapshot.py:build_snapshot": 23,
-  "src/packagetest/snapshot.py:canonical_sdist": 18,
-  "src/packagetest/snapshot_lock.py:select_commit": 9
+  "src/packagetest/snapshot.py:canonical_sdist": 18
 }
