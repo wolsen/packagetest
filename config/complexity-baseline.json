@@ -1,7 +1,4 @@
 {
-  "src/packagetest/nightly_build.py:main": 29,
-  "src/packagetest/nightly_build.py:required_versions": 7,
-  "src/packagetest/nightly_build.py:validate_candidate_dependencies": 11,
   "src/packagetest/nightly_plan.py:CatalogScheduler.__init__": 6,
   "src/packagetest/nightly_plan.py:CatalogScheduler._break_cycles": 6,
   "src/packagetest/nightly_plan.py:CatalogScheduler._require_candidates": 9,
@@ -35,11 +32,5 @@
   "src/packagetest/nightly_source.py:write_packaging_proposal": 10,
   "src/packagetest/nightly_source.py:write_source_evolution": 8,
   "src/packagetest/patches.py:already_applied_patches": 11,
-  "src/packagetest/patches.py:integrated_upstream_patches": 14,
-  "src/packagetest/prepared_plan.py:_split_relations": 11,
-  "src/packagetest/prepared_plan.py:apply_prepared_metadata": 7,
-  "src/packagetest/prepared_plan.py:dependency_inputs": 9,
-  "src/packagetest/prepared_plan.py:exact_dependencies": 26,
-  "src/packagetest/prepared_plan.py:load_prepared": 18,
-  "src/packagetest/prepared_plan.py:relation_groups": 7
+  "src/packagetest/patches.py:integrated_upstream_patches": 14
 }
