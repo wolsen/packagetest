@@ -132,3 +132,41 @@ def test_corrupted_artifact_does_not_publish_partial_output(tmp_path: Path) -> N
         client.download('status-*', tmp_path)
 
     assert list(tmp_path.iterdir()) == []
+
+
+class GrowingAPI(FakeAPI):
+    """Prepend an upload between pages to reproduce overlapping live API results."""
+
+    def open(self, request: Request, timeout: int) -> io.BytesIO:
+        """Shift the second page by one record before serving its offset."""
+        parsed = urlparse(request.full_url)
+        if parsed.path.endswith('/artifacts') and parse_qs(parsed.query)['page'] == ['2']:
+            self.artifacts.insert(0, {'id': 10000, 'name': 'new-upload', 'expired': False})
+
+        return super().open(request, timeout)
+
+
+def test_concurrent_upload_does_not_make_one_artifact_ambiguous(tmp_path):
+    """Repeated IDs across live pages must download once without losing older producers."""
+    artifacts = [{'id': i, 'name': f'build-{i}', 'expired': False} for i in range(250)]
+    api = GrowingAPI(artifacts, zip_bytes('producer.tar.gz'))
+    client = WorkflowArtifacts('owner/repo', '123', 'token', opener=api)
+    assert client.download('{build-99,build-249}', tmp_path) == 2
+    assert (tmp_path / 'build-99/producer.tar.gz').is_file()
+    assert (tmp_path / 'build-249/producer.tar.gz').is_file()
+
+
+def test_distinct_artifacts_with_one_name_remain_ambiguous(tmp_path):
+    """Coalescing pagination overlap must not choose between separate uploaded objects."""
+    api = FakeAPI([{'id': i, 'name': 'build-demo', 'expired': False} for i in (1, 2)], zip_bytes())
+    client = WorkflowArtifacts('owner/repo', '123', 'token', opener=api)
+    with pytest.raises(ValueError, match='Duplicate matching artifact names'):
+        client.download('build-*', tmp_path)
+
+
+def test_repeated_id_with_changed_identity_is_rejected():
+    """Repeated IDs cannot silently substitute a different name or checksum."""
+    client = WorkflowArtifacts('owner/repo', '123', 'token', opener=FakeAPI([], b''))
+    inventory = {1: {'id': 1, 'name': 'build-demo', 'digest': 'sha256:original'}}
+    with pytest.raises(ValueError, match='identity changed'):
+        client._record_page(inventory, [{'id': 1, 'name': 'build-demo', 'digest': 'sha256:changed'}])

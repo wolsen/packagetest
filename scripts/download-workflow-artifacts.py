@@ -140,17 +140,36 @@ class WorkflowArtifacts:
             },
         )
 
+    def _record_page(
+        self, artifacts: dict[int, dict[str, Any]], values: list[dict[str, Any]]
+    ) -> None:
+        """Deduplicate repeated IDs while rejecting contradictory artifact identities."""
+        for artifact in values:
+            identity = int(artifact["id"])
+            previous = artifacts.get(identity)
+            if previous is not None and (previous["name"], previous.get("digest")) != (
+                artifact["name"],
+                artifact.get("digest"),
+            ):
+                raise ValueError(
+                    f"Artifact identity changed during inventory: {identity}"
+                )
+
+            artifacts.setdefault(identity, artifact)
+
     def inventory(self) -> list[dict[str, Any]]:
-        """Read every page, including pages beyond the first thousand artifacts."""
-        artifacts = []
+        """Read all pages, coalescing artifacts repeated by a changing live inventory."""
+        artifacts: dict[int, dict[str, Any]] = {}
         page = 1
         while True:
             url = f"{self.base}/actions/runs/{self.run_id}/artifacts?per_page={PAGE_SIZE}&page={page}"
             with self.opener.open(self._request(url), timeout=60) as response:
                 values = json.load(response)["artifacts"]
-            artifacts.extend(values)
+            # Concurrent uploads can shift offset-based page boundaries. The
+            # same ID may reappear; distinct IDs with one name remain ambiguous.
+            self._record_page(artifacts, values)
             if len(values) < PAGE_SIZE:
-                return artifacts
+                return list(artifacts.values())
 
             page += 1
 
