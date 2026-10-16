@@ -46,6 +46,7 @@ def load_lock(path: Path) -> dict[str, Any]:
         _validate_package_identity(package, seen)
         _validate_package_versions(package)
         _validate_acquisition(package['source'], package['input'])
+
     # Profile policy compares target and package fields after local validation.
     from .targets import validate_target
     validate_target(lock)
@@ -53,31 +54,28 @@ def load_lock(path: Path) -> dict[str, Any]:
 
 
 def _validate_lock_schema(lock: object) -> None:
+    """Validate the outer lock shape before reading its fields."""
     if not isinstance(lock, dict):
         raise ValueError('Build lock must be a JSON object')
+
     if lock.get('schema_version') != 1:
         raise ValueError('Unsupported lock schema_version (expected 1)')
+
     if not isinstance(lock.get('target'), dict):
         raise ValueError('Build lock target must be an object')
-    packages = lock.get('packages')
-    if not isinstance(packages, list):
-        raise ValueError('Build lock packages must be a list')
-    if not packages:
-        raise ValueError('Empty build lock')
-    if not all(isinstance(package, dict) for package in packages):
-        raise ValueError('Build lock packages must contain objects')
+
+    _validate_lock_packages(lock.get('packages'))
 
 
 def _validate_lock_target(lock: dict[str, Any]) -> None:
+    """Check target identity and backend constraints."""
     target = lock['target']
     BuildTarget.from_mapping(target)
     for name in ('suite', 'architecture', 'chroot'):
         if not re.fullmatch(r'[a-z0-9][a-z0-9+.-]*', target[name]):
             raise ValueError(f'Invalid target {name}')
-    if 'distribution' in target and not re.fullmatch(r'[a-z0-9][a-z0-9+.-]*', target['distribution']):
-        raise ValueError('Invalid target distribution')
-    if target.get('backend') != 'schroot':
-        raise ValueError('This slice requires an explicitly provisioned schroot backend')
+
+    _validate_backend(target)
 
 
 def _validate_package_identity(package: dict[str, Any], seen: set[str]) -> None:
@@ -85,39 +83,36 @@ def _validate_package_identity(package: dict[str, Any], seen: set[str]) -> None:
     source = package['source']
     if not re.fullmatch(r'[a-z0-9][a-z0-9+.-]+', source) or source in seen:
         raise ValueError(f'Invalid or duplicate source: {source}')
+
     for dep in package.get('depends_on', []):
         if dep not in seen:
             raise ValueError(f'{source}: dependency {dep} must precede its consumer in lock')
+
     seen.add(source)
 
 
 def _validate_package_versions(package: dict[str, Any]) -> None:
     """Keep Debian's version parser authoritative for solver constraints."""
     source = package['source']
-    for binary, version in package.get('required_build_versions', {}).items():
-        if not re.fullmatch(r'[a-z0-9][a-z0-9+.-]+(?::[a-z0-9-]+)?', binary):
-            raise ValueError('Invalid required binary dependency name')
-        if subprocess.run(['dpkg', '--validate-version', version], capture_output=True).returncode:
-            raise ValueError('Invalid required binary dependency version')
+    _validate_required_versions(package)
     if not package.get('expected_binaries'):
         raise ValueError(f'{source}: expected_binaries is required')
+
     if subprocess.run(['dpkg', '--validate-version', package['version']], capture_output=True).returncode:
         raise ValueError(f'{source}: invalid Debian version')
 
 
 def _validate_acquisition(source: str, acquisition: dict[str, Any]) -> None:
+    """Dispatch validation according to the explicit source acquisition kind."""
     kind = acquisition['kind']
     if kind not in {'archive', 'gbp', 'prepared-snapshot'}:
         raise ValueError('Only archive, gbp and prepared-snapshot inputs are supported')
+
     if kind == 'prepared-snapshot':
         _validate_prepared_pins(acquisition)
         return
-    snapshot = acquisition.get('snapshot')
-    if snapshot:
-        _validate_snapshot(acquisition, snapshot)
-    else:
-        item = acquisition['dsc'] if kind == 'archive' else acquisition['tarball']
-        _validate_download(source, item)
+
+    _validate_source_content(source, acquisition)
     if kind == 'gbp':
         _validate_gbp(source, acquisition)
 
@@ -133,22 +128,12 @@ def _validate_download(source: str, item: dict[str, Any]) -> None:
 
 
 def _validate_snapshot(acquisition: dict[str, Any], snapshot: dict[str, Any]) -> None:
+    """Validate import mode, repository identity, and snapshot artifacts."""
     if acquisition['kind'] != 'gbp' or acquisition.get('import_mode') != 'new' or 'tarball' in acquisition:
         raise ValueError('Snapshot requires a new gbp import and no release tarball')
-    if urlparse(snapshot['repository']).scheme != 'https':
-        raise ValueError('Snapshot repository must use HTTPS')
-    for key in ('sha', 'base_tag_sha'):
-        if not _hex(snapshot[key], 40):
-            raise ValueError(f'Snapshot requires a full Git {key}')
-    if not re.fullmatch(r'[0-9][a-zA-Z0-9.+~\-]*', snapshot['base_tag']):
-        raise ValueError('Invalid snapshot base tag')
-    if not _hex(snapshot.get('sdist_sha256'), 64):
-        raise ValueError('Invalid snapshot sdist checksum')
-    if snapshot.get('archive_format', 'legacy') not in {'legacy', 'portable-v1'}:
-        raise ValueError('Unsupported snapshot archive format')
-    if not snapshot.get('build_requirements'):
-        raise ValueError('Snapshot requires checksum-pinned build tools')
-    _validate_build_tool_pins(snapshot['build_requirements'])
+
+    _validate_snapshot_identity(snapshot)
+    _validate_snapshot_artifacts(snapshot)
 
 
 def _validate_build_tool_pins(requirements: list[dict[str, Any]]) -> None:
@@ -160,19 +145,96 @@ def _validate_build_tool_pins(requirements: list[dict[str, Any]]) -> None:
 
 
 def _validate_gbp(source: str, acquisition: dict[str, Any]) -> None:
+    """Validate Git packaging mode, commit pins, version, and branch names."""
     if acquisition.get('import_mode') not in {'reuse', 'new'}:
         raise ValueError('Explicit import_mode reuse or new is required')
-    keys = ['packaging_sha', 'upstream_sha', 'pristine_tar_sha']
-    if acquisition['import_mode'] == 'reuse':
-        keys.append('upstream_tag_sha')
-    for key in keys:
-        if not _hex(acquisition[key], 40):
-            raise ValueError(f'{source}: pin a full Git SHA for {key}')
+
+    _validate_gbp_commits(source, acquisition)
     if not re.fullmatch(r'[0-9][a-zA-Z0-9.+~\-]*', acquisition['upstream_version']):
         raise ValueError('Invalid Debian upstream version')
+
     for key in ('packaging_branch', 'upstream_branch', 'upstream_tag'):
         if subprocess.run(['git', 'check-ref-format', '--branch', acquisition[key]], capture_output=True).returncode:
             raise ValueError(f'Invalid Git ref: {key}')
+
+
+def _validate_lock_packages(packages: object) -> None:
+    """Require a nonempty list of package objects."""
+    if not isinstance(packages, list):
+        raise ValueError('Build lock packages must be a list')
+
+    if not packages:
+        raise ValueError('Empty build lock')
+
+    if not all(isinstance(package, dict) for package in packages):
+        raise ValueError('Build lock packages must contain objects')
+
+
+def _validate_backend(target: dict[str, Any]) -> None:
+    """Validate the upload distribution and explicitly selected backend."""
+    if 'distribution' in target and not re.fullmatch(r'[a-z0-9][a-z0-9+.-]*', target['distribution']):
+        raise ValueError('Invalid target distribution')
+
+    if target.get('backend') != 'schroot':
+        raise ValueError('This slice requires an explicitly provisioned schroot backend')
+
+
+def _validate_required_versions(package: dict[str, Any]) -> None:
+    """Validate dependency names and their exact Debian versions."""
+    for binary, version in package.get('required_build_versions', {}).items():
+        if not re.fullmatch(r'[a-z0-9][a-z0-9+.-]+(?::[a-z0-9-]+)?', binary):
+            raise ValueError('Invalid required binary dependency name')
+
+        if subprocess.run(['dpkg', '--validate-version', version], capture_output=True).returncode:
+            raise ValueError('Invalid required binary dependency version')
+
+
+def _validate_source_content(source: str, acquisition: dict[str, Any]) -> None:
+    """Validate either pinned snapshot content or a downloadable source."""
+    snapshot = acquisition.get('snapshot')
+    if snapshot:
+        _validate_snapshot(acquisition, snapshot)
+    else:
+        item = acquisition['dsc'] if acquisition['kind'] == 'archive' else acquisition['tarball']
+        _validate_download(source, item)
+
+
+def _validate_snapshot_identity(snapshot: dict[str, Any]) -> None:
+    """Require an HTTPS repository, complete Git identities, and a release tag."""
+    if urlparse(snapshot['repository']).scheme != 'https':
+        raise ValueError('Snapshot repository must use HTTPS')
+
+    for key in ('sha', 'base_tag_sha'):
+        if not _hex(snapshot[key], 40):
+            raise ValueError(f'Snapshot requires a full Git {key}')
+
+    if not re.fullmatch(r'[0-9][a-zA-Z0-9.+~\-]*', snapshot['base_tag']):
+        raise ValueError('Invalid snapshot base tag')
+
+
+def _validate_snapshot_artifacts(snapshot: dict[str, Any]) -> None:
+    """Require supported source serialization and checksum-pinned build tools."""
+    if not _hex(snapshot.get('sdist_sha256'), 64):
+        raise ValueError('Invalid snapshot sdist checksum')
+
+    if snapshot.get('archive_format', 'legacy') not in {'legacy', 'portable-v1'}:
+        raise ValueError('Unsupported snapshot archive format')
+
+    if not snapshot.get('build_requirements'):
+        raise ValueError('Snapshot requires checksum-pinned build tools')
+
+    _validate_build_tool_pins(snapshot['build_requirements'])
+
+
+def _validate_gbp_commits(source: str, acquisition: dict[str, Any]) -> None:
+    """Require full Git commits, including the reused upstream tag."""
+    keys = ['packaging_sha', 'upstream_sha', 'pristine_tar_sha']
+    if acquisition['import_mode'] == 'reuse':
+        keys.append('upstream_tag_sha')
+
+    for key in keys:
+        if not _hex(acquisition[key], 40):
+            raise ValueError(f'{source}: pin a full Git SHA for {key}')
 
 
 class StageFailure(RuntimeError):
