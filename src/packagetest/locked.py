@@ -271,12 +271,17 @@ class LockedBuild:
         temporary.write_text(json.dumps(self.manifest, indent=2) + '\n')
         temporary.replace(path)
 
-    def command(self, *argv: str, cwd: Path | None = None, env: dict | None = None) -> str:
+    def command(self, *argv: str, cwd: Path | None = None, env: dict | None = None,
+                full_output: bool = False) -> str:
+        """Run a staged command, reading full stdout only when explicitly requested."""
         self.last_result = self.runner.run(list(argv), cwd or self.work, env_diff=env)
         if self.last_result.exit_code:
             raise StageFailure(f'{self.stage}: {argv[0]} exited {self.last_result.exit_code}: {self.last_result.stderr[-2000:]}')
 
-        return self.last_result.stdout.strip()
+        if full_output:
+            return self.last_result.read_stdout().strip()
+
+        return self.last_result.stdout_tail.strip()
 
     def enter(self, stage: str):
         self.stage = stage

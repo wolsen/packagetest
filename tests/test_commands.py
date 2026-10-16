@@ -63,3 +63,41 @@ def test_timeout_remains_active_after_output_streams_close(tmp_path):
                          'import os,time; os.close(1); os.close(2); time.sleep(5)'], tmp_path)
     assert result.exit_code == 124
     assert result.duration_seconds < 3
+
+
+def test_complete_stdout_is_available_beyond_diagnostic_tail(tmp_path: Path) -> None:
+    """Large command output remains readable without exposing runner bookkeeping."""
+    import sys
+
+    result = CommandRunner(tmp_path / 'commands.jsonl').run(
+        [sys.executable, '-c', "print('BEGIN' + 'x' * 300000 + 'END')"], tmp_path)
+
+    assert len(result.stdout_tail.encode()) <= 262144
+    assert not result.stdout_tail.startswith('BEGIN')
+    assert result.read_stdout().startswith('BEGIN')
+    assert result.read_stdout().endswith('END\n')
+    assert Path(result.stderr_path).is_file()
+    assert result.to_dict()['stdout_path'] == result.stdout_path
+
+
+def test_preparation_and_discovery_accept_executor_without_log_bookkeeping(tmp_path: Path) -> None:
+    """Injected executors provide complete output through results, with arbitrary paths."""
+    from packagetest.models import CommandResult
+    from packagetest.nightly_source import SourcePreparer
+    from packagetest.snapshot_lock import Resolver
+
+    output = tmp_path / 'custom-output.txt'
+    output.write_text('complete output\n')
+
+    class Executor:
+        """Supply command results without a sequence counter or log directory."""
+
+        def run(self, command, cwd, env_diff=None):
+            """Return a short diagnostic tail and an explicitly located full capture."""
+            return CommandResult(command, str(cwd), env_diff or {}, 'tail', '', 0, 0.0,
+                                 stdout_path=str(output))
+
+    preparer = SourcePreparer(tmp_path / 'source', runner=Executor())
+    resolver = Resolver(tmp_path / 'discovery', runner=Executor())
+    assert preparer.command('example') == 'complete output'
+    assert resolver.command('example') == 'complete output'

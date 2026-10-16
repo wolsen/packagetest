@@ -6,25 +6,29 @@ from pathlib import Path
 import re
 import uuid
 
-from .commands import CommandRunner
+from .commands import CommandExecutor, CommandRunner
 from .locked import load_lock
 from .snapshot import build_snapshot, snapshot_version, snapshot_pep440_version
 
 
 class Resolver:
-    def __init__(self, root: Path):
+    """Own an upstream-discovery workspace and its injected process boundary."""
+
+    def __init__(self, root: Path, *, runner: CommandExecutor | None = None) -> None:
+        """Create a fresh discovery workspace with complete command capture."""
         self.root = root.resolve() / ('resolve-' + uuid.uuid4().hex[:12])
         self.work = self.root / 'work'
         self.work.mkdir(parents=True)
-        self.runner = CommandRunner(self.root / 'logs' / 'commands.jsonl', stream=True, timeout=900)
+        self.runner: CommandExecutor = runner if runner is not None else CommandRunner(
+            self.root / 'logs' / 'commands.jsonl', stream=True, timeout=900)
 
-    def command(self, *args, cwd=None, env=None):
+    def command(self, *args: str, cwd: Path | None = None, env: dict | None = None) -> str:
+        """Return complete command stdout for history and metadata discovery."""
         result = self.runner.run(list(args), cwd or self.work, env_diff=env)
         if result.exit_code:
             raise RuntimeError(f'{args[0]} failed: {result.stderr[-2000:]}')
-        # CommandResult contains only a diagnostic tail. Discovery must use
-        # the full history even for repositories with thousands of commits.
-        return (self.runner.log_path.parent / f'{self.runner.sequence:04d}.stdout.log').read_text().strip()
+
+        return result.read_stdout().strip()
 
 
 def _commit_at_cutoff(resolver: Resolver, checkout: Path, tip: str, cutoff: str | None) -> str:

@@ -1,6 +1,8 @@
+"""Shared planning records and command results exchanged between execution boundaries."""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 
@@ -18,6 +20,12 @@ class PackageDefinition:
 
 @dataclass
 class CommandResult:
+    """Command identity, bounded diagnostic tails, and optional complete-output files.
+
+    Executors that truncate stdout must supply its complete-output path. In-memory
+    executors may omit paths when stdout contains their complete captured output.
+    """
+
     command: list[str]
     cwd: str
     env_diff: dict[str, str]
@@ -25,8 +33,23 @@ class CommandResult:
     stderr: str
     exit_code: int
     duration_seconds: float
+    stdout_path: str | None = None
+    stderr_path: str | None = None
+
+    @property
+    def stdout_tail(self) -> str:
+        """Return the bounded stdout diagnostic text without reading the full log."""
+        return self.stdout
+
+    def read_stdout(self) -> str:
+        """Read complete stdout from its explicit log path or in-memory capture."""
+        if self.stdout_path is None:
+            return self.stdout
+
+        return Path(self.stdout_path).read_text(encoding="utf-8", errors="replace")
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize command identity, diagnostic tails, and complete-output locations."""
         return asdict(self)
 
 

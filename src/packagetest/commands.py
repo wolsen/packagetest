@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class CommandExecutor(Protocol):
-    """The process boundary required by the locked executor."""
+    """Execute commands and expose complete stdout independently of log naming."""
 
     def run(self, command: list[str], cwd: Path,
             env_diff: dict[str, str] | None = None) -> CommandResult: ...
@@ -132,8 +132,9 @@ class CommandRunner:
         logger.debug("Command env overrides: %s", env_diff)
         start = time.monotonic()
         self.sequence += 1
-        with (self.log_path.parent / f"{self.sequence:04d}.stdout.log").open("wb") as out, \
-             (self.log_path.parent / f"{self.sequence:04d}.stderr.log").open("wb") as err:
+        stdout_path = self.log_path.parent / f"{self.sequence:04d}.stdout.log"
+        stderr_path = self.log_path.parent / f"{self.sequence:04d}.stderr.log"
+        with stdout_path.open("wb") as out, stderr_path.open("wb") as err:
             capture = CommandCapture({"stdout": out, "stderr": err}, self.stream, self.timeout, start)
             exit_code = capture.execute(command, cwd, env)
 
@@ -157,6 +158,8 @@ class CommandRunner:
             stderr=stderr,
             exit_code=exit_code,
             duration_seconds=duration,
+            stdout_path=str(stdout_path.resolve()),
+            stderr_path=str(stderr_path.resolve()),
         )
         self._append(result)
         return result

@@ -33,7 +33,7 @@ from urllib.request import urlopen
 
 from .artifacts import checksum_entries, fields, sha256, verify_source
 from .catalog import dependency_names
-from .commands import CommandRunner
+from .commands import CommandExecutor, CommandRunner
 from .patches import already_applied_patches, integrated_upstream_patches, superseded_upstream_patches
 from .snapshot import build_snapshot
 from .snapshot_lock import select_commit
@@ -241,13 +241,14 @@ def write_source_evolution(report: dict, destination: Path) -> None:
 class SourcePreparer:
     """Own one isolated source-preparation workspace and its failure evidence."""
 
-    def __init__(self, destination: Path) -> None:
+    def __init__(self, destination: Path, *, runner: CommandExecutor | None = None) -> None:
         """Create a fresh destination and command log for source preparation."""
         self.root = destination.resolve()
         self.root.mkdir(parents=True, exist_ok=False)
         self.work = self.root / 'work'
         self.work.mkdir()
-        self.runner = CommandRunner(self.root / 'logs' / 'commands.jsonl', stream=True, timeout=1800)
+        self.runner: CommandExecutor = runner if runner is not None else CommandRunner(
+            self.root / 'logs' / 'commands.jsonl', stream=True, timeout=1800)
 
     def command(self, *args: str, cwd: Path | None = None, env: dict | None = None) -> str:
         """Run a preparation command and return its complete captured stdout."""
@@ -255,7 +256,7 @@ class SourcePreparer:
         if result.exit_code:
             raise RuntimeError(f'{args[0]} failed ({result.exit_code}): {result.stderr[-2000:]}')
 
-        return (self.runner.log_path.parent / f'{self.runner.sequence:04d}.stdout.log').read_text().strip()
+        return result.read_stdout().strip()
 
     def prepare(self, entry: dict, *, cutoff: str | None = None,
                 remediation_patch: Path | None = None, target: dict | None = None) -> dict:
