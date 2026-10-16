@@ -23,6 +23,7 @@ from .contracts import (
     prepared_manifest,
     prepared_metadata,
     records,
+    required_text,
     string_list,
     text_field,
 )
@@ -203,7 +204,7 @@ def load_prepared(
 ) -> dict[str, PreparedManifest]:
     """Validate one and only one immutable source manifest per catalog entry."""
     entries = {
-        text_field(entry, "source"): entry
+        required_text(entry, "source"): entry
         for entry in records(catalog.get("packages"), "packages")
     }
     manifests: dict[str, PreparedManifest] = {}
@@ -338,9 +339,10 @@ def _published_archive_versions(
 ) -> dict[str, list[ArchiveVersion]]:
     """Use binary publication evidence without importing packaging-source versions."""
     return {
-        text_field(item, "binary"): [
+        required_text(item, "binary"): [
             ArchiveVersion(
-                source=text_field(item, "source"), version=text_field(item, "version")
+                source=required_text(item, "source"),
+                version=required_text(item, "version"),
             )
         ]
         for item in packages
@@ -366,8 +368,8 @@ def _legacy_archive_versions(
         for binary in string_list(entry.get("binaries", []), "binaries"):
             result.setdefault(binary, []).append(
                 ArchiveVersion(
-                    source=text_field(entry, "source"),
-                    version=text_field(entry, "archive_version"),
+                    source=required_text(entry, "source"),
+                    version=required_text(entry, "archive_version"),
                 )
             )
 
@@ -375,9 +377,9 @@ def _legacy_archive_versions(
         catalog.get("archive_python_packages", []), "archive_python_packages"
     ):
         record = ArchiveVersion(
-            source=text_field(item, "source"), version=text_field(item, "version")
+            source=required_text(item, "source"), version=required_text(item, "version")
         )
-        binary = text_field(item, "binary")
+        binary = required_text(item, "binary")
         if record not in result.setdefault(binary, []):
             result[binary].append(record)
     return result
@@ -637,7 +639,7 @@ def apply_prepared_metadata(
     entries = records(result["packages"], "packages")
     result["packages"] = entries
     for entry in entries:
-        manifest = manifests[text_field(entry, "source")]
+        manifest = manifests[required_text(entry, "source")]
         metadata = prepared_metadata(manifest)
         entry.update(
             archive_binaries=entry.get("binaries", []),
@@ -645,9 +647,9 @@ def apply_prepared_metadata(
             prepared_version=metadata["version"],
             prepared_source={
                 "artifact": f"prepared-source-{entry['source']}",
-                "dsc": text_field(manifest, "dsc"),
-                "dsc_sha256": text_field(manifest, "dsc_sha256"),
-                "catalog_entry_sha256": text_field(manifest, "catalog_entry_sha256"),
+                "dsc": required_text(manifest, "dsc"),
+                "dsc_sha256": required_text(manifest, "dsc_sha256"),
+                "catalog_entry_sha256": required_text(manifest, "catalog_entry_sha256"),
             },
             exact_build_depends=metadata["build_depends"],
             exact_autopkgtests=metadata["autopkgtests"],

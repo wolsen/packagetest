@@ -84,7 +84,8 @@ class PreparedSource:
     @classmethod
     def from_mapping(cls, value: Mapping[str, object]) -> PreparedSource:
         """Validate and construct a prepared source identity."""
-        if value.get("schema_version") != 1:
+        schema = value.get("schema_version")
+        if type(schema) is not int or schema != 1:
             raise ValueError("Unsupported prepared source schema_version")
 
         source = cls(

@@ -252,3 +252,12 @@ def test_resolver_returns_independent_plans_from_captured_inputs():
     second.reasons[('b', 'a')][0]['phase'] = 'changed'
     second.errors.append({'error': 'caller mutation'})
     assert resolver.resolve() == first
+
+
+def test_archive_provider_without_version_evidence_is_rejected():
+    """Missing binary publication versions must not masquerade as an archive provider."""
+    from packagetest.prepared_plan import archive_versions
+
+    catalog = {'archive_binary_packages': [{'binary': 'python3-demo', 'source': 'demo'}]}
+    with pytest.raises(ValueError, match='version'):
+        archive_versions(catalog)

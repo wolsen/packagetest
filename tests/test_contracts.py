@@ -88,3 +88,14 @@ def test_prepared_manifest_detaches_nested_inputs_and_preserves_nullable_pins():
     assert manifest['binary_packages'][0]['depends'] == ''
     assert manifest['autopkgtests'][0]['depends'] == '@'
     assert manifest['pins']['packaging_sha'] is None
+
+
+@pytest.mark.parametrize('schema_version', [True, False, 1.0, '1', None])
+def test_prepared_manifest_requires_an_integer_schema_version(schema_version):
+    """Python equality must not make booleans or floating-point JSON schema IDs valid."""
+    from packagetest.contracts import prepared_manifest
+
+    manifest = valid_prepared_manifest()
+    manifest['schema_version'] = schema_version
+    with pytest.raises(ValueError, match='schema_version'):
+        prepared_manifest(manifest)

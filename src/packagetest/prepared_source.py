@@ -24,7 +24,7 @@ from packagetest.contracts import (
     object_mapping,
     prepared_manifest,
     records,
-    text_field,
+    required_text,
 )
 from packagetest.nightly_source import prepare_source
 from packagetest.prepared_plan import verify_prepared_bundle
@@ -126,18 +126,14 @@ def _validate_binary_declarations(
 
 def _copy_source_bundle(
     dsc: Path,
-    source_fields: dict[str, str],
+    files: list[Path],
     prepared: Mapping[str, object],
     output: Path,
-) -> list[Path]:
+) -> None:
     """Copy the verified artifacts and associated provenance into a new bundle."""
     output.mkdir(parents=True, exist_ok=False)
     source_dir = output / "source"
     source_dir.mkdir()
-    files = [
-        dsc,
-        *(dsc.parent / name for _, _, name in checksum_entries(source_fields)),
-    ]
     for path in files:
         shutil.copy2(path, source_dir / path.name)
 
@@ -145,10 +141,8 @@ def _copy_source_bundle(
     if proposal.is_dir():
         shutil.copytree(proposal, output / "packaging-proposal")
 
-    resolution = Path(text_field(prepared, "lock"))
+    resolution = Path(required_text(prepared, "lock"))
     shutil.copy2(resolution, output / "resolution.json")
-
-    return files
 
 
 def export_prepared(
@@ -158,10 +152,10 @@ def export_prepared(
     output: Path,
 ) -> PreparedManifest:
     """Verify and export an immutable source bundle with its planning metadata."""
-    dsc = Path(text_field(prepared, "dsc"))
-    tree = Path(text_field(prepared, "tree"))
+    dsc = Path(required_text(prepared, "dsc"))
+    tree = Path(required_text(prepared, "tree"))
     source_fields = verify_source(
-        dsc, text_field(entry, "source"), fields(dsc)["Version"]
+        dsc, required_text(entry, "source"), fields(dsc)["Version"]
     )
     metadata = control_metadata(tree)
     declared = _declared_binaries(source_fields, metadata)
@@ -196,7 +190,7 @@ def export_prepared(
             "ci": catalog["ci"],
         }
     )
-    _copy_source_bundle(dsc, source_fields, prepared, output)
+    _copy_source_bundle(dsc, files, prepared, output)
     (output / "prepared-source.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest
 
@@ -285,7 +279,7 @@ def main() -> int:
         raise ValueError("Frozen catalog belongs to another pipeline run or attempt")
 
     entries = {
-        text_field(entry, "source"): entry
+        required_text(entry, "source"): entry
         for entry in records(catalog.get("packages"), "packages")
     }
     if args.source not in entries:
