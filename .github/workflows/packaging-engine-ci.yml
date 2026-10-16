@@ -30,7 +30,7 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install -e '.[dev]'
       - run: ruff check src scripts tests
-      - run: ruff format --check src/packagetest/contracts.py src/packagetest/relations.py src/packagetest/prepared_plan.py src/packagetest/prepared_source.py
+      - run: ruff format --check src/packagetest/contracts.py src/packagetest/relations.py src/packagetest/prepared_plan.py src/packagetest/prepared_source.py src/packagetest/upstream_dependencies.py
       - run: python -m mypy
       - run: python scripts/check-complexity.py
       - run: bandit -r src scripts -lll -q

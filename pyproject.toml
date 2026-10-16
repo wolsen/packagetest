@@ -48,6 +48,7 @@ files = [
     "src/packagetest/relations.py",
     "src/packagetest/prepared_plan.py",
     "src/packagetest/prepared_source.py",
+    "src/packagetest/upstream_dependencies.py",
 ]
 strict = true
 follow_imports = "silent"

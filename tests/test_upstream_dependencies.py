@@ -181,3 +181,35 @@ def test_provider_ambiguity_is_not_hidden_by_distribution_aliases():
         {'distribution': 'pyyaml', 'binary': 'other', 'source': 'other', 'version': '1'},
     ])
     assert 'pyyaml' not in archive
+
+
+def test_pyproject_rejects_a_string_instead_of_a_requirement_array():
+    """Malformed TOML must not turn one requirement into per-character records."""
+    import pytest
+
+    with pytest.raises(ValueError, match='must be a list'):
+        parse_pyproject('[project]\ndependencies = "sushy>=5"\n')
+
+
+def test_dependency_group_includes_are_not_guessed_as_distribution_names():
+    """Structured group references remain unresolved while literal requirements survive."""
+    records = parse_pyproject('''
+[dependency-groups]
+test = [{include-group = "common"}, "stestr>=4"]
+''')
+    assert [record['distribution'] for record in records] == ['stestr']
+
+
+def test_metadata_fetch_rejects_empty_retry_budget_before_network_access(monkeypatch):
+    """Invalid fetch settings produce a clear error rather than an unbound diagnostic."""
+    import pytest
+    from packagetest import upstream_dependencies as metadata
+
+    def unexpected(*args, **kwargs):
+        """Fail if invalid settings reach the network boundary."""
+        raise AssertionError('invalid fetch settings must not contact upstream')
+
+    monkeypatch.setattr(metadata, 'urlopen', unexpected)
+    for settings in ({'attempts': 0}, {'attempts': -1}, {'timeout': 0}):
+        with pytest.raises(ValueError, match='must be positive'):
+            metadata.fetch_optional('https://example.invalid/requirements.txt', **settings)
