@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
@@ -284,22 +285,27 @@ class ExactDependencyResolver:
 
     def __init__(self, catalog: dict, manifests: dict[str, dict], context: BuildContext) -> None:
         """Validate provider uniqueness and initialize per-source decision collections."""
-        self.manifests = manifests
+        self.manifests = deepcopy(manifests)
         self.context = context
         self.providers = _prepared_providers(manifests)
-        self.archive = archive_versions(catalog)
+        self.archive = deepcopy(archive_versions(catalog))
         self.dependencies: dict[str, set[str]] = {source: set() for source in manifests}
         self.external: list[dict] = []
         self.errors: list[dict] = []
         self.reasons: dict[tuple[str, str], list[dict]] = {}
+        self._resolved: DependencyPlan | None = None
 
     def resolve(self) -> DependencyPlan:
-        """Resolve every source in stable order and return sorted dependency edges."""
-        for source, manifest in sorted(self.manifests.items()):
-            self._source(source, manifest)
+        """Resolve the captured inputs once and return an independent plan on every call."""
+        if self._resolved is None:
+            for source, manifest in sorted(self.manifests.items()):
+                self._source(source, manifest)
 
-        return DependencyPlan({source: sorted(values) for source, values in self.dependencies.items()},
-                              self.external, self.errors, self.reasons)
+            self._resolved = DependencyPlan(
+                {source: sorted(values) for source, values in self.dependencies.items()},
+                self.external, self.errors, self.reasons)
+
+        return deepcopy(self._resolved)
 
     def _source(self, source: str, manifest: dict) -> None:
         """Resolve active relation groups across build, test, and runtime phases."""

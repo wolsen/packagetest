@@ -224,3 +224,27 @@ def test_unknown_relation_syntax_is_rejected(expression):
 
 def test_deferred_substitutions_are_not_mistaken_for_packages():
     assert relation_groups('@, @builddeps@, ${misc:Depends}') == []
+
+
+def test_resolver_returns_independent_plans_from_captured_inputs():
+    """Repeated resolution and caller mutations must not change another plan."""
+    from packagetest.prepared_plan import ExactDependencyResolver
+    from packagetest.relations import BuildContext
+
+    manifests = {
+        'a': manifest('a', '2.0-1', ['python3-a']),
+        'b': manifest('b', '2.0-1', ['python3-b'], build='python3-a, debhelper-compat (= 13)'),
+    }
+    resolver = ExactDependencyResolver({'packages': []}, manifests, BuildContext())
+    manifests['b']['build_depends']['Build-Depends'] = ''
+    first = resolver.resolve()
+    second = resolver.resolve()
+    assert first == second
+    assert first.dependencies == {'a': [], 'b': ['a']}
+    assert len(first.external_decisions) == 1
+
+    second.dependencies['b'].clear()
+    second.external_decisions[0]['binaries'].clear()
+    second.reasons[('b', 'a')][0]['phase'] = 'changed'
+    second.errors.append({'error': 'caller mutation'})
+    assert resolver.resolve() == first
