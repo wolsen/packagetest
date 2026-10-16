@@ -101,3 +101,10 @@ def test_preparation_and_discovery_accept_executor_without_log_bookkeeping(tmp_p
     resolver = Resolver(tmp_path / 'discovery', runner=Executor())
     assert preparer.command('example') == 'complete output'
     assert resolver.command('example') == 'complete output'
+
+    from packagetest.locked import LockedBuild
+    build = LockedBuild({'target': {}, 'packages': []}, tmp_path / 'locked', runner=Executor())
+    assert build.command('example') == 'tail'
+    assert build.command('example', full_output=True) == 'complete output'
+    memory = CommandResult(['example'], str(tmp_path), {}, 'in-memory output', '', 0, 0.0)
+    assert memory.read_stdout() == 'in-memory output'

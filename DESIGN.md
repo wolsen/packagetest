@@ -47,7 +47,9 @@ relationship replanning after repairs remains a limitation.
 | Prepared dependency resolution | `prepared_plan.ExactDependencyResolver` | Ordered candidate providers and archive evidence to exact dependency choices |
 | Dependency syntax | `relations.BuildContext`, `DependencyRelation` | Target-aware restriction evaluation |
 | JSON identity | `contracts.BuildTarget`, `PreparedSource` | Validated immutable identity records |
+| Nightly build inputs | `nightly_build.BuildInputs`, `PreparedBuildSource` | Validated run and source evidence to build-lock construction |
 | Source orchestration | `nightly_source.SourcePreparer` | One workspace, command log, and preparation result |
+| Packaging adaptations | `nightly_source.EntryPointEditor`, `BuildDependencyEditor` | Existing manifest ownership and archive proof to explicit edits and actions |
 | Packaging checkout | `nightly_source.PackagingFetcher` | Pinned commit fetch with bounded host-specific retries |
 | Quilt policy | `patches` | Evidence for applied patches and review suggestions |
 | Quilt refresh | `failure_analysis.QuiltSection`, `QuiltPayload`, `QuiltSectionRefresh` | Validated sections, payload evidence, and isolated application probes |
@@ -61,13 +63,41 @@ relationship replanning after repairs remains a limitation.
 | Advisory failure analysis | `analyze-packaging-failure.AdvisoryAnalysis` | Prior response and validation evidence across two advisory attempts |
 | Reporting | `pipeline_report`, `packaging_proposal`, `failure_summary` | Evidence to human-readable reports |
 
-Objects own state and invariants. `LockedBuild` accepts an injected
-`CommandExecutor` protocol for process-boundary tests. Parsing, hashing, graph transformations, and
+Objects own state and invariants. `LockedBuild`, `SourcePreparer`, and snapshot
+discovery accept an injected `CommandExecutor` protocol for process-boundary
+tests. Parsing, hashing, graph transformations, and
 version calculations remain functions. No generic plugin framework or class
 hierarchy is needed. JSON remains the interchange format; typed records are
 used at identity and policy boundaries while preserving artifact schema
 compatibility. The handoff module constructs repositories for verified candidate
 packages.
+
+`BuildInputs` names the selected catalog source, target, run identity, and
+producer closure. `PreparedBuildSource` carries its descriptor, preparation
+evidence, and reuse status. Keeping these records separate lets lock construction
+check reused versions and repaired dependencies without depending on CLI options.
+
+```mermaid
+flowchart LR
+    C[Frozen catalog and run identity] --> I[BuildInputs]
+    S[Fresh or verified prepared source] --> P[PreparedBuildSource]
+    I --> L[Build lock]
+    P --> L
+    D[Verified producer artifacts] --> L
+    L --> B[LockedBuild]
+```
+
+`ExactDependencyResolver` captures its input manifests and archive evidence when
+constructed. It resolves those inputs once and returns a separate copy of the
+plan on each call. A consumer can annotate its result without changing another
+consumer's dependency evidence.
+
+`EntryPointEditor` owns the Debian manifest location and the baseline command
+owners. Each edit returns a finding and an optional action; an ambiguous owner
+remains a human decision. `BuildDependencyEditor` keeps source control text and
+its dependency inventory together so a successful addition is recorded once.
+The preparation module groups each policy with its private parsing and editing
+helpers, allowing a maintainer to follow one responsibility within the file.
 
 ## Execution and evidence
 
@@ -77,6 +107,11 @@ binary metadata and checksummed `.changes`/`.buildinfo`, then runs Lintian.
 A successful command without the required artifacts is a failed build.
 
 Command logs retain full stdout/stderr on disk and bounded tails in JSON.
+`CommandResult` exposes the complete-output paths and provides `read_stdout()`
+for metadata and history consumers. Its `stdout_tail` property reads only the
+bounded diagnostic text. In-memory executors can supply complete stdout without
+a file. `LockedBuild.command()` returns the tail unless `full_output=True` is
+requested, keeping verbose build logs out of memory during ordinary builds.
 Deadlines cover the entire subprocess lifetime, including time after its pipes
 close. Build manifests use atomic replacement. Failures retain the stage,
 packaging files, command details, and relevant Git evidence.
@@ -91,6 +126,10 @@ success alone does not authorize downstream handoff; see the
 Packaging Git commits and source checksums are pinned before execution.
 Generated sdists use pinned build tools and normalized archive headers.
 Fallback packaging sources and their reasons are recorded explicitly.
+Only `PackagingResolutionError` permits trying another packaging origin: this
+covers missing configured repositories or branches, failed Git queries, and
+query timeouts. Unexpected internal errors propagate instead of becoming a
+fallback decision, and packaging failures do not erase resolved upstream identity.
 
 `SourcePreparer` keeps the preparation stages in one workspace: validate the
 plan, select packaging, materialize upstream, generate the snapshot, preserve

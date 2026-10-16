@@ -76,6 +76,7 @@ def dependencies(entries: dict[str, dict[str, Any]], source: str) -> set[str]:
             if dep not in result:
                 result.add(dep)
                 visit(dep)
+
     visit(source)
     return result
 

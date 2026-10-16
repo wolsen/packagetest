@@ -22,7 +22,9 @@ class CommandExecutor(Protocol):
     """Execute commands and expose complete stdout independently of log naming."""
 
     def run(self, command: list[str], cwd: Path,
-            env_diff: dict[str, str] | None = None) -> CommandResult: ...
+            env_diff: dict[str, str] | None = None) -> CommandResult:
+        """Return diagnostic tails and access to complete captured stdout."""
+        ...
 
 
 class CommandCapture:

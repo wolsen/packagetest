@@ -3,10 +3,19 @@ from __future__ import annotations
 
 import argparse
 import shlex
+from urllib.parse import urlparse
 
 
 PPA_FINGERPRINT = '992D4F030DBED72FEE21747D540315018F3594DF'
 PPA_KEYRING = '/usr/share/keyrings/packagetest-uca-ppa.gpg'
+
+
+def is_uca_ppa_source(entry: dict) -> bool:
+    """Return whether the frozen source descriptor comes from a UCA PPA."""
+    url = entry.get('archive_source', {}).get('url', '')
+    parsed = urlparse(url)
+    return (parsed.hostname in {'ppa.launchpad.net', 'ppa.launchpadcontent.net'}
+            and parsed.path.startswith('/ubuntu-cloud-archive/'))
 
 
 def distro_repositories(suite: str) -> list[dict]:

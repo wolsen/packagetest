@@ -18,6 +18,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from packagetest.config import default_config_path
+from packagetest.repositories import is_uca_ppa_source
 
 # Catalog records retain archive and upstream evidence with evolving JSON fields.
 # Keep that extensibility at the boundary; graph state has concrete types.
@@ -34,14 +35,6 @@ DEBIAN_PACKAGING_FALLBACK_WARNING = (
 
 class PackagingResolutionError(ValueError):
     """An unavailable repository or branch permits trying the next packaging origin."""
-
-
-def is_uca_ppa_source(entry: dict) -> bool:
-    """Return whether the frozen source descriptor comes from a UCA PPA."""
-    url = entry.get('archive_source', {}).get('url', '')
-    parsed = urlparse(url)
-    return (parsed.hostname in {'ppa.launchpad.net', 'ppa.launchpadcontent.net'}
-            and parsed.path.startswith('/ubuntu-cloud-archive/'))
 
 
 class SourceDiscovery:
@@ -1025,7 +1018,6 @@ def _publish_dependency_pattern(pattern: str, names: list[str]) -> None:
         with open(os.environ["GITHUB_OUTPUT"], "a") as handle:
             handle.write("pattern=" + pattern + "\n")
             handle.write("needed=" + ("true" if names else "false") + "\n")
-
 
 
 def emit_dependency_pattern(args: argparse.Namespace) -> None:
