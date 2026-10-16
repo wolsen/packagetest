@@ -49,6 +49,18 @@ files = [
     "src/packagetest/prepared_plan.py",
     "src/packagetest/prepared_source.py",
     "src/packagetest/upstream_dependencies.py",
+    "src/packagetest/artifacts.py",
+    "src/packagetest/commands.py",
+    "src/packagetest/config.py",
+    "src/packagetest/final_plan.py",
+    "src/packagetest/models.py",
+    "src/packagetest/planner.py",
+    "src/packagetest/repositories.py",
+    "src/packagetest/snapshot_targets.py",
+    "src/packagetest/versioning.py",
+
 ]
 strict = true
 follow_imports = "silent"
+warn_unreachable = true
+disallow_any_unimported = true

@@ -1,11 +1,46 @@
 """Derive Ubuntu and UCA snapshot targets from the OpenStack release cadence."""
+
 from __future__ import annotations
 
+from collections.abc import Mapping
 import json
 from pathlib import Path
 import re
+from typing import NotRequired, TypedDict
 
-from .contracts import BuildTarget
+from .contracts import BuildTarget, object_mapping, string_mapping
+from .repositories import Repository
+
+
+class SourceIndex(TypedDict):
+    """A source publication index and its priority for baseline comparisons."""
+
+    filename: str
+    url: str
+    archive_root: str
+    pocket: str
+    comparison_priority: int
+
+
+class SnapshotTarget(TypedDict):
+    """Expanded distro or UCA target shared by cataloging and source preparation."""
+
+    id: str
+    label: str
+    kind: str
+    suite: str
+    ubuntu_release: str
+    builder_profile: str
+    distribution: str
+    base_series: str
+    architecture: str
+    openstack_series: str
+    openstack_codename: str
+    comparison_policy: str
+    debian_revision_suffix: str
+    extra_source_indexes: list[SourceIndex]
+    cloud_archive: NotRequired[Repository]
+    build_profiles: NotRequired[list[str]]
 
 
 def ubuntu_release_for_openstack(series: str) -> str:
@@ -34,13 +69,18 @@ def uca_lts_for_openstack(series: str) -> str:
     return f"{lts_year % 100:02d}.04"
 
 
-def _target_pair(series: str, codename: str, suites: dict[str, str]) -> list[dict]:
+def _target_pair(
+    series: str, codename: str, suites: dict[str, str]
+) -> list[SnapshotTarget]:
     ubuntu_release = ubuntu_release_for_openstack(series)
     uca_release = uca_lts_for_openstack(series)
-    missing = [release for release in (ubuntu_release, uca_release) if release not in suites]
+    missing = [
+        release for release in (ubuntu_release, uca_release) if release not in suites
+    ]
     if missing:
         raise ValueError(
-            f"Ubuntu suite codename mapping is missing: {', '.join(sorted(set(missing)))}")
+            f"Ubuntu suite codename mapping is missing: {', '.join(sorted(set(missing)))}"
+        )
 
     ubuntu_suite = suites[ubuntu_release]
     uca_suite = suites[uca_release]
@@ -84,31 +124,43 @@ def _target_pair(series: str, codename: str, suites: dict[str, str]) -> list[dic
             "extra_source_indexes": [
                 {
                     "filename": f"packagetest-{codename}-updates-{uca_suite}-main-Sources.xz",
-                    "url": ("https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
-                            f"{codename}-updates/ubuntu/dists/{uca_suite}/main/source/Sources.xz"),
-                    "archive_root": ("https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
-                                     f"{codename}-updates/ubuntu/"),
+                    "url": (
+                        "https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
+                        f"{codename}-updates/ubuntu/dists/{uca_suite}/main/source/Sources.xz"
+                    ),
+                    "archive_root": (
+                        "https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
+                        f"{codename}-updates/ubuntu/"
+                    ),
                     "pocket": f"uca-{codename}-updates",
                     "comparison_priority": 300,
                 },
                 {
                     "filename": f"packagetest-{codename}-staging-{uca_suite}-main-Sources.xz",
-                    "url": ("https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
-                            f"{codename}-staging/ubuntu/dists/{uca_suite}/main/source/Sources.xz"),
-                    "archive_root": ("https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
-                                     f"{codename}-staging/ubuntu/"),
+                    "url": (
+                        "https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
+                        f"{codename}-staging/ubuntu/dists/{uca_suite}/main/source/Sources.xz"
+                    ),
+                    "archive_root": (
+                        "https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
+                        f"{codename}-staging/ubuntu/"
+                    ),
                     "pocket": f"uca-{codename}-staging",
                     "comparison_priority": 200,
                 },
                 {
                     "filename": f"packagetest-{codename}-proposed-{uca_suite}-main-Sources.xz",
-                    "url": ("https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
-                            f"{codename}-proposed/ubuntu/dists/{uca_suite}/main/source/Sources.xz"),
-                    "archive_root": ("https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
-                                     f"{codename}-proposed/ubuntu/"),
+                    "url": (
+                        "https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
+                        f"{codename}-proposed/ubuntu/dists/{uca_suite}/main/source/Sources.xz"
+                    ),
+                    "archive_root": (
+                        "https://ppa.launchpadcontent.net/ubuntu-cloud-archive/"
+                        f"{codename}-proposed/ubuntu/"
+                    ),
                     "pocket": f"uca-{codename}-proposed",
                     "comparison_priority": 100,
-                }
+                },
             ],
         },
     ]
@@ -120,45 +172,53 @@ def _validate_codename(series: str, codename: str) -> None:
         raise ValueError(f"Invalid OpenStack codename for {series}")
 
 
-def _validate_mappings(suites: object, releases: object) -> None:
+def _validate_mappings(
+    suites: object, releases: object
+) -> tuple[dict[str, str], dict[str, str]]:
     """Require both mapping tables and at least one OpenStack release."""
-    if not isinstance(suites, dict) or not isinstance(releases, dict) or not releases:
+    suite_names = string_mapping(suites, "ubuntu_suites")
+    release_names = string_mapping(releases, "openstack_releases")
+    if not release_names:
         raise ValueError("Snapshot release mappings are incomplete")
 
+    return suite_names, release_names
 
-def load_targets(path: Path) -> dict[str, dict]:
+
+def load_targets(path: Path) -> dict[str, SnapshotTarget]:
     """Expand configured releases into distinct distro and UCA targets."""
-    config = json.loads(path.read_text())
+    config = object_mapping(json.loads(path.read_text()), "snapshot configuration")
     suites = config.get("ubuntu_suites")
     releases = config.get("openstack_releases")
-    _validate_mappings(suites, releases)
-    targets = {}
+    suites, releases = _validate_mappings(suites, releases)
+    targets: dict[str, SnapshotTarget] = {}
     for series, codename in releases.items():
         _validate_codename(series, codename)
         for target in _target_pair(series, codename, suites):
             if target["id"] in targets:
-                raise ValueError(f'Duplicate snapshot target: {target["id"]}')
+                raise ValueError(f"Duplicate snapshot target: {target['id']}")
 
             targets[target["id"]] = target
 
     return targets
 
 
-def load_target(path: Path, name: str) -> dict:
+def load_target(path: Path, name: str) -> SnapshotTarget:
+    """Find one configured target or report its unknown identifier."""
     try:
         return load_targets(path)[name]
     except KeyError as exc:
         raise ValueError(f"Unknown snapshot target: {name}") from exc
 
 
-def build_target(target: dict) -> dict:
-    result = {
+def build_target(target: SnapshotTarget) -> dict[str, object]:
+    """Export the sbuild target identity while preserving UCA and profile policy."""
+    result: dict[str, object] = {
         "id": target["id"],
         "kind": target["kind"],
         "suite": target["suite"],
         "architecture": target["architecture"],
         "backend": "schroot",
-        "chroot": f'{target["builder_profile"]}-{target["architecture"]}-sbuild',
+        "chroot": f"{target['builder_profile']}-{target['architecture']}-sbuild",
         "distribution": target["distribution"],
         "openstack_series": target["openstack_series"],
     }
@@ -171,13 +231,23 @@ def build_target(target: dict) -> dict:
     return result
 
 
-def catalog_target(catalog: dict) -> dict:
+def catalog_target(catalog: Mapping[str, object]) -> dict[str, object]:
+    """Require a complete validated target in a frozen catalog."""
     target = catalog.get("target")
     if not isinstance(target, dict):
         raise ValueError("Frozen catalog has no snapshot target")
 
-    required = {"id", "suite", "builder_profile", "distribution", "architecture",
-                "openstack_series", "openstack_codename", "debian_revision_suffix"}
+    target = object_mapping(target, "target")
+    required = {
+        "id",
+        "suite",
+        "builder_profile",
+        "distribution",
+        "architecture",
+        "openstack_series",
+        "openstack_codename",
+        "debian_revision_suffix",
+    }
     if required - target.keys():
         raise ValueError("Frozen catalog snapshot target is incomplete")
 

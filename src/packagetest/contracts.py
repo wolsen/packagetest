@@ -11,7 +11,7 @@ from typing import NotRequired, TypedDict
 from .relations import BuildContext
 
 
-def _text(value: Mapping[str, object], key: str) -> str:
+def required_text(value: Mapping[str, object], key: str) -> str:
     """Read a required nonempty string from the JSON boundary."""
     item = value.get(key)
     if not isinstance(item, str) or not item:
@@ -55,10 +55,10 @@ class BuildTarget:
     @classmethod
     def from_mapping(cls, value: Mapping[str, object]) -> BuildTarget:
         """Construct a target from its serialized identity."""
-        suite = _text(value, "suite")
-        architecture = _text(value, "architecture")
+        suite = required_text(value, "suite")
+        architecture = required_text(value, "architecture")
         distribution = (
-            _text(value, "distribution") if "distribution" in value else suite
+            required_text(value, "distribution") if "distribution" in value else suite
         )
         _validate_target_names(suite, architecture, distribution)
         profiles = _build_profiles(value)
@@ -89,7 +89,7 @@ class PreparedSource:
 
         source = cls(
             *(
-                _text(value, key)
+                required_text(value, key)
                 for key in (
                     "source",
                     "version",
@@ -278,7 +278,7 @@ def records(value: object, label: str) -> list[dict[str, object]]:
 def binary_metadata(value: Mapping[str, object]) -> BinaryMetadata:
     """Normalize optional binary fields while requiring its package identity."""
     return BinaryMetadata(
-        package=_text(value, "package"),
+        package=required_text(value, "package"),
         architecture=text_field(value, "architecture", "any"),
         depends=text_field(value, "depends"),
         pre_depends=text_field(value, "pre_depends"),
@@ -300,8 +300,8 @@ def autopkgtest_metadata(value: Mapping[str, object]) -> AutopkgtestMetadata:
 def prepared_metadata(value: Mapping[str, object]) -> PreparedMetadata:
     """Validate dependency inputs without requiring the bundle's provenance fields."""
     return PreparedMetadata(
-        source=_text(value, "source"),
-        version=_text(value, "version"),
+        source=required_text(value, "source"),
+        version=required_text(value, "version"),
         binaries=string_list(value.get("binaries"), "binaries"),
         build_depends=string_mapping(value.get("build_depends", {}), "build_depends"),
         binary_packages=[
@@ -318,11 +318,11 @@ def prepared_metadata(value: Mapping[str, object]) -> PreparedMetadata:
 
 def source_artifact(value: Mapping[str, object]) -> SourceArtifact:
     """Reject path escapes and malformed component digests before filesystem access."""
-    name = _text(value, "file")
+    name = required_text(value, "file")
     if Path(name).name != name or name in {".", ".."} or "\\" in name:
         raise ValueError("Source artifact must be a bundle-relative filename")
 
-    digest = _text(value, "sha256")
+    digest = required_text(value, "sha256")
     _validate_digests(digest)
     return SourceArtifact(file=name, sha256=digest)
 

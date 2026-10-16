@@ -1,10 +1,31 @@
 """Validate Debian artifacts, including checksums and actual binary metadata."""
+
 from __future__ import annotations
 
 import hashlib
 import re
 import subprocess
 from pathlib import Path
+from typing import TypedDict
+
+
+class BinaryArtifact(TypedDict):
+    """Verified binary identity and checksum exported in a producer handoff."""
+
+    file: str
+    package: str
+    version: str
+    architecture: str
+    sha256: str
+
+
+class BinaryVerification(TypedDict):
+    """Complete binary outputs and the build provenance establishing their inputs."""
+
+    binaries: list[BinaryArtifact]
+    changes: str
+    buildinfo: str
+    build_dependency_versions: dict[str, str]
 
 
 def sha256(path: Path) -> str:
@@ -19,7 +40,9 @@ def _unsigned_text(text: str) -> str:
         return text
 
     text = text.split("\n\n", 1)[1].split("-----BEGIN PGP SIGNATURE-----", 1)[0]
-    return "\n".join(line[2:] if line.startswith("- ") else line for line in text.splitlines())
+    return "\n".join(
+        line[2:] if line.startswith("- ") else line for line in text.splitlines()
+    )
 
 
 class MetadataParagraph:
@@ -73,7 +96,11 @@ def fields(path: Path) -> dict[str, str]:
 def _checksum_entry(line: str) -> tuple[str, int, str]:
     """Parse one SHA-256 record, rejecting unsafe names and negative sizes."""
     digest, size, name = line.split()
-    if not re.fullmatch(r"[a-f0-9]{64}", digest) or Path(name).name != name or name in {".", ".."}:
+    if (
+        not re.fullmatch(r"[a-f0-9]{64}", digest)
+        or Path(name).name != name
+        or name in {".", ".."}
+    ):
         raise ValueError(f"Invalid checksum entry: {line}")
 
     if int(size) < 0:
@@ -95,8 +122,14 @@ def checksum_entries(metadata: dict[str, str]) -> list[tuple[str, int, str]]:
 def _verify_reference(path: Path, digest: str, size: int, name: str) -> None:
     """Check one referenced artifact's presence, size, and digest."""
     artifact = path.parent / name
-    if not artifact.is_file() or artifact.stat().st_size != size or sha256(artifact) != digest:
-        raise ValueError(f"Missing or corrupt artifact referenced by {path.name}: {name}")
+    if (
+        not artifact.is_file()
+        or artifact.stat().st_size != size
+        or sha256(artifact) != digest
+    ):
+        raise ValueError(
+            f"Missing or corrupt artifact referenced by {path.name}: {name}"
+        )
 
 
 def verify_references(path: Path) -> dict[str, str]:
@@ -124,16 +157,23 @@ def _referenced_debs(metadata: dict[str, str]) -> set[str]:
 
 def _binary_changes(directory: Path) -> tuple[Path, dict[str, str]]:
     """Require exactly one binary changes descriptor and verify its referenced files."""
-    changes = [path for path in directory.glob("*.changes") if _referenced_debs(fields(path))]
+    changes = [
+        path for path in directory.glob("*.changes") if _referenced_debs(fields(path))
+    ]
     if len(changes) != 1:
         raise ValueError(f"Expected one binary .changes file, found {len(changes)}")
 
     return changes[0], verify_references(changes[0])
 
 
-def _verify_identity(metadata: dict[str, str], source: str, version: str, message: str) -> None:
+def _verify_identity(
+    metadata: dict[str, str], source: str, version: str, message: str
+) -> None:
     """Match source/version metadata, permitting a parenthesized source version."""
-    if metadata.get("Source", "").split(" ", 1)[0] != source or metadata.get("Version") != version:
+    if (
+        metadata.get("Source", "").split(" ", 1)[0] != source
+        or metadata.get("Version") != version
+    ):
         raise ValueError(message)
 
 
@@ -149,15 +189,24 @@ def _binary_control(path: Path) -> dict[str, str]:
     return control
 
 
-def _binary_record(path: Path, source: str, version: str, arch: str) -> dict:
+def _binary_record(path: Path, source: str, version: str, arch: str) -> BinaryArtifact:
     """Verify actual binary metadata before recording its identity and digest."""
     control = _binary_control(path)
     actual_source = control.get("Source", control.get("Package", "")).split(" ", 1)[0]
-    if actual_source != source or control.get("Version") != version or control.get("Architecture") not in {arch, "all"}:
+    if (
+        actual_source != source
+        or control.get("Version") != version
+        or control.get("Architecture") not in {arch, "all"}
+    ):
         raise ValueError(f"Binary metadata mismatch: {path.name}")
 
-    return {"file": path.name, "package": control["Package"], "version": control["Version"],
-            "architecture": control["Architecture"], "sha256": sha256(path)}
+    return {
+        "file": path.name,
+        "package": control["Package"],
+        "version": control["Version"],
+        "architecture": control["Architecture"],
+        "sha256": sha256(path),
+    }
 
 
 def _verify_binary_set(directory: Path, metadata: dict[str, str]) -> set[str]:
@@ -169,36 +218,57 @@ def _verify_binary_set(directory: Path, metadata: dict[str, str]) -> set[str]:
     return referenced
 
 
-def _verify_expected_binaries(binaries: list[dict], expected: list[str]) -> None:
+def _verify_expected_binaries(
+    binaries: list[BinaryArtifact], expected: list[str]
+) -> None:
     """Reject empty builds and builds missing any expected binary package."""
     missing = sorted(set(expected) - {binary["package"] for binary in binaries})
     if not binaries or missing:
         raise ValueError(f"Expected binaries not produced: {missing or expected}")
 
 
-def _buildinfo(directory: Path, metadata: dict[str, str], source: str, version: str) -> tuple[Path, dict[str, str]]:
+def _buildinfo(
+    directory: Path, metadata: dict[str, str], source: str, version: str
+) -> tuple[Path, dict[str, str]]:
     """Require checksummed build provenance with exact installed dependency versions."""
-    paths = [directory / name for _, _, name in checksum_entries(metadata) if name.endswith(".buildinfo")]
+    paths = [
+        directory / name
+        for _, _, name in checksum_entries(metadata)
+        if name.endswith(".buildinfo")
+    ]
     if len(paths) != 1:
         raise ValueError("Expected a checksummed .buildinfo file")
 
     info = fields(paths[0])
     _verify_identity(info, source, version, "Buildinfo source/version mismatch")
     installed = info.get("Installed-Build-Depends", "")
-    versions = dict(re.findall(r"([a-z0-9][a-z0-9+.:\-]*)\s+\(=\s*([^\s)]+)\)", installed))
+    versions = dict(
+        re.findall(r"([a-z0-9][a-z0-9+.:\-]*)\s+\(=\s*([^\s)]+)\)", installed)
+    )
     if not versions:
         raise ValueError("Buildinfo has no installed build dependency versions")
 
     return paths[0], versions
 
 
-def verify_binaries(directory: Path, *, source: str, version: str, expected: list[str], arch: str) -> dict:
+def verify_binaries(
+    directory: Path, *, source: str, version: str, expected: list[str], arch: str
+) -> BinaryVerification:
     """Verify binary completeness, package identity, and checksummed build provenance."""
     changes, metadata = _binary_changes(directory)
-    _verify_identity(metadata, source, version, "Binary .changes source/version mismatch")
+    _verify_identity(
+        metadata, source, version, "Binary .changes source/version mismatch"
+    )
     referenced = _verify_binary_set(directory, metadata)
-    binaries = [_binary_record(directory / name, source, version, arch) for name in sorted(referenced)]
+    binaries = [
+        _binary_record(directory / name, source, version, arch)
+        for name in sorted(referenced)
+    ]
     _verify_expected_binaries(binaries, expected)
     buildinfo, versions = _buildinfo(directory, metadata, source, version)
-    return {"binaries": binaries, "changes": changes.name, "buildinfo": buildinfo.name,
-            "build_dependency_versions": versions}
+    return {
+        "binaries": binaries,
+        "changes": changes.name,
+        "buildinfo": buildinfo.name,
+        "build_dependency_versions": versions,
+    }

@@ -1,4 +1,5 @@
 """Execute bounded commands while preserving complete logs and diagnostic tails."""
+
 from __future__ import annotations
 
 import json
@@ -11,7 +12,7 @@ import signal
 import sys
 import time
 from pathlib import Path
-from typing import Protocol, BinaryIO
+from typing import Protocol, BinaryIO, IO
 
 from .models import CommandResult
 
@@ -21,8 +22,9 @@ logger = logging.getLogger(__name__)
 class CommandExecutor(Protocol):
     """Execute commands and expose complete stdout independently of log naming."""
 
-    def run(self, command: list[str], cwd: Path,
-            env_diff: dict[str, str] | None = None) -> CommandResult:
+    def run(
+        self, command: list[str], cwd: Path, env_diff: dict[str, str] | None = None
+    ) -> CommandResult:
         """Return diagnostic tails and access to complete captured stdout."""
         ...
 
@@ -30,7 +32,9 @@ class CommandExecutor(Protocol):
 class CommandCapture:
     """Own one process, its deadline, and bounded stream tails until it is reaped."""
 
-    def __init__(self, sinks: dict[str, BinaryIO], stream: bool, timeout: float, start: float) -> None:
+    def __init__(
+        self, sinks: dict[str, BinaryIO], stream: bool, timeout: float, start: float
+    ) -> None:
         """Bind full-log sinks and initialize independent process and stream state."""
         self.sinks = sinks
         self.stream = stream
@@ -44,8 +48,15 @@ class CommandCapture:
         """Launch, capture, and reap a process, retaining launch and interrupt diagnostics."""
         exit_code = 127
         try:
-            self.process = subprocess.Popen(command, cwd=str(cwd), env=env, stdin=subprocess.DEVNULL,
-                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+            self.process = subprocess.Popen(
+                command,
+                cwd=str(cwd),
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+            )
             exit_code = self._drain(self.process)
         except OSError as exc:
             message = str(exc).encode()
@@ -62,8 +73,7 @@ class CommandCapture:
     def _drain(self, process: subprocess.Popen[bytes]) -> int:
         """Drain both streams while enforcing the deadline independently of pipe EOF."""
         with selectors.DefaultSelector() as selector:
-            selector.register(process.stdout, selectors.EVENT_READ, "stdout")
-            selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+            self._register_streams(selector, process)
             # A child may close its pipes before exiting; EOF does not end its budget.
             while selector.get_map() or process.poll() is None:
                 self._enforce_deadline(process)
@@ -79,6 +89,16 @@ class CommandCapture:
 
             return exit_code
 
+    def _register_streams(
+        self, selector: selectors.BaseSelector, process: subprocess.Popen[bytes]
+    ) -> None:
+        """Register concrete pipe handles and retain them as typed selector payloads."""
+        for name, stream in (("stdout", process.stdout), ("stderr", process.stderr)):
+            if stream is None:
+                raise RuntimeError(f"Command capture requires a {name} pipe")
+
+            selector.register(stream, selectors.EVENT_READ, (name, stream))
+
     def _enforce_deadline(self, process: subprocess.Popen[bytes]) -> None:
         """Kill a timed-out process group once, allowing a simultaneous natural exit."""
         if not self.timed_out and time.monotonic() - self.start > self.timeout:
@@ -89,18 +109,25 @@ class CommandCapture:
 
             self.timed_out = True
 
-    def _read_ready(self, selector: selectors.BaseSelector, key: selectors.SelectorKey) -> None:
+    def _read_ready(
+        self, selector: selectors.BaseSelector, key: selectors.SelectorKey
+    ) -> None:
         """Write complete stream bytes and retain only a bounded diagnostic tail."""
-        chunk = os.read(key.fileobj.fileno(), 65536)
+        # SelectorKey.fileobj also permits integer descriptors; our payload owns
+        # the actual pipe and its name, so EOF can close precisely that handle.
+        name: str
+        stream: IO[bytes]
+        name, stream = key.data
+        chunk = os.read(stream.fileno(), 65536)
         if not chunk:
             selector.unregister(key.fileobj)
-            key.fileobj.close()
+            stream.close()
             return
 
-        self.sinks[key.data].write(chunk)
-        self.sinks[key.data].flush()
-        self.output[key.data].extend(chunk)
-        del self.output[key.data][:-262144]
+        self.sinks[name].write(chunk)
+        self.sinks[name].flush()
+        self.output[name].extend(chunk)
+        del self.output[name][:-262144]
         if self.stream:
             sys.stderr.write(chunk.decode("utf-8", errors="replace"))
             sys.stderr.flush()
@@ -115,7 +142,9 @@ class CommandCapture:
 class CommandRunner:
     """Sequence command logs and publish one structured result per invocation."""
 
-    def __init__(self, log_path: Path, *, stream: bool = False, timeout: float = 3600) -> None:
+    def __init__(
+        self, log_path: Path, *, stream: bool = False, timeout: float = 3600
+    ) -> None:
         """Configure log storage, optional console streaming, and process budgets."""
         self.log_path = log_path
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -123,7 +152,9 @@ class CommandRunner:
         self.timeout = timeout
         self.sequence = 0
 
-    def run(self, command: list[str], cwd: Path, env_diff: dict[str, str] | None = None) -> CommandResult:
+    def run(
+        self, command: list[str], cwd: Path, env_diff: dict[str, str] | None = None
+    ) -> CommandResult:
         """Execute one command and append its bounded diagnostic result."""
         env_diff = env_diff or {}
         env = os.environ.copy()
@@ -137,7 +168,9 @@ class CommandRunner:
         stdout_path = self.log_path.parent / f"{self.sequence:04d}.stdout.log"
         stderr_path = self.log_path.parent / f"{self.sequence:04d}.stderr.log"
         with stdout_path.open("wb") as out, stderr_path.open("wb") as err:
-            capture = CommandCapture({"stdout": out, "stderr": err}, self.stream, self.timeout, start)
+            capture = CommandCapture(
+                {"stdout": out, "stderr": err}, self.stream, self.timeout, start
+            )
             exit_code = capture.execute(command, cwd, env)
 
         output = capture.output

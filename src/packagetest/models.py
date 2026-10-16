@@ -1,13 +1,51 @@
 """Shared planning records and command results exchanged between execution boundaries."""
+
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
+
+
+class CommandRecord(TypedDict):
+    """Serialized command evidence with explicit nullable complete-output paths."""
+
+    command: list[str]
+    cwd: str
+    env_diff: dict[str, str]
+    stdout: str
+    stderr: str
+    exit_code: int
+    duration_seconds: float
+    stdout_path: str | None
+    stderr_path: str | None
+
+
+class PlannedBuildRecord(TypedDict):
+    """Portable package selection exported in a declarative build plan."""
+
+    source_package: str
+    depends_on_sources: list[str]
+    binary_packages: list[str]
+    upstream_repo: str
+    packaging_repo: str
+    source_creation_method: str
+
+
+class BuildPlanRecord(TypedDict):
+    """Serialized identity and ordered package selections for one generation."""
+
+    generation_id: str
+    openstack_target: str
+    ubuntu_release: str
+    snapshot_at: str | None
+    planned_builds: list[PlannedBuildRecord]
 
 
 @dataclass(frozen=True)
 class PackageDefinition:
+    """Configuration for one source package and its packaging repositories."""
+
     source_package: str
     binary_packages: list[str]
     upstream_repo: str
@@ -48,13 +86,25 @@ class CommandResult:
 
         return Path(self.stdout_path).read_text(encoding="utf-8", errors="replace")
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> CommandRecord:
         """Serialize command identity, diagnostic tails, and complete-output locations."""
-        return asdict(self)
+        return CommandRecord(
+            command=list(self.command),
+            cwd=self.cwd,
+            env_diff=dict(self.env_diff),
+            stdout=self.stdout,
+            stderr=self.stderr,
+            exit_code=self.exit_code,
+            duration_seconds=self.duration_seconds,
+            stdout_path=self.stdout_path,
+            stderr_path=self.stderr_path,
+        )
 
 
 @dataclass(frozen=True)
 class PlannedBuild:
+    """One selected package together with the sources that must precede it."""
+
     source_package: str
     depends_on_sources: list[str]
     package: PackageDefinition
@@ -62,13 +112,16 @@ class PlannedBuild:
 
 @dataclass
 class BuildPlan:
+    """Ordered source selections and the target identity for one generation."""
+
     generation_id: str
     openstack_target: str
     ubuntu_release: str
     planned_builds: list[PlannedBuild]
     snapshot_at: str | None = None
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(self) -> BuildPlanRecord:
+        """Export the plan using the public generation artifact schema."""
         return {
             "generation_id": self.generation_id,
             "openstack_target": self.openstack_target,
