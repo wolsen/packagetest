@@ -7,7 +7,6 @@
   "src/packagetest/commands.py:CommandRunner.run": 17,
   "src/packagetest/failure_analysis.py:_apply_hunks_with_normalized_context": 18,
   "src/packagetest/failure_analysis.py:_apply_independent_change_groups": 31,
-  "src/packagetest/failure_analysis.py:_refresh_quilt_patch": 92,
   "src/packagetest/failure_analysis.py:render_source_repair": 27,
   "src/packagetest/failure_analysis.py:validate_repair_decision": 27,
   "src/packagetest/failure_analysis.py:validate_source_patch": 28,

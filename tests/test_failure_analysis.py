@@ -690,3 +690,29 @@ print('END_PATCH')
     assert report["selected_attempt"] == 2
     assert (output / "attempt-1.output.txt").is_file()
     assert "Build correctness is unverified" in (output / "summary.md").read_text()
+
+
+@pytest.mark.parametrize('target', ['/etc/passwd', 'a/../escape', 'a/debian/control', '/dev/null', 'file'])
+def test_quilt_refresh_rejects_unsupported_target_paths(tmp_path, target):
+    """Mechanical refresh must reject paths outside its upstream-file scope."""
+    patches = tmp_path / 'debian/patches'
+    patches.mkdir(parents=True)
+    (patches / 'series').write_text('scope.patch\n')
+    (patches / 'scope.patch').write_text(
+        f'--- a/sample\n+++ {target}\n@@ -1 +1 @@\n-old\n+new\n')
+    with pytest.raises(ValueError, match='does not support target'):
+        render_source_repair({'action': 'refresh_quilt_patch', 'subject': 'scope.patch'}, tmp_path)
+
+
+def test_quilt_refresh_rejects_duplicate_target_sections(tmp_path):
+    """Repeated targets must fail before any partial section application occurs."""
+    patches = tmp_path / 'debian/patches'
+    patches.mkdir(parents=True)
+    (patches / 'series').write_text('scope.patch\n')
+    section = '--- a/sample\n+++ b/sample\n@@ -1 +1 @@\n-old\n+new\n'
+    (patches / 'scope.patch').write_text(section + section)
+    (tmp_path / 'sample').write_text('old\n')
+    with pytest.raises(ValueError, match='unique upstream targets'):
+        render_source_repair({'action': 'refresh_quilt_patch', 'subject': 'scope.patch'}, tmp_path)
+
+    assert (tmp_path / 'sample').read_text() == 'old\n'

@@ -45,6 +45,7 @@ relationship replanning after repairs remains a limitation.
 | JSON identity | `contracts.BuildTarget`, `PreparedSource` | Validated immutable identity records |
 | Source orchestration | `nightly_source.SourcePreparer` | One workspace, command log, and preparation result |
 | Quilt policy | `patches` | Evidence for applied patches and review suggestions |
+| Quilt refresh | `failure_analysis.QuiltSection`, `QuiltPayload`, `QuiltSectionRefresh` | Validated sections, payload evidence, and isolated application probes |
 | Locked execution | `locked.LockedBuild`, `commands.CommandRunner` | Lock to validated source/binary artifacts |
 | Artifact handoff | `handoff.ProducerBundle`, `collect_producers` | Same-run producer identity, readiness, and byte verification |
 | Remediation evidence | `remediation_evidence` | Ordered, bounded logs and source excerpts |
