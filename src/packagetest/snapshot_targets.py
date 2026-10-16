@@ -13,6 +13,7 @@ def ubuntu_release_for_openstack(series: str) -> str:
     match = re.fullmatch(r"(20[0-9]{2})\.([12])", series)
     if not match:
         raise ValueError(f"Invalid OpenStack release: {series}")
+
     year, release = map(int, match.groups())
     return f"{year % 100:02d}.{'04' if release == 1 else '10'}"
 
@@ -27,6 +28,7 @@ def uca_lts_for_openstack(series: str) -> str:
     match = re.fullmatch(r"(20[0-9]{2})\.([12])", series)
     if not match:
         raise ValueError(f"Invalid OpenStack release: {series}")
+
     year, release = map(int, match.groups())
     lts_year = year - 2 if year % 2 == 0 and release == 1 else year - year % 2
     return f"{lts_year % 100:02d}.04"
@@ -39,6 +41,7 @@ def _target_pair(series: str, codename: str, suites: dict[str, str]) -> list[dic
     if missing:
         raise ValueError(
             f"Ubuntu suite codename mapping is missing: {', '.join(sorted(set(missing)))}")
+
     ubuntu_suite = suites[ubuntu_release]
     uca_suite = suites[uca_release]
     return [
@@ -111,20 +114,33 @@ def _target_pair(series: str, codename: str, suites: dict[str, str]) -> list[dic
     ]
 
 
+def _validate_codename(series: str, codename: str) -> None:
+    """Require an OpenStack codename safe for target identifiers."""
+    if not re.fullmatch(r"[a-z][a-z0-9-]*", codename):
+        raise ValueError(f"Invalid OpenStack codename for {series}")
+
+
+def _validate_mappings(suites: object, releases: object) -> None:
+    """Require both mapping tables and at least one OpenStack release."""
+    if not isinstance(suites, dict) or not isinstance(releases, dict) or not releases:
+        raise ValueError("Snapshot release mappings are incomplete")
+
+
 def load_targets(path: Path) -> dict[str, dict]:
+    """Expand configured releases into distinct distro and UCA targets."""
     config = json.loads(path.read_text())
     suites = config.get("ubuntu_suites")
     releases = config.get("openstack_releases")
-    if not isinstance(suites, dict) or not isinstance(releases, dict) or not releases:
-        raise ValueError("Snapshot release mappings are incomplete")
+    _validate_mappings(suites, releases)
     targets = {}
     for series, codename in releases.items():
-        if not re.fullmatch(r"[a-z][a-z0-9-]*", codename):
-            raise ValueError(f"Invalid OpenStack codename for {series}")
+        _validate_codename(series, codename)
         for target in _target_pair(series, codename, suites):
             if target["id"] in targets:
                 raise ValueError(f'Duplicate snapshot target: {target["id"]}')
+
             targets[target["id"]] = target
+
     return targets
 
 
@@ -148,8 +164,10 @@ def build_target(target: dict) -> dict:
     }
     if target.get("build_profiles"):
         result["build_profiles"] = target["build_profiles"]
+
     if target.get("cloud_archive"):
         result["cloud_archive"] = target["cloud_archive"]
+
     return result
 
 
@@ -157,9 +175,11 @@ def catalog_target(catalog: dict) -> dict:
     target = catalog.get("target")
     if not isinstance(target, dict):
         raise ValueError("Frozen catalog has no snapshot target")
+
     required = {"id", "suite", "builder_profile", "distribution", "architecture",
                 "openstack_series", "openstack_codename", "debian_revision_suffix"}
     if required - target.keys():
         raise ValueError("Frozen catalog snapshot target is incomplete")
+
     BuildTarget.from_mapping(target)
     return target
