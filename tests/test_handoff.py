@@ -326,3 +326,45 @@ def test_artifact_directory_symlink_is_rejected(tmp_path):
     original.symlink_to(outside, target_is_directory=True)
     with pytest.raises(ValueError, match='Symlink in producer bundle'):
         collect(root, lock)
+
+
+def test_repository_index_failure_removes_partial_repository(tmp_path, monkeypatch):
+    """Failed index generation must not leave copied packages in a consumable repository."""
+    root, lock, _ = bundle(tmp_path)
+    producers = collect(root, lock)
+    destination = tmp_path / 'repository'
+
+    def fail_index(command, **kwargs):
+        """Simulate failure after verified binaries have already been copied."""
+        assert (destination / 'pool/sample_1.0-1_all.deb').is_file()
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr('packagetest.handoff.subprocess.check_output', fail_index)
+    with pytest.raises(subprocess.CalledProcessError):
+        build_repository(producers, destination)
+
+    assert not destination.exists()
+
+
+def test_repository_refuses_existing_destination_without_deleting_it(tmp_path):
+    """A failed reservation must preserve the caller's existing directory and files."""
+    destination = tmp_path / 'repository'
+    destination.mkdir()
+    sentinel = destination / 'keep'
+    sentinel.write_text('existing data')
+    with pytest.raises(ValueError, match='destination already exists'):
+        build_repository({}, destination)
+
+    assert sentinel.read_text() == 'existing data'
+
+
+def test_repository_refuses_duplicate_binary_identity_and_cleans_up(tmp_path):
+    """Two producers cannot supply the same package and architecture to one testbed."""
+    root, lock, _ = bundle(tmp_path)
+    producers = collect(root, lock)
+    producers['other'] = producers['sample']
+    destination = tmp_path / 'repository'
+    with pytest.raises(ValueError, match='Duplicate binary package'):
+        build_repository(producers, destination)
+
+    assert not destination.exists()

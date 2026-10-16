@@ -19,19 +19,32 @@ def lock_digest(lock: dict) -> str:
     return hashlib.sha256(json.dumps(lock, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
-def dependency_waves(packages: list[dict]) -> list[list[str]]:
-    """Return maximum-width topological waves, rejecting incomplete graphs."""
-    graph = {p['source']: set(p.get('depends_on', [])) for p in packages}
+def _dependency_graph(packages: list[dict]) -> dict[str, set[str]]:
+    """Construct a complete source graph and reject duplicate or absent producers."""
+    graph = {package['source']: set(package.get('depends_on', [])) for package in packages}
     if len(graph) != len(packages):
         raise ValueError('Duplicate source in dependency graph')
 
-    for source, deps in graph.items():
-        if deps - graph.keys():
-            raise ValueError(f'{source}: missing producers {sorted(deps - graph.keys())}')
+    for source, dependencies in graph.items():
+        if dependencies - graph.keys():
+            raise ValueError(f'{source}: missing producers {sorted(dependencies - graph.keys())}')
 
-    waves, completed = [], set()
+    return graph
+
+
+def _ready_packages(graph: dict[str, set[str]], completed: set[str]) -> list[str]:
+    """Select every unfinished source whose producers completed in earlier waves."""
+    return sorted(source for source, dependencies in graph.items()
+                  if source not in completed and dependencies <= completed)
+
+
+def dependency_waves(packages: list[dict]) -> list[list[str]]:
+    """Return maximum-width topological waves, rejecting incomplete graphs."""
+    graph = _dependency_graph(packages)
+    waves = []
+    completed: set[str] = set()
     while len(completed) < len(graph):
-        wave = sorted(source for source, deps in graph.items() if source not in completed and deps <= completed)
+        wave = _ready_packages(graph, completed)
         if not wave:
             raise ValueError(f'Dependency cycle: {sorted(graph.keys() - completed)}')
 
@@ -252,62 +265,103 @@ def collect_producers(download_root: Path, expected_locks: dict[str, dict[str, A
     return found
 
 
+def _validated_binary_path(binary: dict) -> Path:
+    """Recheck a handoff path and its bytes before copying into a test repository."""
+    path = Path(binary['path'])
+    if path.is_symlink() or not path.is_file() or sha256(path) != binary['sha256']:
+        raise ValueError(f'Dependency artifact changed: {path}')
+
+    return path
+
+
+def _validate_binary_filename(path: Path, binary: dict) -> None:
+    """Require the recorded Debian filename instead of accepting arbitrary local files."""
+    if path.name != binary['file'] or not path.name.endswith('.deb'):
+        raise ValueError(f'Invalid binary path: {path}')
+
+
+class ProducerRepository:
+    """Own one disposable repository's copied artifacts and provenance records."""
+
+    def __init__(self, destination: Path) -> None:
+        """Reserve a new repository directory without replacing an existing destination."""
+        if destination.exists():
+            raise ValueError(f'Repository destination already exists: {destination}')
+
+        destination.mkdir(parents=True)
+        self.destination = destination
+        self.pool = destination / 'pool'
+        self.pool.mkdir()
+        self.records: list[dict] = []
+        self.identities: set[tuple[str, str]] = set()
+
+    def populate(self, producers: dict[str, list[dict]]) -> None:
+        """Copy producers in stable order and reject an empty repository."""
+        for source, binaries in sorted(producers.items()):
+            for binary in binaries:
+                self.copy_binary(source, binary)
+
+        if not self.records:
+            raise ValueError('Cannot reconstruct an empty package repository')
+
+    def copy_binary(self, source: str, binary: dict) -> None:
+        """Bind copied bytes to one unique binary package and architecture."""
+        path = _validated_binary_path(binary)
+        identity = (binary['package'], binary['architecture'])
+        if identity in self.identities:
+            raise ValueError(f'Duplicate binary package: {identity}')
+
+        self.identities.add(identity)
+        _validate_binary_filename(path, binary)
+        self.copy_checked(path, binary['sha256'])
+        self.records.append({**binary, 'source': source, 'path': f'pool/{path.name}'})
+
+    def copy_checked(self, path: Path, expected_sha256: str) -> None:
+        """Reject filename collisions and changes during the copy operation."""
+        output = self.pool / path.name
+        if output.exists():
+            raise ValueError(f'Conflicting binary filename: {path.name}')
+
+        shutil.copyfile(path, output)
+        if sha256(output) != expected_sha256:
+            raise ValueError(f'Copied binary checksum mismatch: {path.name}')
+
+    def write_indexes(self) -> None:
+        """Generate flat APT indexes and bind their bytes into the Release checksum table."""
+        packages = subprocess.check_output(
+            ['dpkg-scanpackages', '--multiversion', 'pool', '/dev/null'], cwd=self.destination)
+        (self.destination / 'Packages').write_bytes(packages)
+        (self.destination / 'Packages.gz').write_bytes(gzip.compress(packages, mtime=0))
+        release = 'Origin: PackagetestRun\nLabel: PackagetestRun\nDescription: Verified same-run candidate packages\nSHA256:\n'
+        for name in ('Packages', 'Packages.gz'):
+            path = self.destination / name
+            release += f' {sha256(path)} {path.stat().st_size} {name}\n'
+
+        (self.destination / 'Release').write_text(release)
+
+    def write_provenance(self) -> dict:
+        """Publish relative artifact paths and the disposable testbed trust scope."""
+        result = {
+            'schema_version': 1, 'packages': self.records,
+            'apt_source': f'deb [trusted=yes] file:{self.destination.resolve()} ./',
+            'trust_scope': 'verified artifacts in disposable testbed only',
+        }
+        (self.destination / 'provenance.json').write_text(json.dumps(result, indent=2) + '\n')
+        return result
+
+
 def build_repository(producers: dict[str, list[dict]], destination: Path) -> dict:
     """Reconstruct a flat APT repo from verified handoffs, rechecking copied bytes.
 
     This unsigned repository is restricted to a disposable testbed. Its provenance
     binds packages to the pipeline run; it must never be used as a published archive.
     """
-    if destination.exists():
-        raise ValueError(f'Repository destination already exists: {destination}')
-
-    destination.mkdir(parents=True)
-    pool = destination / 'pool'
-    pool.mkdir()
-    records, identities = [], set()
+    repository = ProducerRepository(destination)
     try:
-        for source, binaries in sorted(producers.items()):
-            for binary in binaries:
-                path = Path(binary['path'])
-                if path.is_symlink() or not path.is_file() or sha256(path) != binary['sha256']:
-                    raise ValueError(f'Dependency artifact changed: {path}')
-
-                identity = (binary['package'], binary['architecture'])
-                if identity in identities:
-                    raise ValueError(f'Duplicate binary package: {identity}')
-
-                identities.add(identity)
-                if path.name != binary['file'] or not path.name.endswith('.deb'):
-                    raise ValueError(f'Invalid binary path: {path}')
-
-                output = pool / path.name
-                if output.exists():
-                    raise ValueError(f'Conflicting binary filename: {path.name}')
-
-                # Rehash the copy to detect changes between verification and handoff.
-                shutil.copyfile(path, output)
-                if sha256(output) != binary['sha256']:
-                    raise ValueError(f'Copied binary checksum mismatch: {path.name}')
-
-                records.append({**binary, 'source': source, 'path': f'pool/{path.name}'})
-
-        if not records:
-            raise ValueError('Cannot reconstruct an empty package repository')
-
-        packages = subprocess.check_output(['dpkg-scanpackages', '--multiversion', 'pool', '/dev/null'], cwd=destination)
-        (destination / 'Packages').write_bytes(packages)
-        (destination / 'Packages.gz').write_bytes(gzip.compress(packages, mtime=0))
-        release = 'Origin: PackagetestRun\nLabel: PackagetestRun\nDescription: Verified same-run candidate packages\nSHA256:\n'
-        for name in ('Packages', 'Packages.gz'):
-            path = destination / name
-            release += f' {sha256(path)} {path.stat().st_size} {name}\n'
-
-        (destination / 'Release').write_text(release)
-        result = {'schema_version': 1, 'packages': records,
-                  'apt_source': f'deb [trusted=yes] file:{destination.resolve()} ./',
-                  'trust_scope': 'verified artifacts in disposable testbed only'}
-        (destination / 'provenance.json').write_text(json.dumps(result, indent=2) + '\n')
-        return result
+        repository.populate(producers)
+        repository.write_indexes()
+        return repository.write_provenance()
     except Exception:
+        # Failed copies or index generation must leave no consumable partial repo.
         shutil.rmtree(destination)
         raise
