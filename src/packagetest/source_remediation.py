@@ -12,7 +12,8 @@ import shutil
 import subprocess
 import sys
 
-from packagetest.failure_analysis import (normalize_repair_decision,
+from packagetest.failure_analysis import (QuiltPatchSuperseded,
+                                          normalize_repair_decision,
                                           parse_repair_decision,
                                           validate_repair_decision,
                                           validate_source_patch)
@@ -84,6 +85,7 @@ def failed_quilt_patches(tree: Path, evidence: str) -> list[str]:
 
 
 def main() -> int:
+    """Retry failed source preparation with validated quilt repair proposals."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', required=True)
     parser.add_argument('--catalog', type=Path, required=True)
@@ -138,7 +140,9 @@ def main() -> int:
             decisions.append(decision)
             try:
                 patch = helper.render_cumulative_repair(decisions, tree)
-            except helper.QuiltPatchSuperseded as exc:
+            except QuiltPatchSuperseded as exc:
+                # Catch the renderer's exception directly so supersession can
+                # become a series edit instead of falling through to inference.
                 decision = {
                     'action': 'drop_quilt_patch', 'subject': subject,
                     'replacement': '', 'evidence': str(exc),
@@ -150,6 +154,7 @@ def main() -> int:
                     classification_evidence=str(exc),
                 )
                 patch = helper.render_cumulative_repair(decisions, tree)
+
             patch_path = attempt / 'proposal.patch'
             patch_path.write_text(patch)
             patch_validation = validate_source_patch(patch, tree)

@@ -167,3 +167,13 @@ source checksums against frozen upstream identity, and verify binary bytes,
 distribution, required build dependency versions, and manifest records. Returned
 paths are reconstructed from the downloaded bundle. `build_repository` rechecks
 bytes when copying verified binaries into the disposable testbed repository.
+
+## Source patch repair
+
+A `dpkg-source` report that a patch has fuzz or is malformed does not distinguish
+context drift from a change already incorporated upstream. Deterministic repair
+first attempts a mechanical refresh. A `QuiltPatchSuperseded` classification is
+caught directly from the renderer and converted to a proposal commenting out the
+patch in `debian/patches/series`. Other rendering errors retain their original
+diagnostic. Source preparation is rerun with the validated proposal before the
+candidate can replace the failed output; its patch application remains zero-fuzz.
