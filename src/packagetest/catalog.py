@@ -21,6 +21,8 @@ from dataclasses import field as dataclass_field
 from functools import partial
 from pathlib import Path
 from typing import Any
+from .repositories import binary_indexes
+
 from urllib.error import HTTPError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -61,6 +63,7 @@ def ubuntu_source_indexes(suite: str) -> list[dict[str, str]]:
         ("", "https://archive.ubuntu.com/ubuntu"),
         ("-updates", "https://archive.ubuntu.com/ubuntu"),
         ("-security", "https://security.ubuntu.com/ubuntu"),
+        ("-proposed", "https://archive.ubuntu.com/ubuntu"),
     ):
         distribution = suite + pocket
         for component in ARCHIVE_COMPONENTS:
@@ -567,7 +570,7 @@ def _archive_pocket(filename: str, suite: str, metadata: dict) -> str:
     if metadata.get("pocket"):
         return metadata["pocket"]
 
-    for pocket in ("security", "updates"):
+    for pocket in ("security", "updates", "proposed"):
         if f"{suite}-{pocket}-" in filename:
             return pocket
 
@@ -838,3 +841,50 @@ def write_catalog(catalog: dict, destination: Path) -> None:
     """Write an indented JSON catalog and create its output directory as needed."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(catalog, indent=2) + "\n")
+
+
+def _download_binary_index(spec: dict, destination: Path, opener: Callable[..., Any]) -> Path:
+    """Atomically download one target binary index, failing closed on unavailable archives."""
+    path = destination / spec['filename']
+    temporary = path.with_suffix('.part')
+    with opener(Request(spec['url'], headers={'User-Agent': 'packagetest-catalog/1'}), timeout=90) as response:
+        temporary.write_bytes(response.read())
+
+    temporary.replace(path)
+    return path
+
+
+def _retain_binary(records: dict[str, dict], item: dict, spec: dict) -> None:
+    """Retain the highest Debian binary version across equally prioritized target archives."""
+    name, version = item['Package'], item['Version']
+    previous = records.get(name)
+    if previous and subprocess.run(['dpkg', '--compare-versions', version, 'le', previous['version']]).returncode == 0:
+        return
+
+    records[name] = dict(binary=name, source=item.get('Source', name).split()[0],
+                         version=version, architecture=item['Architecture'], archive_index=spec['filename'])
+
+
+def _python_binary_records(records: list[dict]) -> list[dict]:
+    """Expose installed Python distribution providers from actual published binaries."""
+    return [dict(item, distribution=re.sub(r'[-_.]+', '-', item['binary'].removeprefix('python3-')).lower())
+            for item in records if re.fullmatch(r'python3-[a-z0-9][a-z0-9+.-]*', item['binary'])]
+
+
+def populate_binary_catalog(catalog: dict, destination: Path, *, opener: Callable[..., Any] = urlopen) -> None:
+    """Replace inferred binary availability with target-specific published package versions."""
+    target = catalog.get('target') or {'suite': catalog['suite'], 'architecture': 'amd64'}
+    destination.mkdir(parents=True, exist_ok=True)
+    records: dict[str, dict] = {}
+    indexes = []
+    for spec in binary_indexes(target):
+        path = _download_binary_index(spec, destination, opener)
+        data = path.read_bytes()
+        indexes.append(dict(spec, sha256=hashlib.sha256(data).hexdigest()))
+        for item in paragraphs(gzip.decompress(data).decode()):
+            _retain_binary(records, item, spec)
+
+    catalog['archive_binary_packages'] = [records[name] for name in sorted(records)]
+    catalog['archive_binary_indexes'] = indexes
+    catalog['archive_python_indexes'] = indexes
+    catalog['archive_python_packages'] = _python_binary_records(catalog['archive_binary_packages'])

@@ -191,3 +191,26 @@ records exclusions, and adds transitive independent build producers. Package
 records preserve archive checksums, ordered packaging branch candidates, and
 series-scoped upstream selection. Archive preflight uses HEAD with size checks;
 only HTTP 405 and 501 trigger a bounded range-GET availability probe.
+
+## Target dependency repositories
+
+Planning, sbuild, and autopkgtest share the policy in `repositories.py`.
+Distro targets enable their release, updates, security, and proposed pockets,
+with the `main` and `universe` components. UCA targets additionally enable the
+selected release's published Cloud Archive and its updates, staging, and
+proposed PPAs. Distro targets never enable UCA repositories.
+
+All target archives have APT priority 500, including proposed. Dependency
+catalogs retain the highest Debian binary version for the target architecture
+(including architecture-independent packages), together with the providing
+index and its checksum. Explicit pins for locally built candidates retain
+precedence. Package availability is read from `Packages` indexes; source-index
+versions are used for packaging selection, not as proof of binary publication.
+The separate packaging comparison policy still prefers UCA updates, staging,
+then proposed source records.
+
+Guest setup uses signed repositories. The UCA PPA signing key is checked
+against the pinned fingerprint before installation. Builder cache identities
+include the shared repository policy, and testbed setup replaces inherited
+sources before installing the per-run candidate repository. A missing binary
+index fails catalog generation rather than silently omitting an enabled archive.

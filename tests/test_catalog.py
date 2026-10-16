@@ -196,9 +196,9 @@ def test_continuation_fields():
     assert paragraphs('Package: sample\nBuild-Depends: python3-a,\n python3-b\n\n')[0]['Build-Depends'] == 'python3-a,\npython3-b'
 
 
-def test_live_indexes_cover_release_updates_and_security():
+def test_live_indexes_cover_release_updates_security_and_proposed():
     indexes = ubuntu_source_indexes('resolute')
-    assert len(indexes) == 6
+    assert len(indexes) == 8
     assert indexes[0]['url'].endswith('/dists/resolute/main/source/Sources.xz')
     assert any('/dists/resolute-updates/universe/' in item['url'] for item in indexes)
     assert any(item['url'].startswith('https://security.ubuntu.com/ubuntu/dists/resolute-security/')

@@ -10,6 +10,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .repositories import repository_setup
 from .artifacts import sha256, verify_source, verify_binaries
 
 
@@ -307,31 +308,15 @@ def _candidate_repository(output: Path, candidates: dict[str, Path]) -> tuple[Pa
     return repo, _candidate_versions(candidates, repo)
 
 
-def _cloud_setup(target: dict) -> str:
-    """Render optional cloud archive setup with a shell-quoted source entry."""
-    cloud = target.get('cloud_archive')
-    cloud_setup = ''
-    if cloud:
-        source = (f"deb [signed-by={cloud['keyring']}] {cloud['repository']} "
-                  f"{cloud['distribution']} {cloud['component']}")
-        cloud_setup = (
-            'DEBIAN_FRONTEND=noninteractive apt-get install -y ubuntu-cloud-keyring\n'
-            + "printf '%s\\n' " + shlex.quote(source)
-            + ' > /etc/apt/sources.list.d/ubuntu-cloud-archive.list\n')
-
-    return cloud_setup
-
-
 def _testbed_setup(output: Path, target: dict) -> Path:
     """Write the suite check, repository configuration, and installed-version hook."""
-    cloud_setup = _cloud_setup(target)
+    archive_setup = repository_setup(target)
     setup = output / 'setup.sh'
     setup.write_text('set -eu\n'
                      'test "$(. /etc/os-release; echo "$VERSION_CODENAME")" = ' + shlex.quote(target['suite']) + '\n'
+                     + 'apt-get update\n' + archive_setup +
                      "printf '%s\\n' 'deb [trusted=yes] file:/opt/packagetest-candidate ./' > /etc/apt/sources.list.d/packagetest.list\n"
                      'cp /opt/packagetest-candidate/preferences /etc/apt/preferences.d/packagetest\n'
-                     'apt-get update\n'
-                     + cloud_setup +
                      'apt-get update\n'
                      'DEBIAN_FRONTEND=noninteractive apt-get install -y apt-utils\n'
                      'command -v python3\n'

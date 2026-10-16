@@ -131,6 +131,11 @@ EOF
             http://archive.ubuntu.com/ubuntu /usr/share/debootstrap/scripts/gutsy
         # Persist the upgraded source chroot, rather than the initial debootstrap
         # result, so package jobs do not repeat the base upgrade work.
+        # Source sessions persist changes back into the file-based chroot tarball.
+        setup=$(mktemp)
+        PYTHONPATH=src python3 -m packagetest.repositories "$profile" > "$setup"
+        sudo schroot -c "source:$chroot_name" -u root --directory / -- sh -s < "$setup"
+        rm -f "$setup"
         sudo sbuild-update -udcar "$chroot_name"
         if [[ -n "$cache" ]]; then
             cp --reflink=auto "/srv/chroot/$chroot_name.tar.gz" "$cache_tarball"

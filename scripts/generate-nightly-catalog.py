@@ -12,7 +12,7 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 from packagetest.catalog import (download_source_indexes, make_catalog,
-                                 ubuntu_source_indexes, validate_archive_sources,
+                                 ubuntu_source_indexes, validate_archive_sources, populate_binary_catalog,
                                  write_catalog)
 from packagetest.snapshot_targets import load_target
 
@@ -42,6 +42,7 @@ def generate(*, output: Path, workspace: Path, suite: str, series: str,
     for key in ('archive_indexes', 'archive_python_indexes'):
         for item in catalog[key]:
             item['url'] = index_urls[item['filename']]
+    populate_binary_catalog(catalog, indexes)
     if validate_sources:
         validate_archive_sources(catalog)
     write_catalog(catalog, output)

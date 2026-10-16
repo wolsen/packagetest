@@ -130,7 +130,21 @@ def satisfies(version: str | None, relation: dict) -> bool:
                            relation['operator'], relation['version']]).returncode == 0
 
 
+def _published_archive_versions(packages: list[dict]) -> dict[str, list[dict]]:
+    """Use binary publication evidence without importing packaging-source versions."""
+    return {item['binary']: [dict(source=item['source'], version=item['version'])] for item in packages}
+
+
 def archive_versions(catalog: dict) -> dict[str, list[dict]]:
+    """Prefer published binary versions; retain compatibility with older frozen catalogs."""
+    if 'archive_binary_packages' in catalog:
+        return _published_archive_versions(catalog['archive_binary_packages'])
+
+    return _legacy_archive_versions(catalog)
+
+
+def _legacy_archive_versions(catalog: dict) -> dict[str, list[dict]]:
+    """Read older catalog fixtures without binary publication records."""
     result: dict[str, list[dict]] = {}
     for entry in catalog['packages']:
         for binary in entry.get('binaries', []):
