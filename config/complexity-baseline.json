@@ -69,8 +69,6 @@
   "src/packagetest/nightly_plan.py:freeze_packaging.resolve": 17,
   "src/packagetest/nightly_plan.py:offline_selection": 6,
   "src/packagetest/nightly_plan.py:publish_job_summary": 12,
-  "src/packagetest/nightly_plan.py:render_discovery_summary": 11,
-  "src/packagetest/nightly_plan.py:render_plan_summary": 34,
   "src/packagetest/nightly_plan.py:run": 11,
   "src/packagetest/nightly_source.py:SourcePreparer.prepare": 21,
   "src/packagetest/nightly_source.py:_add_control_dependency": 11,

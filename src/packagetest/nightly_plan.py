@@ -400,9 +400,16 @@ def plan_catalog(
     )
 
 
-def render_plan_summary(plan: dict, catalog: dict) -> str:
-    """Render the complete dependency-level plan for GitHub and artifacts."""
-    entries = {entry['source']: entry for entry in catalog['packages']}
+def _archive_decision_counts(plan: dict, entries: dict[str, dict]) -> Counter:
+    """Count archive decisions from selected source requirement evidence."""
+    return Counter(record.get('archive_decision')
+                        for source in plan['sources']
+                        for record in entries[source].get('upstream_dependency_requirements', [])
+                        if record.get('archive_decision'))
+
+
+def _plan_levels(plan: dict, catalog: dict) -> list[str]:
+    """Describe dependency levels and their execution order."""
     lines = [
         f"# OpenStack {catalog.get('series', 'unknown')} snapshot build plan",
         '',
@@ -417,14 +424,17 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
         package_list = ', '.join(f'`{source}`' for source in packages)
         lines.append(f'| {index} | {len(packages)} | {package_list} |')
 
+    return lines
+
+
+def _plan_discovery(plan: dict, entries: dict[str, dict]) -> list[str]:
+    """Summarize root expansion and archive dependency decisions."""
+    lines: list[str] = []
     requested = plan.get('requested_sources', plan['sources'])
     added = sorted(set(plan['sources']) - set(requested))
     upstream_edges = sum(len(entries[source].get('upstream_dependencies', []))
                          for source in plan['sources'])
-    decisions = Counter(record.get('archive_decision')
-                        for source in plan['sources']
-                        for record in entries[source].get('upstream_dependency_requirements', [])
-                        if record.get('archive_decision'))
+    decisions = _archive_decision_counts(plan, entries)
     lines.extend([
         '',
         '## Upstream dependency discovery',
@@ -445,6 +455,12 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
     else:
         lines.append('No additional sources were needed.')
 
+    return lines
+
+
+def _plan_archive_additions(plan: dict, entries: dict[str, dict]) -> list[str]:
+    """List archive-proven packaging additions with escaped requirements."""
+    lines: list[str] = []
     packaging_additions = [
         (source, record)
         for source in plan['sources']
@@ -468,6 +484,12 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
     else:
         lines.append('None.')
 
+    return lines
+
+
+def _plan_dependency_policy(plan: dict, entries: dict[str, dict]) -> list[str]:
+    """Describe bootstrap decisions and required candidate dependencies."""
+    lines: list[str] = []
     required = []
     for source in plan['sources']:
         for dependency, reason in sorted(entries[source].get('required_candidate_dependencies', {}).items()):
@@ -491,6 +513,12 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
     else:
         lines.append('None.')
 
+    return lines
+
+
+def _plan_resolution(plan: dict) -> list[str]:
+    """Render immutable-ref resolution failures or the all-resolved result."""
+    lines: list[str] = []
     failures = plan.get('resolution_failures', [])
     lines.extend(['', '## Source resolution', ''])
     if failures:
@@ -500,16 +528,18 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
             lines.append(f"- `{failure['source']}`: {failure['error']}")
     else:
         lines.append('All selected source references resolved to immutable commit SHAs.')
+    return lines
+
+
+def _plan_packaging_sources(plan: dict, entries: dict[str, dict]) -> list[str]:
+    """Summarize selected packaging origins and published-source fallbacks."""
+    lines: list[str] = []
     fallbacks = plan.get('packaging_source_fallbacks', [])
-    ubuntu_git = sum(1 for source in plan['sources']
-                     if entries[source].get('packaging_source_role') == 'ubuntu-openstack')
-    importer_git = sum(1 for source in plan['sources']
-                       if entries[source].get('packaging_source_role') == 'ubuntu-importer')
-    archive_git = sum(1 for source in plan['sources']
-                      if entries[source].get('packaging_source_role') in {
-                          'series-archive-vcs', 'archive-vcs'})
-    ppa_source = sum(1 for source in plan['sources']
-                     if entries[source].get('packaging_source_role') == 'uca-ppa-source')
+    roles = Counter(entries[source].get('packaging_source_role') for source in plan['sources'])
+    ubuntu_git = roles['ubuntu-openstack']
+    importer_git = roles['ubuntu-importer']
+    archive_git = roles['series-archive-vcs'] + roles['archive-vcs']
+    ppa_source = roles['uca-ppa-source']
     lines.extend(['', '## Packaging source', '',
                   f'{ubuntu_git} selected packages use plan-pinned Ubuntu OpenStack Launchpad Git trees. '
                   f'{importer_git} use plan-pinned Ubuntu importer Git trees. '
@@ -523,14 +553,35 @@ def render_plan_summary(plan: dict, catalog: dict) -> str:
             lines.append(f"- `{fallback['source']}`: {fallback['error']}")
     else:
         lines.append('No selected package requires archive packaging extraction.')
+    return lines
+
+
+def _packaging_warnings(sources: list[str], entries: dict[str, dict]) -> list[str]:
+    """Render Debian fallback warnings only when a selected source has one."""
+    lines: list[str] = []
     warnings = [(source, entries[source]['packaging_fallback_warning'])
-                for source in plan['sources']
+                for source in sources
                 if entries[source].get('packaging_fallback_warning')]
     if warnings:
         lines.extend(['', '## Packaging fallback warnings', '',
                       'These packages use Debian packaging as the final fallback and require human review:', ''])
         for source, warning in warnings:
             lines.append(f'- **WARNING — `{source}`:** {warning}')
+    return lines
+
+
+def render_plan_summary(plan: dict, catalog: dict) -> str:
+    """Render the complete dependency-level plan for GitHub and artifacts."""
+    entries = {entry['source']: entry for entry in catalog['packages']}
+    lines = [
+        *_plan_levels(plan, catalog),
+        *_plan_discovery(plan, entries),
+        *_plan_archive_additions(plan, entries),
+        *_plan_dependency_policy(plan, entries),
+        *_plan_resolution(plan),
+        *_plan_packaging_sources(plan, entries),
+        *_packaging_warnings(plan['sources'], entries),
+    ]
     return '\n'.join(lines) + '\n'
 
 
@@ -541,7 +592,23 @@ def dependency_level_matrix(waves: list[list[str]]) -> dict:
                         for index, packages in enumerate(waves, 1) if packages]}
 
 
+def _discovery_row(source: str, entry: dict) -> str:
+    """Render one source's selection reason, archive baseline, and immutable refs."""
+    reasons = ', '.join(entry.get('selection_reasons', [])) or 'catalog selection'
+    selection = f"`{entry.get('upstream_ref', 'unknown')}` ({entry.get('branch_policy', 'unknown')})"
+    if entry.get('upstream_release'):
+        selection += f"; release `{entry['upstream_release']}`"
+    comparison = entry.get('comparison_archive_version')
+    pocket = entry.get('comparison_archive_pocket')
+    baseline = (f"`{comparison}` from `{pocket}`" if comparison
+                else 'No target-archive package')
+    return (f"| `{source}` | {reasons} | {baseline} | {selection} | "
+                 f"`{entry.get('upstream_sha', 'unresolved')}` | "
+                 f"`{entry.get('packaging_sha', 'archive fallback')}` |")
+
+
 def render_discovery_summary(catalog: dict, sources: list[str], roots: list[str]) -> str:
+    """Render pinned source discovery while deferring build levels to preparation."""
     entries = {entry['source']: entry for entry in catalog['packages']}
     lines = [f"# OpenStack {catalog.get('series', 'unknown')} snapshot source discovery", '',
              f'{len(sources)} source packages were selected and pinned for parallel source preparation.', '',
@@ -550,26 +617,9 @@ def render_discovery_summary(catalog: dict, sources: list[str], roots: list[str]
              '| Source | Selection reason | Archive comparison | Upstream selection | Upstream SHA | Packaging SHA |',
              '|---|---|---|---|---|---|']
     for source in sources:
-        entry = entries[source]
-        reasons = ', '.join(entry.get('selection_reasons', [])) or 'catalog selection'
-        selection = f"`{entry.get('upstream_ref', 'unknown')}` ({entry.get('branch_policy', 'unknown')})"
-        if entry.get('upstream_release'):
-            selection += f"; release `{entry['upstream_release']}`"
-        comparison = entry.get('comparison_archive_version')
-        pocket = entry.get('comparison_archive_pocket')
-        baseline = (f"`{comparison}` from `{pocket}`" if comparison
-                    else 'No target-archive package')
-        lines.append(f"| `{source}` | {reasons} | {baseline} | {selection} | "
-                     f"`{entry.get('upstream_sha', 'unresolved')}` | "
-                     f"`{entry.get('packaging_sha', 'archive fallback')}` |")
-    warnings = [(source, entries[source]['packaging_fallback_warning'])
-                for source in sources
-                if entries[source].get('packaging_fallback_warning')]
-    if warnings:
-        lines.extend(['', '## Packaging fallback warnings', '',
-                      'These packages use Debian packaging as the final fallback and require human review:', ''])
-        for source, warning in warnings:
-            lines.append(f'- **WARNING — `{source}`:** {warning}')
+        lines.append(_discovery_row(source, entries[source]))
+
+    lines.extend(_packaging_warnings(sources, entries))
     lines.extend(['', 'Dependency levels will be computed after these exact sources produce their `.dsc` metadata.'])
     return '\n'.join(lines) + '\n'
 
