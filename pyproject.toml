@@ -68,6 +68,8 @@ files = [
     "src/packagetest/snapshot.py",
     "src/packagetest/snapshot_lock.py",
     "src/packagetest/handoff.py",
+    "src/packagetest/patches.py",
+    "src/packagetest/failure_summary.py",
 
 
 ]

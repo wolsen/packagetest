@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Mapping
 from pathlib import Path
+from typing import TypeGuard
+
+from .contracts import object_mapping
 
 
 def _tail_lines(text: str, limit: int = 30) -> list[str]:
@@ -32,7 +36,7 @@ def _load_command_results(commands_path: Path) -> tuple[list[dict[str, object]],
     for index, line in enumerate(lines, start=1):
         try:
             payload = json.loads(line)
-        except json.JSONDecodeError as exc:
+        except ValueError as exc:
             parse_errors += 1
             print(f"  command_log_parse_error: {commands_path}:{index}: {exc}")
             continue
@@ -100,21 +104,23 @@ def _print_command_trace(*, root: Path, generation_id: str | None, source: str) 
     return parse_errors
 
 
-def _valid_argv(value: object) -> bool:
+def _valid_argv(value: object) -> TypeGuard[list[str]]:
     """Recognize a JSON argument vector made exclusively of strings."""
     return isinstance(value, list) and all(isinstance(part, str) for part in value)
 
 
-def _failure_argv(command: dict, payload: dict) -> list:
+def _failure_argv(
+    command: Mapping[str, object], payload: Mapping[str, object]
+) -> list[str]:
     """Prefer structured argv, falling back to the legacy failed-command field."""
     value = command.get("command")
     if not _valid_argv(value):
         value = payload.get("failed_command")
 
-    return value if isinstance(value, list) else []
+    return value if _valid_argv(value) else []
 
 
-def _print_failure_stream(command: dict) -> None:
+def _print_failure_stream(command: Mapping[str, object]) -> None:
     """Prefer the failure's stderr tail, using stdout only when stderr is empty."""
     stderr = str(command.get("stderr", "")).strip()
     stdout = str(command.get("stdout", "")).strip()
@@ -128,9 +134,14 @@ def _print_failure_stream(command: dict) -> None:
             print(f"    {line}")
 
 
-def _summarize_failure(root: Path, failure_file: Path, payload: dict) -> int:
+def _summarize_failure(
+    root: Path, failure_file: Path, payload: Mapping[str, object]
+) -> int:
     """Print the direct failure and return unreadable command-log record counts."""
-    command = payload.get("command") if isinstance(payload.get("command"), dict) else {}
+    raw_command = payload.get("command")
+    command = (
+        object_mapping(raw_command, "command") if isinstance(raw_command, dict) else {}
+    )
     command_argv = _failure_argv(command, payload)
 
     print(f"- package: {payload.get('source_package')}")
@@ -163,8 +174,10 @@ def summarize(root: Path) -> int:
     print(f"Found {len(failure_files)} packaging failure bundle(s).")
     for failure_file in failure_files:
         try:
-            payload = json.loads(failure_file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
+            payload = object_mapping(
+                json.loads(failure_file.read_text(encoding="utf-8")), "failure record"
+            )
+        except ValueError as exc:
             parse_errors += 1
             print(f"- failure_json: {failure_file}")
             print(f"  parse_error: {exc}")

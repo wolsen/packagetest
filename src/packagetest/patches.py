@@ -4,13 +4,67 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal, TypedDict, TypeGuard
 
 from .artifacts import sha256
+from .contracts import records, required_text, text_field
 
 
-def _applied_patch_evidence(tree: Path, patch: Path) -> dict | None:
+class AppliedPatchEvidence(TypedDict):
+    """Checksum and zero-fuzz reverse-probe evidence for an already applied patch."""
+
+    sha256: str
+    reverse_probe: str
+
+
+class AppliedPatchAction(AppliedPatchEvidence):
+    """An omitted series entry whose complete payload was proven present upstream."""
+
+    action: Literal["omit-already-applied-patch"]
+    name: str
+
+
+class IntegratedPatchEvidence(TypedDict):
+    """A forwarded Change-Id matched to a frozen upstream ancestor."""
+
+    sha256: str
+    change_id: str
+    upstream_commit: str
+    human_review_required: bool
+
+
+class IntegratedPatchAction(IntegratedPatchEvidence):
+    """An omitted forwarded series entry with immutable integration evidence."""
+
+    action: Literal["omit-integrated-upstream-patch"]
+    name: str
+
+
+class OverlapCommit(TypedDict):
+    """The strongest advisory commit match, retaining its rounded overlap score."""
+
+    sha: str
+    subject: str
+    commit_overlap: float
+
+
+class OverlapSuggestion(TypedDict):
+    """A heuristic review suggestion that never disables the unresolved quilt patch."""
+
+    action: Literal["review-upstream-patch-overlap"]
+    name: str
+    sha256: str
+    upstream_commit: OverlapCommit
+    current_overlap: float
+    token_count: int
+    targets: list[str]
+    human_review_required: bool
+
+
+def _applied_patch_evidence(tree: Path, patch: Path) -> AppliedPatchEvidence | None:
     """Require reverse success and forward failure with zero fuzz before omitting a patch."""
     data = patch.read_bytes()
     args = ["patch", "--dry-run", "--force", "--fuzz=0", "-p1"]
@@ -30,9 +84,9 @@ def _applied_patch_evidence(tree: Path, patch: Path) -> dict | None:
     return None
 
 
-def _omit_applied_entries(lines: list[str], tree: Path) -> list[dict]:
+def _omit_applied_entries(lines: list[str], tree: Path) -> list[AppliedPatchAction]:
     """Comment only option-free series entries proven fully present in upstream."""
-    omitted = []
+    omitted: list[AppliedPatchAction] = []
     for index, line in enumerate(lines):
         name = _single_patch_name(line)
         if name is None:
@@ -50,7 +104,7 @@ def _omit_applied_entries(lines: list[str], tree: Path) -> list[dict]:
     return omitted
 
 
-def already_applied_patches(tree: Path) -> list[dict]:
+def already_applied_patches(tree: Path) -> list[AppliedPatchAction]:
     """Omit a quilt patch only if its complete inverse applies without fuzz.
 
     Also require that the forward patch does not apply, so ambiguous repeated
@@ -85,7 +139,9 @@ def _forwarded_change_id(patch: Path) -> str | None:
     text = patch.read_text(errors="replace")
     first_section = re.search(r"(?m)^(?:diff --git |---\s)", text)
     header = text[: first_section.start()] if first_section else text
-    change_ids = set(re.findall(r"(?m)^Change-Id:\s*(I[0-9a-fA-F]{40})\s*$", header))
+    change_ids: set[str] = set(
+        re.findall(r"(?m)^Change-Id:\s*(I[0-9a-fA-F]{40})\s*$", header)
+    )
     if len(change_ids) != 1:
         return None
 
@@ -94,7 +150,7 @@ def _forwarded_change_id(patch: Path) -> str | None:
 
 def _integrated_patch_evidence(
     patch: Path, checkout: Path, upstream_sha: str
-) -> dict | None:
+) -> IntegratedPatchEvidence | None:
     """Find a forwarded Gerrit change within the frozen upstream commit ancestry."""
     change_id = _forwarded_change_id(patch)
     if change_id is None:
@@ -131,9 +187,9 @@ def _integrated_patch_evidence(
 
 def _omit_integrated_entries(
     lines: list[str], tree: Path, checkout: Path, upstream_sha: str
-) -> list[dict]:
+) -> list[IntegratedPatchAction]:
     """Comment forwarded changes only after collecting immutable integration evidence."""
-    omitted = []
+    omitted: list[IntegratedPatchAction] = []
     for index, line in enumerate(lines):
         name = _active_patch_name(line)
         if name is None:
@@ -160,7 +216,7 @@ def _omit_integrated_entries(
 
 def integrated_upstream_patches(
     tree: Path, checkout: Path, upstream_sha: str
-) -> list[dict]:
+) -> list[IntegratedPatchAction]:
     """Omit forwarded patches whose Gerrit change is in frozen upstream.
 
     Textual patch probes become ambiguous after upstream evolves the merged
@@ -333,10 +389,19 @@ class PatchOverlap:
         """Calculate the fraction of patch identifiers present in candidate evidence."""
         return len(self.tokens & _semantic_patch_tokens(text)) / len(self.tokens)
 
-    def commit_overlap(self, checkout: Path, commit: dict) -> float | None:
+    def commit_overlap(
+        self, checkout: Path, commit: Mapping[str, object]
+    ) -> float | None:
         """Score a commit's scoped diff and message, ignoring failed or empty lookups."""
         result = subprocess.run(
-            ["git", "show", "--format=%B", commit["sha"], "--", *self.targets],
+            [
+                "git",
+                "show",
+                "--format=%B",
+                required_text(commit, "sha"),
+                "--",
+                *self.targets,
+            ],
             cwd=checkout,
             text=True,
             capture_output=True,
@@ -347,23 +412,30 @@ class PatchOverlap:
 
         return self.overlap(result.stdout)
 
-    def best_commit(self, checkout: Path, commits: list[dict]) -> dict | None:
+    def best_commit(
+        self, checkout: Path, commits: Sequence[Mapping[str, object]]
+    ) -> OverlapCommit | None:
         """Retain the strongest qualifying commit using the existing rounded-score comparison."""
-        best = None
+        best: OverlapCommit | None = None
         for commit in commits:
             overlap = self.commit_overlap(checkout, commit)
             if _better_overlap(overlap, best):
                 best = {
-                    "sha": commit["sha"],
-                    "subject": commit.get("subject", ""),
+                    "sha": required_text(commit, "sha"),
+                    "subject": text_field(commit, "subject"),
                     "commit_overlap": round(overlap, 3),
                 }
 
         return best
 
     def suggestion(
-        self, tree: Path, checkout: Path, commits: list[dict], patch: Path, name: Path
-    ) -> dict | None:
+        self,
+        tree: Path,
+        checkout: Path,
+        commits: Sequence[Mapping[str, object]],
+        patch: Path,
+        name: Path,
+    ) -> OverlapSuggestion | None:
         """Return a human-review suggestion without editing patch content or the series."""
         overlap = self.current_overlap(tree)
         if overlap is None or overlap < 0.70:
@@ -385,7 +457,9 @@ class PatchOverlap:
         }
 
 
-def _better_overlap(overlap: float | None, best: dict | None) -> bool:
+def _better_overlap(
+    overlap: float | None, best: OverlapCommit | None
+) -> TypeGuard[float]:
     """Apply the threshold before comparing a score with the previous best result."""
     if overlap is None or overlap < 0.70:
         return False
@@ -394,8 +468,8 @@ def _better_overlap(overlap: float | None, best: dict | None) -> bool:
 
 
 def _patch_overlap_suggestion(
-    tree: Path, checkout: Path, commits: list[dict], name: Path
-) -> dict | None:
+    tree: Path, checkout: Path, commits: Sequence[Mapping[str, object]], name: Path
+) -> OverlapSuggestion | None:
     """Probe a regular patch before attempting advisory semantic comparison."""
     patch = tree / "debian/patches" / name
     if not patch.is_file() or patch.is_symlink():
@@ -413,10 +487,13 @@ def _patch_overlap_suggestion(
 
 
 def _overlap_suggestions(
-    lines: list[str], tree: Path, checkout: Path, commits: list[dict]
-) -> list[dict]:
+    lines: list[str],
+    tree: Path,
+    checkout: Path,
+    commits: Sequence[Mapping[str, object]],
+) -> list[OverlapSuggestion]:
     """Collect suggestions for eligible active patch entries in series order."""
-    adjustments = []
+    adjustments: list[OverlapSuggestion] = []
     for line in lines:
         name = _single_patch_name(line)
         if name is None:
@@ -430,8 +507,8 @@ def _overlap_suggestions(
 
 
 def superseded_upstream_patches(
-    tree: Path, checkout: Path, selected: dict
-) -> list[dict]:
+    tree: Path, checkout: Path, selected: Mapping[str, object]
+) -> list[OverlapSuggestion]:
     """Suggest upstream commits for review without disabling a quilt patch.
 
     Identifier overlap is a search heuristic, never proof of equivalent
@@ -444,8 +521,8 @@ def superseded_upstream_patches(
     lines = series.read_text().splitlines()
     commits = [
         item
-        for item in selected.get("commits", [])
-        if re.fullmatch(r"[0-9a-f]{40}", item.get("sha", ""))
+        for item in records(selected.get("commits", []), "upstream commits")
+        if re.fullmatch(r"[0-9a-f]{40}", text_field(item, "sha"))
     ]
     if not commits:
         return []

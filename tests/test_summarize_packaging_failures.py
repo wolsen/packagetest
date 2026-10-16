@@ -108,3 +108,22 @@ def test_summarize_returns_nonzero_for_invalid_command_log_json(tmp_path: Path, 
     captured = capsys.readouterr()
     assert "command_log_parse_error" in captured.out
     assert "unreadable failure bundle" in captured.err
+
+
+def test_malformed_legacy_argv_does_not_break_failure_rendering(tmp_path, capsys):
+    """Discard a non-string legacy argument rather than failing while joining argv."""
+    module = _load_module()
+    failure = tmp_path / 'gen-1/failures/sample/failure.json'
+    _write_failure(failure, {'command': None, 'failed_command': ['sbuild', 42]})
+    assert module.summarize(tmp_path) == 0
+    assert 'failed_command: \n' in capsys.readouterr().out
+
+
+def test_array_failure_record_is_reported_as_unreadable(tmp_path, capsys):
+    """A valid JSON array is still an invalid structured failure record."""
+    module = _load_module()
+    failure = tmp_path / 'gen-1/failures/sample/failure.json'
+    failure.parent.mkdir(parents=True)
+    failure.write_text('[]')
+    assert module.summarize(tmp_path) == 1
+    assert 'must be an object' in capsys.readouterr().out
