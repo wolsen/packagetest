@@ -631,7 +631,10 @@ class ProposalPlanner:
         return validation
 
     def _new_batch(
-        self, decision: dict[str, Any], inference: dict[str, Any], evidence: str,
+        self,
+        decision: dict[str, Any],
+        inference: dict[str, Any],
+        evidence: str,
         record: dict[str, Any],
     ) -> list[dict[str, Any]] | None:
         """Require a nonempty set of new validated repairs within the remaining budget."""
@@ -664,7 +667,9 @@ class ProposalPlanner:
         record: dict[str, Any],
     ) -> tuple[list[dict[str, Any]], dict[str, Any]] | None:
         """Accept a validated repair batch and retain its decision keys and evidence."""
-        validation = self._validated_decision(decision, inference, evidence, directory, record)
+        validation = self._validated_decision(
+            decision, inference, evidence, directory, record
+        )
         if validation is None:
             return None
 
@@ -864,79 +869,135 @@ def finish(
     return 0 if selected else 1
 
 
+class RemediationRun:
+    """Coordinate proposal attempts, candidate outcomes, and bounded repair progress."""
+
+    def __init__(self, args: argparse.Namespace, phase: str) -> None:
+        """Capture initial failure evidence and initialize collaborators and retry budgets."""
+        self.args = args
+        self.phase = phase
+        self.initial_phase = self.phase
+        self.evidence = failure_evidence(self.args.outputs, self.args.tests)
+        (self.args.report / "failure-evidence.txt").write_text(self.evidence + "\n")
+        self.tree = prepared_tree(self.args.outputs)
+        copy_initial_evidence(self.args.outputs, self.args.tests, self.args.report)
+        self.progress = RepairProgress()
+        self.selected: int | None = None
+        self.executor = CandidateExecutor(self.args, build_attempt, test_attempt)
+        self.promoter = ArtifactPromoter(self.args.outputs, self.args.tests)
+        self.planner = ProposalPlanner(self.args, self.tree, self.progress)
+        self.session = RemediationSession(
+            time.monotonic() + self.args.remediation_seconds,
+            self.args.max_model_calls,
+            self.args.max_rebuilds,
+            self.args.max_repairs,
+        )
+        self.args.remediation_session = self.session
+
+    def _candidate_outcome(
+        self,
+        candidate: CandidateOutcome,
+        proposal: RepairProposal,
+        number: int,
+        record: dict[str, Any],
+        signature: str,
+    ) -> bool:
+        """Advance failure evidence or promote a repaired candidate; return whether to stop."""
+        if candidate.status != CandidateStatus.REPAIRED:
+            self.planner.accepted.extend(proposal.decisions)
+            next_evidence = candidate.failure_evidence()
+            self.progress.feedback = (
+                json.dumps(record, indent=2) + "\n" + tail(candidate.log)
+            )
+            self.progress.attempts.append(record)
+            if failure_signature(next_evidence) == signature:
+                self.progress.stop_reason = candidate.repeated_failure_reason
+                return True
+
+            self.evidence = next_evidence
+            self.phase = candidate.phase
+            return False
+
+        self.selected = number
+        self.progress.stop_reason = "package rebuilt and passed autopkgtest"
+        self.progress.attempts.append(record)
+        self.promoter.promote(candidate)
+        return True
+
+    def _attempt(self) -> bool:
+        """Record one inference/build attempt, preserving errors through the retry policy."""
+        number = self.session.model_calls + 1
+        signature = failure_signature(self.evidence)
+        context = source_context(self.tree, self.evidence)
+        attempt_dir = self.args.report / f"attempt-{number}"
+        attempt_dir.mkdir()
+        text = prompt(
+            self.args.source, self.phase, self.evidence, context, self.progress.feedback
+        )
+        (attempt_dir / "prompt.txt").write_text(text)
+        record = {"number": number, "result": "MODEL_ERROR"}
+        self.session.model_calls += 1
+        try:
+            proposal = self.planner.propose(
+                self.phase, self.evidence, text, number, attempt_dir, record
+            )
+            if proposal is None:
+                return self.progress.stopped
+
+            self.session.rebuilds += 1
+            candidate = self.executor.execute(
+                number, proposal.path, attempt_dir, record
+            )
+            record["result"] = candidate.status.value
+            return self._candidate_outcome(
+                candidate, proposal, number, record, signature
+            )
+        except Exception as exc:
+            return not self.progress.handle_error(exc, attempt_dir, record, signature)
+
+    def execute(self) -> int:
+        """Run attempts until progress or budget policy stops the session, then publish evidence."""
+        while (
+            self.session.stop_reason(time.monotonic(), len(self.planner.prior)) is None
+        ):
+            if self._attempt():
+                break
+
+        return self._finish()
+
+    def _finish(self) -> int:
+        """Resolve budget exhaustion before publishing the final remediation result."""
+        if (
+            not self.selected
+            and self.progress.stop_reason == "remediation budget exhausted"
+        ):
+            self.progress.stop_reason = (
+                self.session.stop_reason(time.monotonic(), len(self.planner.prior))
+                or self.progress.stop_reason
+            )
+
+        return finish(
+            self.args,
+            self.initial_phase,
+            self.selected,
+            self.progress,
+            self.session,
+            self.planner,
+        )
+
+
 def run(args: argparse.Namespace) -> int:
+    """Verify the model and start a repair session only for an actionable failure."""
     args.report.mkdir(parents=True, exist_ok=True)
     args.work.mkdir(parents=True, exist_ok=True)
     if sha256(args.model) != args.model_sha256:
         raise SystemExit("local model checksum mismatch")
+
     phase = initial_failure_phase(args.outputs, args.tests)
     if phase is None:
         return 0
-    initial_phase = phase
-    evidence = failure_evidence(args.outputs, args.tests)
-    (args.report / "failure-evidence.txt").write_text(evidence + "\n")
-    tree = prepared_tree(args.outputs)
-    copy_initial_evidence(args.outputs, args.tests, args.report)
-    progress = RepairProgress()
-    selected = None
-    executor = CandidateExecutor(args, build_attempt, test_attempt)
-    promoter = ArtifactPromoter(args.outputs, args.tests)
-    planner = ProposalPlanner(args, tree, progress)
-    session = RemediationSession(
-        time.monotonic() + args.remediation_seconds,
-        args.max_model_calls,
-        args.max_rebuilds,
-        args.max_repairs,
-    )
-    args.remediation_session = session
-    while session.stop_reason(time.monotonic(), len(planner.prior)) is None:
-        number = session.model_calls + 1
-        signature = failure_signature(evidence)
-        context = source_context(tree, evidence)
-        attempt_dir = args.report / f"attempt-{number}"
-        attempt_dir.mkdir()
-        text = prompt(args.source, phase, evidence, context, progress.feedback)
-        (attempt_dir / "prompt.txt").write_text(text)
-        record = {"number": number, "result": "MODEL_ERROR"}
-        session.model_calls += 1
-        try:
-            proposal = planner.propose(
-                phase, evidence, text, number, attempt_dir, record
-            )
-            if proposal is None:
-                if progress.stopped:
-                    break
-                continue
-            session.rebuilds += 1
-            candidate = executor.execute(number, proposal.path, attempt_dir, record)
-            record["result"] = candidate.status.value
-            if candidate.status != CandidateStatus.REPAIRED:
-                planner.accepted.extend(proposal.decisions)
-                next_evidence = candidate.failure_evidence()
-                progress.feedback = (
-                    json.dumps(record, indent=2) + "\n" + tail(candidate.log)
-                )
-                progress.attempts.append(record)
-                if failure_signature(next_evidence) == signature:
-                    progress.stop_reason = candidate.repeated_failure_reason
-                    break
-                evidence = next_evidence
-                phase = candidate.phase
-                continue
-            selected = number
-            progress.stop_reason = "package rebuilt and passed autopkgtest"
-            progress.attempts.append(record)
-            promoter.promote(candidate)
-            break
-        except Exception as exc:
-            if not progress.handle_error(exc, attempt_dir, record, signature):
-                break
-    if not selected and progress.stop_reason == "remediation budget exhausted":
-        progress.stop_reason = (
-            session.stop_reason(time.monotonic(), len(planner.prior))
-            or progress.stop_reason
-        )
-    return finish(args, initial_phase, selected, progress, session, planner)
+
+    return RemediationRun(args, phase).execute()
 
 
 def main() -> int:

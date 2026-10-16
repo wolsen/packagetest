@@ -215,3 +215,26 @@ def test_timeout_stops_and_retains_diagnostics(failed_run, monkeypatch, timeout_
         assert (
             failed_run.report / "attempt-1/model-stderr.txt"
         ).read_text() == "still running"
+
+
+@pytest.mark.parametrize('budget, reason', [
+    ('max_model_calls', 'model-call budget exhausted'),
+    ('max_rebuilds', 'rebuild budget exhausted'),
+])
+def test_exhausted_initial_budget_does_not_start_an_attempt(failed_run, monkeypatch, budget, reason):
+    """Publish the budget reason without invoking inference or replacing original artifacts."""
+    setattr(failed_run, budget, 0)
+
+    def unexpected(*args):
+        """Fail immediately if a session with no available attempts invokes the model."""
+        raise AssertionError('inference must not run with an exhausted budget')
+
+    monkeypatch.setattr(remediation, 'llama_generate', unexpected)
+    assert remediation.run(failed_run) == 1
+    report = read_report(failed_run)
+    assert report['attempts'] == []
+    assert report['selected_attempt'] is None
+    assert report['progress']['model_calls'] == 0
+    assert report['progress']['rebuilds'] == 0
+    assert report['progress']['stop_reason'] == reason
+    assert json.loads((failed_run.outputs / 'result.json').read_text())['result'] == 'FAILED'
