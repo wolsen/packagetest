@@ -12,6 +12,7 @@ on:
       - "src/packagetest/failure_analysis.py"
       - "src/packagetest/remediation_evidence.py"
       - "src/packagetest/remediation.py"
+      - "src/packagetest/repair_agent.py"
       - "src/packagetest/source_remediation.py"
       - "src/packagetest/contracts.py"
   workflow_dispatch:
@@ -35,7 +36,7 @@ jobs:
   contract:
     name: Prepare and contract-test local model
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:

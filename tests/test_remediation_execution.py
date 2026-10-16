@@ -130,7 +130,7 @@ def propose_dependency(*args):
     ), {"returncode": 0}
 
 
-def test_unchanged_failure_stops_without_promoting(failed_run, monkeypatch):
+def test_repeated_proposal_after_unchanged_failure_stops_without_promoting(failed_run, monkeypatch):
     monkeypatch.setattr(remediation, "llama_generate", propose_dependency)
 
     def build(args, patch, destination, log):
@@ -143,10 +143,10 @@ def test_unchanged_failure_stops_without_promoting(failed_run, monkeypatch):
     assert remediation.run(failed_run) == 1
     report = read_report(failed_run)
     assert report["progress"] == {
-        "model_calls": 1,
+        "model_calls": 2,
         "rebuilds": 1,
         "validated_repairs": 1,
-        "stop_reason": "rebuild reproduced the same failure signature",
+        "stop_reason": "model repeated an existing decision without progress",
     }
     assert report["attempts"][0]["result"] == "BUILD_FAILED"
     assert (
@@ -238,3 +238,102 @@ def test_exhausted_initial_budget_does_not_start_an_attempt(failed_run, monkeypa
     assert report['progress']['rebuilds'] == 0
     assert report['progress']['stop_reason'] == reason
     assert json.loads((failed_run.outputs / 'result.json').read_text())['result'] == 'FAILED'
+
+
+def generic_decision(before="Architecture: all", after="Architecture: any"):
+    return {
+        "action": "propose_patch", "diagnosis": "The binary requires a target architecture.",
+        "evidence": "ModuleNotFoundError: No module named 'futurist'",
+        "edits": [{"path": "debian/control", "before": before, "after": after}],
+    }
+
+
+def successful_gates(monkeypatch):
+    def build(args, patch, destination, log):
+        destination.mkdir(parents=True)
+        (destination / "result.json").write_text('{"result":"SUCCEEDED"}')
+        log.write_text("built")
+        return 0
+
+    def test(args, candidate, destination, log):
+        (destination / "test-results/result").mkdir(parents=True)
+        (destination / "test-results/result/result.json").write_text('{"result":"PASS"}')
+        log.write_text("PASS")
+        return 0, {"result": "PASS"}
+
+    monkeypatch.setattr(remediation, "build_attempt", build)
+    monkeypatch.setattr(remediation, "test_attempt", test)
+
+
+def test_general_agent_inspects_then_passes_both_candidate_gates(failed_run, monkeypatch):
+    responses = iter([
+        {"action": "inspect", "requests": [{"op": "read", "path": "debian/control"}]},
+        generic_decision(),
+    ])
+    prompts = []
+
+    def generate(*args):
+        prompts.append(args[2])
+        return json.dumps(next(responses)), {"returncode": 0}
+
+    monkeypatch.setattr(remediation, "llama_generate", generate)
+    successful_gates(monkeypatch)
+    assert remediation.run(failed_run) == 0
+    report = read_report(failed_run)
+    assert report["progress"]["model_calls"] == 2
+    assert report["progress"]["rebuilds"] == 1
+    assert [item["result"] for item in report["attempts"]] == ["INSPECTED", "REPAIRED"]
+    assert "Architecture: all" in prompts[1]
+    assert (failed_run.report / "attempt-1/inspection.json").is_file()
+    assert report["attempts"][1]["decision_validation"]["human_review_required"] is True
+
+
+def test_inspection_turns_obey_model_budget_without_rebuild(failed_run, monkeypatch):
+    failed_run.max_model_calls = 2
+    monkeypatch.setattr(remediation, "llama_generate", lambda *args: (json.dumps({"action": "inspect", "requests": [{"op": "list", "path": ""}]}), {}))
+    assert remediation.run(failed_run) == 1
+    report = read_report(failed_run)
+    assert report["progress"]["stop_reason"] == "model-call budget exhausted"
+    assert report["progress"]["rebuilds"] == 0
+    assert [item["result"] for item in report["attempts"]] == ["INSPECTED", "INSPECTED"]
+
+
+def test_rejected_preimage_is_feedback_and_never_consumes_a_build(failed_run, monkeypatch):
+    responses = iter([generic_decision("not in the source"), generic_decision()])
+    prompts = []
+
+    def generate(*args):
+        prompts.append(args[2])
+        return json.dumps(next(responses)), {}
+
+    monkeypatch.setattr(remediation, "llama_generate", generate)
+    successful_gates(monkeypatch)
+    assert remediation.run(failed_run) == 0
+    report = read_report(failed_run)
+    assert report["progress"]["rebuilds"] == 1
+    assert report["attempts"][0]["result"] == "RENDER_REJECTED"
+    assert "Preimage must occur exactly once" in prompts[1]
+
+
+def test_ineffective_patch_is_rolled_back_before_a_different_proposal(failed_run, monkeypatch):
+    responses = iter([generic_decision(), generic_decision("Build-Depends-Indep: python3-pbr", "Build-Depends-Indep: python3-pbr, python3-futurist")])
+    monkeypatch.setattr(remediation, "llama_generate", lambda *args: (json.dumps(next(responses)), {}))
+    successful_gates(monkeypatch)
+    good_build = remediation.build_attempt
+    patches = []
+
+    def build(args, patch, destination, log):
+        patches.append(patch.read_text())
+        if len(patches) == 1:
+            destination.mkdir(parents=True)
+            (destination / "result.json").write_text('{"result":"FAILED"}')
+            log.write_text("ModuleNotFoundError: No module named 'futurist'\n")
+            return 1
+        return good_build(args, patch, destination, log)
+
+    monkeypatch.setattr(remediation, "build_attempt", build)
+    assert remediation.run(failed_run) == 0
+    assert "+Architecture: any" in patches[0]
+    assert "+Architecture: any" not in patches[1]
+    assert "+Build-Depends-Indep: python3-pbr, python3-futurist" in patches[1]
+    assert read_report(failed_run)["progress"]["rebuilds"] == 2

@@ -226,7 +226,7 @@ def test_model_fallback_preserves_attempt_evidence(tmp_path, monkeypatch, outcom
     monkeypatch.setattr(helper, 'llama_generate', lambda *args: (json.dumps(decision), {'backend': 'fixture'}))
     monkeypatch.setattr(module, 'normalize_repair_decision', lambda decision, *args: decision)
     validation = {'result': 'REJECTED', 'error': 'unsafe repair'} if outcome == 'rejected' else {'result': 'ACCEPTED'}
-    monkeypatch.setattr(module, 'validate_repair_decision', lambda *args: validation)
+    monkeypatch.setattr(helper, 'validate_model_decision', lambda *args: validation)
     monkeypatch.setattr(helper, 'render_cumulative_repair', lambda *args: 'fixture patch')
     monkeypatch.setattr(module, 'validate_source_patch', lambda *args: {'result': 'APPLIES'})
 

@@ -110,8 +110,9 @@ budget; model prompts also retain bounded feedback from the preceding attempt.
 `ProposalPlanner` normalizes, validates, and batches model decisions, then renders
 a cumulative patch against the original prepared tree. Decision identities are
 counted before rendering, and accepted changes are retained when a failed build
-or test exposes a different failure. Duplicate decisions and unchanged failures
-retain their existing stop conditions.
+or test exposes a different failure. An unchanged failure discards the ineffective
+proposal and allows a different proposal within the unchanged-evidence retry
+budget. Repeated decisions stop the session.
 
 `CandidateExecutor` runs a fresh build followed by autopkgtest only when the build
 returns zero and records `SUCCEEDED`. Test acceptance uses the classified result;
@@ -125,6 +126,96 @@ Replacement is sequential, not a transaction across both directories.
 partial output and stop immediately, subprocess timeouts stop the session, and
 other errors use the unchanged-evidence retry budget. Report rendering does not
 make execution or promotion decisions.
+
+### Local model investigation and edit protocol
+
+The model can return `inspect`, `propose_patch`, or an existing mechanical repair
+decision. Inspection consumes a model call but no rebuild or validated-repair
+slot. Every prompt, response, inspection result, diagnosis, patch validation,
+rebuild result, and test result is retained in the attempt evidence.
+
+```mermaid
+flowchart TD
+    Failure[Current failure and prepared source] --> Model[Local model turn]
+    Model --> Inspect[Bounded list, read, or literal search]
+    Inspect --> Model
+    Model --> Plan[Diagnosis, failure quote, exact text edits]
+    Plan --> Policy[Schema, paths, preimages, and content checks]
+    Policy --> Quilt[Packaging diff with generated upstream quilt patch]
+    Quilt --> Validate[Independent patch application check]
+    Validate --> Build[Fresh prepared source and sbuild]
+    Build --> Test[autopkgtest classification]
+    Test --> Promote[Promote accepted candidate artifacts]
+    Policy --> Feedback[Validation or build/test feedback]
+    Validate --> Feedback
+    Build --> Feedback
+    Test --> Feedback
+    Feedback --> Model
+```
+
+Inspection requests use this envelope:
+
+```json
+{"action":"inspect","requests":[{"op":"read","path":"package/worker.py","start":1,"lines":80}]}
+```
+
+| Operation | Fields | Bound |
+| --- | --- | --- |
+| `list` | `path`, optional one-based `start` | 100 directory entries per page |
+| `read` | `path`, optional one-based `start` and `lines` | 120 numbered lines; 256 KiB UTF-8 file |
+| `search` | `path`, `query` | Literal query up to 200 characters; 30 matches; 5,000 files per directory subtree |
+
+Each turn accepts 1–3 requests and returns at most 8,000 characters
+of JSON, with explicit truncation markers. Paths stay inside the source tree;
+symlinks, traversal, ambiguous names, private Git/quilt state, and generated
+build directories are rejected. Inspection cannot run commands, access the
+network, or inspect the runner environment. Narrow the directory or line range
+when feedback reports a limit. Source content and diagnostics are untrusted data.
+
+General repairs use this envelope:
+
+```json
+{"action":"propose_patch","diagnosis":"Explain the failed invariant and the correction","evidence":"Exact current failure quotation","edits":[{"path":"package/worker.py","before":"exact unique existing block\n","after":"replacement block\n"}]}
+```
+
+`PatchPlan` requires a verbatim quotation from the current failure and 1–8 unique
+file edits. Responses are limited to 48 KiB; duplicate JSON fields are rejected.
+A nonempty `before` must occur exactly once. Empty `before` creates a previously
+absent file. Files remain nonempty UTF-8 text ending in a newline. Direct edits
+cannot change changelog, source format, source options, maintainer hooks, or
+quilt bookkeeping. Packaging ownership and test-bypass checks also apply.
+
+For upstream edits, the harness materializes the current `3.0 (quilt)` stack in
+a disposable copy, generates a deterministic new DEP-3 quilt patch, and appends
+it to `debian/patches/series`. The outer proposal changes only Debian packaging.
+Inspection after an accepted prefix sees its applied upstream changes. A broken
+existing quilt stack must first be repaired through the mechanical refresh/drop
+interface; generic edits cannot bypass that stack or modify its patch files.
+
+Python test edits must preserve qualified test names and assertion counts;
+changing an existing test file also requires an added regression test. Lintian
+exceptions require an explanatory comment and a literal package/tag/file entry
+matching the current diagnostic. Architecture mismatch overrides are rejected.
+These checks constrain proposals; they cannot prove behavioral equivalence,
+assertion quality, or that a version requirement was not weakened. General
+proposals carry `human_review_required: true` in decision validation for later
+review. That flag does not bypass or pause execution gates.
+
+Inference permits 2,048 output tokens in a 16,384-token context. Package sessions
+retain their eight model-call, four rebuild, eight validated-repair, and 45-minute
+default budgets, with a 420-second per-call timeout bounded by the remaining
+session deadline. Inspection and rejected proposals consume calls. Source
+preparation has a separate eight-call budget and 420-second per-call timeout;
+success selects only a prepared source, which still enters the downstream build
+and autopkgtest gates. A model timeout stops the package session immediately.
+
+The focused model-contract workflow retains mechanical cases and adds a real
+model investigation of a separate source fixture. It checks a generated quilt
+patch with `dpkg-source` and assesses the fixture invariant statically, without
+executing model-authored Python on the runner host. Unit and component tests use
+scripted responses to verify policy, budgets, retries, and artifact promotion;
+they do not measure model repair accuracy on real package failures.
+
 
 ## Nightly planning responsibilities
 

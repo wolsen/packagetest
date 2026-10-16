@@ -177,7 +177,7 @@ def test_llama_timeout_retains_partial_output_and_uses_small_budget(tmp_path, mo
         assert exc.metadata["timeout_seconds"] == 7
     else:
         raise AssertionError("expected inference timeout")
-    assert captured["command"][captured["command"].index("-n") + 1] == "128"
+    assert captured["command"][captured["command"].index("-n") + 1] == "2048"
 
 
 def test_prompt_escapes_git_log_nul_separators():

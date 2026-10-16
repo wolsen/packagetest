@@ -203,6 +203,148 @@ def _runtime_environment(executable: Path) -> dict[str, str]:
     return env
 
 
+def _investigation_fixture(tree: Path) -> None:
+    """Create an independent quilt source with an intentionally narrow version check."""
+    (tree / "debian/source").mkdir(parents=True)
+    (tree / "debian/source/format").write_text("3.0 (quilt)\n")
+    (tree / "debian/control").write_text(
+        "Source: sample\n\nPackage: sample\nArchitecture: all\nDescription: fixture\n model contract\n"
+    )
+    (tree / "debian/changelog").write_text(
+        "sample (1.0-1) unstable; urgency=medium\n\n  * Contract fixture.\n\n"
+        " -- Example <example@example.org>  Fri, 16 Oct 2026 12:00:00 +0000\n"
+    )
+    (tree / "compatibility.py").write_text(
+        '"""Accept data at or above the documented minimum version."""\n\n'
+        "MINIMUM = 2024\n\ndef supported(version):\n"
+        '    """Report whether the supplied data meets the minimum."""\n'
+        "    return version == MINIMUM\n"
+    )
+
+
+def _minimum_contract(tree: Path) -> bool:
+    """Assess the fixture invariant statically without executing model-authored code on the host."""
+    import ast
+
+    syntax = ast.parse((tree / "compatibility.py").read_text())
+    original = ast.parse("MINIMUM = 2024")
+    baseline = syntax.body[1]
+    function = syntax.body[2]
+    expected = ast.parse(
+        "def supported(version):\n    return version >= MINIMUM\n"
+    ).body[0]
+    return (
+        ast.dump(baseline) == ast.dump(original.body[0])
+        and isinstance(function, ast.FunctionDef)
+        and ast.dump(function.body[-1]) == ast.dump(expected.body[0])
+    )
+
+
+def _agent_turn(
+    args: argparse.Namespace,
+    tree: Path,
+    directory: Path,
+    number: int,
+    evidence: str,
+    feedback: str,
+) -> dict:
+    """Use the production prompt and runtime while retaining every model turn."""
+    from packagetest.remediation import llama_generate, prompt
+    from packagetest.repair_agent import parse_response
+
+    text = prompt(
+        "sample",
+        "build",
+        evidence,
+        "Source root contains compatibility.py and debian/.\n" + feedback,
+    )
+    (directory / "prompt.txt").write_text(text)
+    output, metadata = llama_generate(args.llama_cli, args.model, text, number, 420)
+    (directory / "model-output.txt").write_text(output)
+    (directory / "inference.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    return parse_response(output)
+
+
+def _agent_proposal(decision: dict, tree: Path, directory: Path, evidence: str) -> bool:
+    """Require evidence, policy, patch application, and the independent fixture invariant."""
+    from packagetest.repair_agent import (
+        PatchPlan,
+        materialize_source,
+        render_edit_repair,
+    )
+
+    PatchPlan.from_mapping(decision, evidence)
+    patch = render_edit_repair(decision, tree)
+    (directory / "proposal.patch").write_text(patch)
+    validation = validate_source_patch(patch, tree, apply=True)
+    (directory / "patch-validation.json").write_text(
+        json.dumps(validation, indent=2) + "\n"
+    )
+    if validation["result"] != "APPLIED":
+        raise ValueError(validation["error"])
+
+    materialize_source(tree)
+    return _minimum_contract(tree)
+
+
+def _investigation_turn(
+    args: argparse.Namespace,
+    tree: Path,
+    directory: Path,
+    number: int,
+    evidence: str,
+    feedback: str,
+) -> tuple[bool, str]:
+    """Answer inspection or evaluate a final proposal, returning bounded retry feedback."""
+    from packagetest.repair_agent import SourceInspector
+
+    decision = _agent_turn(args, tree, directory, number, evidence, feedback)
+    (directory / "decision.json").write_text(json.dumps(decision, indent=2) + "\n")
+    if decision.get("action") == "inspect":
+        result = SourceInspector(tree).inspect(decision)
+        (directory / "inspection.json").write_text(result + "\n")
+        return False, result
+
+    if decision.get("action") != "propose_patch":
+        raise ValueError(
+            "This contract requires investigation and a general source edit"
+        )
+
+    return _agent_proposal(
+        decision, tree, directory, evidence
+    ), "Proposal did not restore the documented minimum-version invariant."
+
+
+def _run_investigation_case(args: argparse.Namespace) -> dict:
+    """Exercise a bounded real-model investigation independently of the mechanical contracts."""
+    case_dir = args.output / "general-source-investigation"
+    case_dir.mkdir()
+    tree = case_dir / "source"
+    _investigation_fixture(tree)
+    evidence = "AssertionError: supported(2026) returned False in compatibility.py; data versions at or above MINIMUM must be accepted."
+    feedback = "Inspect the implementation before proposing an exact edit."
+    for number in range(1, 5):
+        directory = case_dir / f"turn-{number}"
+        directory.mkdir()
+        try:
+            passed, feedback = _investigation_turn(
+                args, tree, directory, number, evidence, feedback
+            )
+            if passed and list(case_dir.glob("turn-*/inspection.json")):
+                return {"name": case_dir.name, "result": "PASS", "model_calls": number}
+
+        except Exception as exc:
+            feedback = str(exc)
+            (directory / "error.txt").write_text(feedback + "\n")
+
+    return {
+        "name": case_dir.name,
+        "result": "FAIL",
+        "model_calls": 4,
+        "error": feedback,
+    }
+
+
 def main() -> int:
     """Exercise the pinned model against all fixed repair contracts."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -217,6 +359,7 @@ def main() -> int:
     for number, case in enumerate(CONTRACT_CASES, 1):
         results.append(_run_case(args, env, number, case))
 
+    results.append(_run_investigation_case(args))
     result = {
         "result": "PASS"
         if all(case["result"] == "PASS" for case in results)

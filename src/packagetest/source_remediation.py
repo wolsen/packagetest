@@ -16,10 +16,9 @@ from pathlib import Path
 from packagetest.failure_analysis import (
     QuiltPatchSuperseded,
     normalize_repair_decision,
-    parse_repair_decision,
-    validate_repair_decision,
     validate_source_patch,
 )
+from packagetest.repair_agent import SourceInspector, parse_response
 
 
 def failed_tree(work: Path, source: str) -> Path:
@@ -134,8 +133,8 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--model-sha256", required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--run-attempt", required=True)
-    parser.add_argument("--model-timeout", type=int, default=180)
-    parser.add_argument("--max-model-calls", type=int, default=2)
+    parser.add_argument("--model-timeout", type=int, default=420)
+    parser.add_argument("--max-model-calls", type=int, default=8)
     return parser.parse_args()
 
 
@@ -153,6 +152,7 @@ class SourceRepairSession:
         self.attempts: list[dict] = []
         self.selected: str | int | None = None
         self.feedback = ""
+        self.investigation = ""
         self.deterministic_seen: set[tuple[str, str]] = set()
 
     def _next_subject(self) -> str | None:
@@ -340,11 +340,17 @@ class SourceRepairSession:
             self.args.model_timeout,
         )
         (attempt / "model-output.txt").write_text(output)
-        decision = normalize_repair_decision(
-            parse_repair_decision(output), self.tree, self.evidence
+        raw = parse_response(output)
+        decision = (
+            raw
+            if raw.get("action") in {"inspect", "propose_patch"}
+            else normalize_repair_decision(raw, self.tree, self.evidence)
         )
         write_json(attempt / "decision.json", decision)
-        validation = validate_repair_decision(decision, self.evidence)
+        if decision["action"] == "inspect":
+            return decision, inference
+
+        validation = helper.validate_model_decision(decision, self.evidence)
         write_json(attempt / "decision-validation.json", validation)
         if validation["result"] != "ACCEPTED":
             raise ValueError(validation["error"])
@@ -352,16 +358,39 @@ class SourceRepairSession:
         return decision, inference
 
     def _model_patch(self, decision: dict) -> str:
-        """Restrict source preparation repairs to quilt refreshes and explicit drops."""
+        """Compose a validated generic or mechanical proposal against the frozen source."""
         from packagetest import remediation as helper
-
-        if decision["action"] not in {"refresh_quilt_patch", "drop_quilt_patch"}:
-            raise ValueError(
-                "source preparation currently accepts only quilt refresh or drop decisions"
-            )
 
         self.decisions.append(decision)
         return helper.render_cumulative_repair(self.decisions, self.tree)
+
+    def _inspect_model(
+        self, decision: dict, inference: dict, attempt: Path, record: dict
+    ) -> bool:
+        """Inspect the latest failed source without consuming a preparation rebuild."""
+        if decision["action"] != "inspect":
+            return False
+
+        result = SourceInspector(self.current_tree).inspect(decision)
+        self.investigation = (self.investigation + "\n" + result)[-8000:]
+        (attempt / "inspection.json").write_text(result + "\n")
+        record.update(result="INSPECTED", decision=decision, inference=inference)
+        self.attempts.append(record)
+        return True
+
+    def _model_failure(
+        self, work: Path, output: Path, log: Path, record: dict, decision_count: int
+    ) -> None:
+        """Retain changed-failure progress while rolling back an ineffective preparation edit."""
+        from packagetest.remediation import failure_signature
+
+        previous = failure_signature(self.evidence)
+        self._retry_evidence(work, output, log, record)
+        if failure_signature(self.evidence) == previous:
+            del self.decisions[decision_count:]
+            return
+
+        self._retry_tree(work)
 
     def _model_attempt(self, number: int) -> bool:
         """Try one model proposal, stopping on an explicit no-fix decision or success."""
@@ -373,17 +402,23 @@ class SourceRepairSession:
             self.args.source,
             "source-preparation",
             self.evidence,
-            helper.source_context(self.tree, self.evidence),
+            helper.source_context(self.current_tree, self.evidence, limit=6000)
+            + "\nRECENT INSPECTION:\n"
+            + self.investigation,
             self.feedback,
         )
         (attempt / "prompt.txt").write_text(prompt)
         record = {"number": number, "result": "MODEL_ERROR"}
+        decision_count = len(self.decisions)
         try:
             decision, inference = self._model_decision(attempt, number, prompt)
             if decision["action"] == "no_fix":
                 record.update(result="NO_FIX", decision=decision, inference=inference)
                 self.attempts.append(record)
                 return True
+
+            if self._inspect_model(decision, inference, attempt, record):
+                return False
 
             patch = self._model_patch(decision)
             work, output, log = self._prepare(attempt, patch, record)
@@ -392,8 +427,9 @@ class SourceRepairSession:
             if self._accept_candidate(output, record):
                 return True
 
-            self._retry_evidence(work, output, log, record)
+            self._model_failure(work, output, log, record, decision_count)
         except Exception as exc:
+            del self.decisions[decision_count:]
             self._record_error(record, exc)
 
         return False
