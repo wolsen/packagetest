@@ -313,60 +313,89 @@ def _apply_hunks_with_normalized_context(path: Path, section: str) -> bool:
 
 
 def _line_indent(value: str) -> int:
+    """Count leading spaces and tabs using the existing textual indentation policy."""
     return len(value) - len(value.lstrip(" \t"))
+
+
+def _removed_construct(removed: list[str], pattern: str) -> tuple[int, str] | None:
+    """Require exactly one named construct in the removed payload."""
+    constructs = []
+    for value in removed:
+        match = re.match(pattern, value)
+        if match:
+            constructs.append((len(match.group(1)), match.group(2)))
+
+    return constructs[0] if len(constructs) == 1 else None
+
+
+def _construct_start(lines: list[str], pattern: str) -> int | None:
+    """Find a uniquely named, correctly indented construct in current source."""
+    expression = re.compile(pattern)
+    matches = [index for index, value in enumerate(lines) if expression.match(value.rstrip("\r\n"))]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _decorator_start(lines: list[str], start: int, indent: int) -> int:
+    """Include contiguous single-line decorators at the declaration's indentation."""
+    while start and lines[start - 1].strip().startswith("@") and _line_indent(lines[start - 1]) == indent:
+        start -= 1
+
+    return start
+
+
+def _declaration_end(lines: list[str], start: int, indent: int) -> int:
+    """Stop before the next nonblank line at or above the declaration's indentation."""
+    for end in range(start + 1, len(lines)):
+        if lines[end].strip() and _line_indent(lines[end]) <= indent:
+            return end
+
+    return len(lines)
 
 
 def _remove_python_declaration(lines: list[str], removed: list[str]) -> bool:
     """Remove one uniquely named Python declaration from a drifted test file."""
-    declarations = []
-    for value in removed:
-        match = re.match(r"^(\s*)(?:async\s+def|def|class)\s+([A-Za-z_][A-Za-z0-9_]*)\b", value)
-        if match:
-            declarations.append((len(match.group(1)), match.group(2)))
-    if len(declarations) != 1:
+    construct = _removed_construct(removed, r"^(\s*)(?:async\s+def|def|class)\s+([A-Za-z_][A-Za-z0-9_]*)\b")
+    if construct is None:
         return False
-    indent, name = declarations[0]
-    pattern = re.compile(
-        rf"^\s{{{indent}}}(?:async\s+def|def|class)\s+{re.escape(name)}\b")
-    matches = [index for index, value in enumerate(lines) if pattern.match(value.rstrip("\r\n"))]
-    if len(matches) != 1:
+
+    indent, name = construct
+    start = _construct_start(lines, rf"^\s{{{indent}}}(?:async\s+def|def|class)\s+{re.escape(name)}\b")
+    if start is None:
         return False
-    start = matches[0]
-    while start and lines[start - 1].strip().startswith("@") \
-            and _line_indent(lines[start - 1]) == indent:
-        start -= 1
-    end = matches[0] + 1
-    while end < len(lines):
-        value = lines[end]
-        if value.strip() and _line_indent(value) <= indent:
-            break
-        end += 1
+
+    end = _declaration_end(lines, start, indent)
+    start = _decorator_start(lines, start, indent)
     del lines[start:end]
     return True
 
 
-def _remove_python_assignment(lines: list[str], removed: list[str]) -> bool:
-    """Remove one parenthesized assignment despite formatting-only drift."""
-    assignments = []
-    for value in removed:
-        match = re.match(r"^(\s*)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\($", value.rstrip())
-        if match:
-            assignments.append((len(match.group(1)), match.group(2)))
-    if len(assignments) != 1:
-        return False
-    indent, name = assignments[0]
-    pattern = re.compile(rf"^\s{{{indent}}}{re.escape(name)}\s*=\s*\(")
-    matches = [index for index, value in enumerate(lines) if pattern.match(value.rstrip("\r\n"))]
-    if len(matches) != 1:
-        return False
-    start = matches[0]
+def _assignment_end(lines: list[str], start: int) -> int | None:
+    """Find the closing parenthesis using the existing textual balance heuristic."""
     balance = lines[start].count("(") - lines[start].count(")")
     end = start + 1
     while balance > 0 and end < len(lines):
         balance += lines[end].count("(") - lines[end].count(")")
         end += 1
-    if balance != 0:
+
+    return end if balance == 0 else None
+
+
+def _remove_python_assignment(lines: list[str], removed: list[str]) -> bool:
+    """Remove one parenthesized assignment despite formatting-only drift."""
+    construct = _removed_construct(
+        [value.rstrip() for value in removed], r"^(\s*)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\($")
+    if construct is None:
         return False
+
+    indent, name = construct
+    start = _construct_start(lines, rf"^\s{{{indent}}}{re.escape(name)}\s*=\s*\(")
+    if start is None:
+        return False
+
+    end = _assignment_end(lines, start)
+    if end is None:
+        return False
+
     del lines[start:end]
     return True
 
