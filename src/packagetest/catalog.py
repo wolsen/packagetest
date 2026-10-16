@@ -6,6 +6,8 @@ when Ubuntu has no source package for a deliverable.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field as dataclass_field
+
 import hashlib
 import gzip
 import json
@@ -328,117 +330,218 @@ def archive_python_packages(sources: dict[str, dict]) -> list[dict]:
     return records
 
 
-def make_catalog(releases: Path, source_indexes: list[Path], *, series='2026.2',
-                 codename='hibiscus', suite='resolute', target: dict | None = None,
-                 index_metadata: dict[str, dict] | None = None) -> dict:
-    # YAML is needed only for refreshing the catalog, not for consuming it.
-    import yaml
-    sources = {}
-    comparison_sources = {}
-    indexes = []
-    for path in source_indexes:
+def _index_text(path: Path, data: bytes) -> str:
+    """Decode a source index using the compression declared by its suffix."""
+    decompress = {'.xz': lzma.decompress, '.gz': gzip.decompress}.get(path.suffix)
+    if decompress is not None:
+        data = decompress(data)
+
+    return data.decode()
+
+
+def _archive_pocket(filename: str, suite: str, metadata: dict) -> str:
+    """Prefer explicit archive metadata over Ubuntu filename conventions."""
+    if metadata.get('pocket'):
+        return metadata['pocket']
+
+    for pocket in ('security', 'updates'):
+        if f'{suite}-{pocket}-' in filename:
+            return pocket
+
+    return 'release'
+
+
+def _preferred_source(candidate: dict, previous: dict | None) -> bool:
+    """Rank archive tiers before Debian versions within the same tier."""
+    if previous is None:
+        return True
+
+    priority = candidate['_packagetest_archive_priority']
+    previous_priority = previous.get('_packagetest_archive_priority', -1)
+    if priority != previous_priority:
+        return priority > previous_priority
+
+    return subprocess.run([
+        'dpkg', '--compare-versions', candidate['Version'], 'gt', previous['Version'],
+    ]).returncode == 0
+
+
+@dataclass
+class ArchiveSelection:
+    """Own selected source versions and comparison baselines across index files."""
+
+    sources: dict[str, dict] = dataclass_field(default_factory=dict)
+    comparison_sources: dict[str, dict] = dataclass_field(default_factory=dict)
+    indexes: list[dict[str, str]] = dataclass_field(default_factory=list)
+
+    def add_index(self, path: Path, suite: str, metadata: dict) -> None:
+        """Record input provenance and merge its annotated source paragraphs."""
         data = path.read_bytes()
-        indexes.append({'filename': path.name, 'sha256': hashlib.sha256(data).hexdigest()})
-        text = (lzma.decompress(data).decode() if path.suffix == '.xz' else
-                gzip.decompress(data).decode() if path.suffix == '.gz' else data.decode())
-        metadata = (index_metadata or {}).get(path.name, {})
-        for source in paragraphs(text):
-            if 'Package' in source:
-                source = dict(source)
-                filename = path.name
-                source['_packagetest_archive_pocket'] = metadata.get('pocket') or (
-                    'security' if f'{suite}-security-' in filename else
-                    'updates' if f'{suite}-updates-' in filename else
-                    'release'
-                )
-                source['_packagetest_archive_root'] = metadata.get(
-                    'archive_root', 'https://archive.ubuntu.com/ubuntu/')
-                source['_packagetest_archive_index'] = filename
-                # A target-specific overlay (for example the Hibiscus Cloud
-                # Archive) defines the comparison baseline even when Ubuntu's
-                # development series carries a numerically newer version.
-                # Version ordering remains useful within the same archive
-                # tier for release, updates, and security pockets.
-                source['_packagetest_archive_priority'] = int(
-                    metadata.get('comparison_priority', 0))
-                if source['_packagetest_archive_priority']:
-                    comparison_previous = comparison_sources.get(source['Package'])
-                    comparison_priority = source['_packagetest_archive_priority']
-                    previous_comparison_priority = (comparison_previous or {}).get(
-                        '_packagetest_archive_priority', -1)
-                    if (comparison_previous is None
-                            or comparison_priority > previous_comparison_priority
-                            or comparison_priority == previous_comparison_priority
-                            and subprocess.run([
-                                'dpkg', '--compare-versions', source['Version'], 'gt',
-                                comparison_previous['Version']]).returncode == 0):
-                        comparison_sources[source['Package']] = source
-                previous = sources.get(source['Package'])
-                priority = source['_packagetest_archive_priority']
-                previous_priority = (previous or {}).get(
-                    '_packagetest_archive_priority', -1)
-                if (previous is None or priority > previous_priority
-                        or priority == previous_priority and subprocess.run([
-                            'dpkg', '--compare-versions', source['Version'],
-                            'gt', previous['Version']]).returncode == 0):
-                    sources[source['Package']] = source
-    status_path = releases / 'data' / 'series_status.yaml'
-    statuses = yaml.safe_load(status_path.read_text()) if status_path.is_file() else []
-    status_record = next((item for item in statuses
-                          if item.get('name') == codename
-                          or str(item.get('release-id')) == str(series)), {})
-    target_status = status_record.get('status', 'unknown')
-    comparison_required = bool(comparison_sources or any(
-        metadata.get('comparison_priority')
-        for metadata in (index_metadata or {}).values()))
-    cycle = {path.stem: yaml.safe_load(path.read_text()) for path in sorted((releases / 'deliverables' / codename).glob('*.yaml'))}
-    if not cycle:
-        raise ValueError(f'No deliverables for {codename}')
-    independent = {path.stem: yaml.safe_load(path.read_text()) for path in sorted((releases / 'deliverables' / '_independent').glob('*.yaml'))}
-    packages = {}
-    exclusions = []
-    for name, metadata in cycle.items():
-        source = source_name(name, sources)
-        if source:
-            packages[source] = package_record(
-                name, metadata, sources[source], series=series, membership='cycle',
-                series_status=target_status, codename=codename, suite=suite,
-                comparison_archive=comparison_sources.get(source),
-                comparison_required=comparison_required)
-        else:
-            exclusions.append({'deliverable': name, 'release_type': metadata.get('type'),
-                               'repositories': repository_names(metadata),
-                               'reason': f'No source package with verified OpenStack Homepage/VCS identity in Ubuntu {suite} source indexes'})
-    candidates = {}
-    for name, metadata in independent.items():
-        source = source_name(name, sources)
-        if source and source not in packages:
-            candidates[source] = package_record(
-                name, metadata, sources[source], series=series,
-                membership='independent-build-dependency',
-                series_status=target_status, codename=codename, suite=suite,
-                comparison_archive=comparison_sources.get(source),
-                comparison_required=comparison_required)
-    binary_sources = {binary: source for source, item in {**candidates, **packages}.items() for binary in item['binaries']}
+        self.indexes.append({'filename': path.name, 'sha256': hashlib.sha256(data).hexdigest()})
+        for source in paragraphs(_index_text(path, data)):
+            if 'Package' not in source:
+                continue
+
+            source.update({
+                '_packagetest_archive_pocket': _archive_pocket(path.name, suite, metadata),
+                '_packagetest_archive_root': metadata.get('archive_root', 'https://archive.ubuntu.com/ubuntu/'),
+                '_packagetest_archive_index': path.name,
+                '_packagetest_archive_priority': int(metadata.get('comparison_priority', 0)),
+            })
+            self.add_source(source)
+
+    def add_source(self, source: dict) -> None:
+        """Retain the preferred package and any target-specific comparison record."""
+        name = source['Package']
+        # A UCA overlay defines comparison even when Ubuntu has a newer version.
+        if source['_packagetest_archive_priority']:
+            self._retain(self.comparison_sources, name, source)
+
+        self._retain(self.sources, name, source)
+
+    @staticmethod
+    def _retain(records: dict[str, dict], name: str, candidate: dict) -> None:
+        """Replace one archive record only when its tier or version wins."""
+        if _preferred_source(candidate, records.get(name)):
+            records[name] = candidate
+
+
+def _series_status(releases: Path, codename: str, series: str) -> str:
+    """Read the matching series status, tolerating absent release-status metadata."""
+    import yaml
+
+    path = releases / 'data/series_status.yaml'
+    if not path.is_file():
+        return 'unknown'
+
+    for item in yaml.safe_load(path.read_text()):
+        if item.get('name') == codename or str(item.get('release-id')) == str(series):
+            return item.get('status', 'unknown')
+
+    return 'unknown'
+
+
+def _deliverables(releases: Path, codename: str) -> dict[str, dict]:
+    """Load deliverables in filename order for deterministic catalog assembly."""
+    import yaml
+
+    return {path.stem: yaml.safe_load(path.read_text())
+            for path in sorted((releases / 'deliverables' / codename).glob('*.yaml'))}
+
+
+def _binary_providers(packages: dict[str, dict]) -> dict[str, str]:
+    """Index catalog binaries by source, preserving the established last-wins order."""
+    return {binary: source for source, item in packages.items() for binary in item['binaries']}
+
+
+def _source_dependencies(package: dict, providers: dict[str, str]) -> set[str]:
+    """Map declared binary alternatives to known OpenStack source producers."""
+    return {providers[binary] for binary in dependency_names(package['build_depends'])
+            if binary in providers}
+
+
+def _expand_build_closure(packages: dict[str, dict], candidates: dict[str, dict],
+                          providers: dict[str, str]) -> None:
+    """Add independent producers transitively until the selected set stabilizes."""
     while True:
-        required = {binary_sources[binary] for item in packages.values() for binary in dependency_names(item['build_depends']) if binary in binary_sources}
+        required: set[str] = set()
+        for package in packages.values():
+            required.update(_source_dependencies(package, providers))
+
         additions = required - packages.keys()
         if not additions:
-            break
+            return
+
         packages.update({source: candidates[source] for source in additions})
-    for source, item in packages.items():
-        item.update(UPSTREAM_OVERRIDES.get(source, {}))
-        item['build_dependencies'] = sorted({binary_sources[binary] for binary in dependency_names(item['build_depends']) if binary in binary_sources and binary_sources[binary] in packages} - {source})
-    revision = subprocess.check_output(['git', '-C', str(releases), 'rev-parse', 'HEAD'], text=True).strip()
-    return {'schema_version': 1, 'series': series, 'codename': codename,
-            'series_status': target_status, 'suite': suite,
-            'target': target,
-            'release_metadata': {'repository': 'https://opendev.org/openstack/releases', 'sha': revision},
-            'archive_indexes': indexes,
-            'archive_python_indexes': indexes,
-            'archive_python_packages': archive_python_packages(sources),
-            'scope': 'All cycle deliverables mapped to Ubuntu main/universe source packages, plus transitive independently released OpenStack build dependencies',
-            'packages': sorted(packages.values(), key=lambda item: item['source']), 'exclusions': exclusions}
+
+
+@dataclass
+class CatalogBuilder:
+    """Join release membership to selected archive records for one target."""
+
+    archives: ArchiveSelection
+    series: str
+    codename: str
+    suite: str
+    status: str
+    comparison_required: bool
+    packages: dict[str, dict] = dataclass_field(default_factory=dict)
+    exclusions: list[dict] = dataclass_field(default_factory=list)
+
+    def record(self, name: str, metadata: dict, source: str, membership: str) -> dict:
+        """Construct a package record with this target's shared selection policy."""
+        return package_record(
+            name, metadata, self.archives.sources[source], series=self.series,
+            membership=membership, series_status=self.status, codename=self.codename,
+            suite=self.suite, comparison_archive=self.archives.comparison_sources.get(source),
+            comparison_required=self.comparison_required)
+
+    def select_cycle(self, cycle: dict[str, dict]) -> None:
+        """Select verified cycle packages and record every unmapped deliverable."""
+        if not cycle:
+            raise ValueError(f'No deliverables for {self.codename}')
+
+        for name, metadata in cycle.items():
+            source = source_name(name, self.archives.sources)
+            if source:
+                self.packages[source] = self.record(name, metadata, source, 'cycle')
+            else:
+                self.exclusions.append({
+                    'deliverable': name, 'release_type': metadata.get('type'),
+                    'repositories': repository_names(metadata),
+                    'reason': f'No source package with verified OpenStack Homepage/VCS identity in Ubuntu {self.suite} source indexes',
+                })
+
+    def independent_candidates(self, independent: dict[str, dict]) -> dict[str, dict]:
+        """Construct independent candidates without replacing cycle members."""
+        candidates = {}
+        for name, metadata in independent.items():
+            source = source_name(name, self.archives.sources)
+            if source and source not in self.packages:
+                candidates[source] = self.record(name, metadata, source, 'independent-build-dependency')
+
+        return candidates
+
+    def add_dependencies(self, independent: dict[str, dict]) -> None:
+        """Complete membership and annotate producer edges without self-dependencies."""
+        candidates = self.independent_candidates(independent)
+        providers = _binary_providers({**candidates, **self.packages})
+        _expand_build_closure(self.packages, candidates, providers)
+        for source, item in self.packages.items():
+            item.update(UPSTREAM_OVERRIDES.get(source, {}))
+            dependencies = _source_dependencies(item, providers) & self.packages.keys()
+            item['build_dependencies'] = sorted(dependencies - {source})
+
+    def catalog(self, releases: Path, target: dict | None) -> dict:
+        """Serialize selected packages alongside their release and archive provenance."""
+        revision = subprocess.check_output(['git', '-C', str(releases), 'rev-parse', 'HEAD'], text=True).strip()
+        return {'schema_version': 1, 'series': self.series, 'codename': self.codename,
+                'series_status': self.status, 'suite': self.suite, 'target': target,
+                'release_metadata': {'repository': 'https://opendev.org/openstack/releases', 'sha': revision},
+                'archive_indexes': self.archives.indexes,
+                'archive_python_indexes': self.archives.indexes,
+                'archive_python_packages': archive_python_packages(self.archives.sources),
+                'scope': 'All cycle deliverables mapped to Ubuntu main/universe source packages, plus transitive independently released OpenStack build dependencies',
+                'packages': sorted(self.packages.values(), key=lambda item: item['source']),
+                'exclusions': self.exclusions}
+
+
+def make_catalog(releases: Path, source_indexes: list[Path], *, series: str = '2026.2',
+                 codename: str = 'hibiscus', suite: str = 'resolute', target: dict | None = None,
+                 index_metadata: dict[str, dict] | None = None) -> dict:
+    """Assemble a catalog from archive selection, release membership, and build closure."""
+    metadata = index_metadata or {}
+    archives = ArchiveSelection()
+    for path in source_indexes:
+        archives.add_index(path, suite, metadata.get(path.name, {}))
+
+    comparison_required = bool(archives.comparison_sources or any(
+        item.get('comparison_priority') for item in metadata.values()))
+    builder = CatalogBuilder(archives, series, codename, suite,
+                             _series_status(releases, codename, series), comparison_required)
+    builder.select_cycle(_deliverables(releases, codename))
+    builder.add_dependencies(_deliverables(releases, '_independent'))
+    return builder.catalog(releases, target)
 
 
 def write_catalog(catalog: dict, destination: Path) -> None:

@@ -388,3 +388,24 @@ def test_uca_comparison_uses_most_mature_available_promotion_tier(tmp_path):
     assert packages['heat']['comparison_archive_pocket'] == 'uca-hibiscus-updates'
     assert packages['horizon']['comparison_archive_version'] == staging_horizon['Version']
     assert packages['horizon']['comparison_archive_pocket'] == 'uca-hibiscus-staging'
+
+
+@pytest.mark.parametrize('suffix', ['', '.gz', '.xz'])
+def test_archive_selection_decodes_and_preserves_index_provenance(tmp_path, suffix):
+    """Compressed indexes must select the same records while hashing original bytes."""
+    import gzip
+    import hashlib
+    import lzma
+    from packagetest.catalog import ArchiveSelection
+
+    data = '\n'.join(f'{key}: {value}' for key, value in archive('example').items()).encode()
+    encoders = {'': bytes, '.gz': gzip.compress, '.xz': lzma.compress}
+    encoded = encoders[suffix](data)
+    path = tmp_path / ('packagetest-resolute-security-main-Sources' + suffix)
+    path.write_bytes(encoded)
+    selection = ArchiveSelection()
+    selection.add_index(path, 'resolute', {})
+    assert selection.sources['example']['Version'] == '1:2.0-0ubuntu1'
+    assert selection.sources['example']['_packagetest_archive_pocket'] == 'security'
+    assert selection.comparison_sources == {}
+    assert selection.indexes == [{'filename': path.name, 'sha256': hashlib.sha256(encoded).hexdigest()}]
