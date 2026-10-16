@@ -1,9 +1,5 @@
 {
   "src/packagetest/commands.py:CommandRunner.run": 17,
-  "src/packagetest/failure_summary.py:_print_command_trace": 13,
-  "src/packagetest/failure_summary.py:summarize": 16,
-  "src/packagetest/final_plan.py:exact_summary": 7,
-  "src/packagetest/final_plan.py:main": 21,
   "src/packagetest/locked.py:LockedBuild.failure": 11,
   "src/packagetest/locked.py:LockedBuild.git_source": 25,
   "src/packagetest/locked.py:LockedBuild.preflight": 7,
