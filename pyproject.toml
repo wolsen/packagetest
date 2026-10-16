@@ -45,33 +45,31 @@ select = ["E9", "F", "B", "UP", "I", "D100", "D101", "D102", "D103", "D104", "D1
 
 [tool.mypy]
 files = [
-    "src/packagetest/contracts.py",
-    "src/packagetest/relations.py",
-    "src/packagetest/prepared_plan.py",
-    "src/packagetest/prepared_source.py",
-    "src/packagetest/upstream_dependencies.py",
     "src/packagetest/artifacts.py",
+    "src/packagetest/cli.py",
     "src/packagetest/commands.py",
     "src/packagetest/config.py",
+    "src/packagetest/contracts.py",
+    "src/packagetest/failure_summary.py",
     "src/packagetest/final_plan.py",
+    "src/packagetest/handoff.py",
     "src/packagetest/models.py",
     "src/packagetest/nightly_build.py",
-    "src/packagetest/planner.py",
-    "src/packagetest/repositories.py",
-    "src/packagetest/snapshot_targets.py",
-    "src/packagetest/versioning.py",
-    "src/packagetest/cli.py",
     "src/packagetest/packaging_proposal.py",
+    "src/packagetest/patches.py",
+    "src/packagetest/planner.py",
+    "src/packagetest/prepared_plan.py",
+    "src/packagetest/prepared_source.py",
+    "src/packagetest/relations.py",
     "src/packagetest/release_discovery.py",
     "src/packagetest/remediation_evidence.py",
-    "src/packagetest/targets.py",
+    "src/packagetest/repositories.py",
     "src/packagetest/snapshot.py",
     "src/packagetest/snapshot_lock.py",
-    "src/packagetest/handoff.py",
-    "src/packagetest/patches.py",
-    "src/packagetest/failure_summary.py",
-
-
+    "src/packagetest/snapshot_targets.py",
+    "src/packagetest/targets.py",
+    "src/packagetest/upstream_dependencies.py",
+    "src/packagetest/versioning.py",
 ]
 strict = true
 follow_imports = "silent"

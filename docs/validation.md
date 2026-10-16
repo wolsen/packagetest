@@ -17,6 +17,24 @@ Provision each case's target first; see [snapshot instructions](../SNAPSHOTS.md)
 and [UCA instructions](../UCA.md). The dependency failure check in CI deliberately
 corrupts the producer and requires the consumer to remain blocked.
 
+## Check metadata and quality changes
+
+Run strict typing and the formatting, lint, complexity, and docstring gates from
+the README before committing. When expanding typed coverage, add the converted
+module to `tool.mypy.files` rather than disabling strict checks or adding blanket
+ignores. Validate JSON at its input boundary and use named records for established
+schemas; retain `object` for extension fields until their consumers validate them.
+
+Add regression cases when validation or nullable values reveal a behavior defect.
+Exercise valid artifacts as well as rejected shapes so a stricter parser continues
+to accept the exported schema. For source or producer metadata changes, run the
+Debian component tests and installed-wheel smoke check too.
+
+Keep a blank line between a completed conditional block and the following logical
+step. Give every production definition a purpose docstring, including private
+helpers and constructors. Use inline comments to explain constraints or policy
+that the code alone does not make clear.
+
 ## Test layers
 
 - Unit tests cover parsing, planning policy, identity validation, deadlines, and reporting.

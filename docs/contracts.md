@@ -16,6 +16,42 @@ alongside an artifact is by itself proof of an independent trust root.
 names. Snapshot catalogs retain additional target fields for UCA and builder
 configuration. Suite and upload distribution are distinct.
 
+## Typed metadata boundaries
+
+Runtime parsers validate JSON shapes before typed planning or verification code
+uses them. `TypedDict` records preserve dictionary-based JSON schemas; dataclasses
+own build context and execution state. Type annotations alone do not validate
+JSON loaded from an artifact.
+
+| Record | Fields and validation |
+| --- | --- |
+| `ControlMetadata` | String-valued build fields, binary control stanzas, and autopkgtest stanzas |
+| `PreparedMetadata` | Source, version, declared binary names, control metadata, and test triggers |
+| `PreparedManifest` | Prepared metadata plus version-one descriptor identity, source inventory, Git pins, packaging origin, and CI identity |
+| `SourceArtifact` | Unique bundle-relative filename and lowercase SHA-256 digest; paths and backslashes are rejected |
+| `ActiveRelation` | Package, optional operator/version, active expression, and original alternative group |
+| `ArchiveDecision` | `decision: ubuntu-archive`, consumer, phase, location, binary, source, version, and relation |
+| `SystemDecision` | `decision: system-archive-resolution`, consumer, phase, location, candidate binary names, and relation |
+| `DependencyError` | Unsatisfied relation, consumer source, phase, location, and selected candidate sources |
+| `ProducerBinary` | Verified binary identity, reconstructed local path, producer lock digest, source, and CI identity |
+| `SnapshotSelection` | Resolved branch and commit, release base, nullable cutoff, timestamp, versions, and ordered commit inventory |
+
+`prepared_manifest()` requires arrays for binaries, stanzas, and source artifacts.
+It rejects non-string dependency declarations, malformed digests, duplicate
+artifact names, and non-string CI values. Optional binary and test declarations
+normalize to empty strings. Git pins may be null where no packaging Git revision
+exists; packaging origin and CI identity retain their existing nullable schema.
+Bundle consumers still verify provenance and actual bytes independently of shape
+validation. Additive unknown manifest fields are ignored by the typed reader.
+
+`ExactDependencyResolver` captures detached metadata and archive evidence at
+construction. A successful resolution is cached; every caller receives an
+independent copy of the resulting graph and its decision records.
+
+Quilt evidence uses separate records for proven applied patches, forwarded
+integration evidence, and heuristic overlap suggestions. Only the first two
+policies can omit series entries; overlap evidence remains a review suggestion.
+
 ## Dependency decisions
 
 Relations preserve alternatives and version operators. Architecture restrictions

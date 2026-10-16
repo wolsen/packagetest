@@ -32,6 +32,24 @@ finalization. During package remediation, a newly introduced selected build
 producer outside the frozen graph requires replanning. Broader runtime/test
 relationship replanning after repairs remains a limitation.
 
+Typed boundaries separate artifact parsing from dependency decisions. Prepared
+JSON is validated into named dictionary records before graph resolution. Those
+records retain the published JSON layout; state owners such as
+`ExactDependencyResolver` and `BuildInputs` organize the algorithms that consume
+them. Opaque catalog and diagnostic extension fields remain `object` until a
+consumer validates the fields it needs.
+
+```mermaid
+flowchart LR
+    J[Prepared artifact JSON] --> V[Shape and identity validation]
+    V --> M[Typed dependency metadata]
+    M --> R[ExactDependencyResolver]
+    A[Validated archive versions] --> R
+    R --> P[Candidate edges and external decisions]
+    V --> B[Checksum and inventory verification]
+    B --> S[Verified source bundle]
+```
+
 ## Ownership
 
 | Area | Owner | Boundary |
@@ -46,7 +64,7 @@ relationship replanning after repairs remains a limitation.
 | Plan publication | `nightly_plan.PlanPublisher` | Catalog and plan to hashed artifacts and workflow summaries |
 | Prepared dependency resolution | `prepared_plan.ExactDependencyResolver` | Ordered candidate providers and archive evidence to exact dependency choices |
 | Dependency syntax | `relations.BuildContext`, `DependencyRelation` | Target-aware restriction evaluation |
-| JSON identity | `contracts.BuildTarget`, `PreparedSource` | Validated immutable identity records |
+| JSON identity and metadata | `contracts.BuildTarget`, `PreparedSource`, `PreparedManifest` | Validated identities and typed dependency declarations |
 | Nightly build inputs | `nightly_build.BuildInputs`, `PreparedBuildSource` | Validated run and source evidence to build-lock construction |
 | Source orchestration | `nightly_source.SourcePreparer` | One workspace, command log, and preparation result |
 | Packaging adaptations | `nightly_source.EntryPointEditor`, `BuildDependencyEditor` | Existing manifest ownership and archive proof to explicit edits and actions |

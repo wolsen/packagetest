@@ -48,22 +48,39 @@ python3 -m venv --system-site-packages .venv
 .venv/bin/pip install -e '.[dev]'
 .venv/bin/python -m pytest -q
 .venv/bin/ruff check src scripts tests
-.venv/bin/ruff format --check src/packagetest/contracts.py src/packagetest/relations.py
+.venv/bin/ruff format --check src scripts
 .venv/bin/python -m mypy
 .venv/bin/python scripts/check-complexity.py
+.venv/bin/python scripts/check-docstrings.py
 .venv/bin/bandit -r src scripts -lll -q
 .venv/bin/pip-audit .
 PATH="$PWD/.venv/bin:$PATH" bash scripts/check-installed-package.sh
 ```
 
 Some component tests require Debian tools such as quilt; CI installs them in a
-separate job. The dependency audit needs network access. Complexity checks cap
-new functions at 5 and reject increases above recorded legacy exceptions.
-When reducing complexity, lower the corresponding baseline entry. Baseline
-changes require review; CI never refreshes them automatically. Formatting and
-strict type checks initially cover the new typed boundaries, while correctness
-linting covers the whole Python tree. Bandit currently gates high-severity
-findings; it is not a claim that lower-severity findings have all been resolved.
+separate job. The dependency audit needs network access. Every production
+function has a complexity limit of 5; the exception baseline is empty. CI rejects
+new exceptions unless the reviewed baseline is explicitly changed.
+
+Ruff checks correctness, bug patterns, modern Python syntax, and import ordering
+across source, scripts, and tests. Formatting covers source and scripts.
+`check-docstrings.py` requires purpose docstrings for every production module,
+class, function, and method, including private helpers, constructors, and nested
+functions. Tests are exempt from docstring enforcement.
+
+Strict mypy checks cover the 25 modules listed in `pyproject.toml`, including
+prepared-source manifests, both dependency resolvers, final planning, nightly
+build coordination, verified producer handoff, snapshot construction, and command
+capture. JSON enters these paths as `object` and is validated before use. Other
+modules are still outside the strict gate; importing them does not imply that
+mypy checks their implementation. Add modules to the explicit list as they are
+converted, and keep `strict`, unreachable-code warnings, and missing-import type
+checks enabled. See [the contract reference](docs/contracts.md#typed-metadata-boundaries)
+for the serialized records.
+
+Bandit gates high-severity findings; lower-severity findings require separate
+review. Static checks complement the unit, Debian component, and installed-wheel
+tests; they do not establish successful sbuild or autopkgtest execution.
 
 Python application logic belongs in `src/packagetest`. Existing Python scripts
 are compatibility adapters where migrated; shell scripts retain builder/CI
