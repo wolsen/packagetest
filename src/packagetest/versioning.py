@@ -1,3 +1,4 @@
+"""Translate OpenStack version spellings and compare versions using Debian ordering."""
 from __future__ import annotations
 
 import re
@@ -19,6 +20,7 @@ _UPSTREAM_PLAIN_PRERELEASE_RE = re.compile(r"^(?P<base>.+\d)(?P<stage>b\d+|rc\d+
 
 
 def debian_compare(left: str, right: str) -> int:
+    """Return negative, zero, or positive ordering using the Debian version comparator."""
     if _dpkg_compare(left, right, "lt"):
         return -1
     if _dpkg_compare(left, right, "gt"):
@@ -27,6 +29,7 @@ def debian_compare(left: str, right: str) -> int:
 
 
 def _dpkg_compare(left: str, right: str, op: str) -> bool:
+    """Evaluate one Debian ordering relation and retain comparison diagnostics in debug logs."""
     cmd = ["dpkg", "--compare-versions", left, op, right]
     logger.debug("Running version comparison command: %s", " ".join(cmd))
     completed = subprocess.run(cmd, check=False, capture_output=True, text=True)
@@ -37,6 +40,7 @@ def _dpkg_compare(left: str, right: str, op: str) -> bool:
 
 
 def assert_debian_order(left: str, right: str, expected: int) -> None:
+    """Require a specific Debian version ordering or raise a contextual validation error."""
     actual = debian_compare(left, right)
     if actual != expected:
         op = _OPERATORS[expected]
@@ -44,6 +48,7 @@ def assert_debian_order(left: str, right: str, expected: int) -> None:
 
 
 def openstack_target_to_upstream_version(target: str) -> str:
+    """Translate recognized release-stage suffixes into Debian upstream version spelling."""
     match = _OPENSTACK_TARGET_RE.fullmatch(target)
     if not match:
         return target
@@ -55,11 +60,13 @@ def openstack_target_to_upstream_version(target: str) -> str:
 
 
 def openstack_target_to_debian_version(target: str, *, ubuntu_revision: str = "0ubuntu1") -> str:
+    """Combine a translated OpenStack target with the requested Ubuntu revision."""
     upstream_version = openstack_target_to_upstream_version(target)
     return upstream_version_to_debian_version(upstream_version, ubuntu_revision=ubuntu_revision)
 
 
 def upstream_version_to_debian_version(upstream_version: str, *, ubuntu_revision: str = "0ubuntu1") -> str:
+    """Normalize Python prerelease spelling and append the Ubuntu package revision."""
     if "~b" not in upstream_version and "~rc" not in upstream_version:
         prerelease_match = _UPSTREAM_DOT_ZERO_PRERELEASE_RE.fullmatch(upstream_version)
         if prerelease_match:

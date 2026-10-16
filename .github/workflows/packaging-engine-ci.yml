@@ -33,6 +33,7 @@ jobs:
       - run: ruff format --check src/packagetest/contracts.py src/packagetest/relations.py src/packagetest/prepared_plan.py src/packagetest/prepared_source.py src/packagetest/upstream_dependencies.py
       - run: python -m mypy
       - run: python scripts/check-complexity.py
+      - run: python scripts/check-docstrings.py
       - run: bandit -r src scripts -lll -q
       - run: pip-audit .
       - run: bash scripts/check-installed-package.sh

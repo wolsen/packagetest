@@ -53,6 +53,7 @@ class ModelTimeoutError(TimeoutError):
     """Inference exceeded its deadline, with any partial output retained."""
 
     def __init__(self, timeout: int, stdout: str, stderr: str, duration: float):
+        """Retain partial model output and inference metadata when inference times out."""
         super().__init__(f"local model inference timed out after {timeout} seconds")
         self.stdout = stdout
         self.stderr = stderr
@@ -65,6 +66,7 @@ class ModelTimeoutError(TimeoutError):
 
 
 def sha256(path: Path) -> str:
+    """Hash a repair artifact so repeated proposals can be identified deterministically."""
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
@@ -213,6 +215,7 @@ def decision_key(decision: dict) -> str:
 def prompt(
     source: str, phase: str, evidence: str, context: str, feedback: str = ""
 ) -> str:
+    """Assemble bounded failure and source evidence for one structured model repair decision."""
     retry = (
         f"\nPREVIOUS ATTEMPT AND VALIDATION:\n{feedback[-2_000:]}\n" if feedback else ""
     )
@@ -343,6 +346,7 @@ def llama_generate(
 def run_logged(
     command: list[str], log: Path, *, env: dict | None = None, timeout: int
 ) -> int:
+    """Run a time-bounded command with both output streams retained in one log."""
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("w") as stream:
         completed = subprocess.run(
@@ -368,6 +372,7 @@ def bounded_timeout(args, requested: int) -> int:
 
 
 def build_attempt(args, patch_path: Path, destination: Path, log: Path) -> int:
+    """Rebuild a candidate with the proposed repair in an isolated sbuild generation."""
     command = [
         sys.executable,
         "-m",
@@ -399,6 +404,7 @@ def build_attempt(args, patch_path: Path, destination: Path, log: Path) -> int:
 def test_attempt(
     args, candidate: Path, destination: Path, log: Path
 ) -> tuple[int, dict]:
+    """Prepare the test image and run candidate autopkgtests within the remaining budget."""
     suite = json.loads(args.catalog.read_text())["target"]["suite"]
     image_command = [
         "bash",
@@ -445,6 +451,7 @@ def test_attempt(
 
 
 class CandidateStatus(str, Enum):
+    """Classify the first failed candidate gate or acceptance by both build and tests."""
     BUILD_FAILED = "BUILD_FAILED"
     AUTOPKGTEST_FAILED = "AUTOPKGTEST_FAILED"
     REPAIRED = "REPAIRED"
@@ -452,6 +459,7 @@ class CandidateStatus(str, Enum):
 
 @dataclass(frozen=True)
 class CandidateOutcome:
+    """Bind a candidate verdict to its build, optional test artifacts, and diagnostic log."""
     status: CandidateStatus
     build: Path
     tests: Path | None
@@ -459,10 +467,12 @@ class CandidateOutcome:
 
     @property
     def phase(self) -> str:
+        """Identify the gate whose evidence should guide the next repair attempt."""
         return "build" if self.status == CandidateStatus.BUILD_FAILED else "autopkgtest"
 
     @property
     def repeated_failure_reason(self) -> str:
+        """Describe unchanged failure evidence in terms of the candidate gate."""
         return (
             "rebuild reproduced the same failure signature"
             if self.phase == "build"
@@ -470,6 +480,7 @@ class CandidateOutcome:
         )
 
     def failure_evidence(self) -> str:
+        """Combine structured candidate failures with the latest gate log tail."""
         return failure_evidence(self.build, self.tests) + "\n" + tail(self.log)
 
 
@@ -490,6 +501,7 @@ class CandidateExecutor:
     def execute(
         self, number: int, patch: Path, directory: Path, record: dict[str, Any]
     ) -> CandidateOutcome:
+        """Run build then test gates and retain their verdicts without promoting the candidate."""
         candidate = self.args.work / f"attempt-{number}-build"
         build_log = directory / "build.log"
         build_rc = self.build(self.args, patch, candidate, build_log)
@@ -523,6 +535,7 @@ class ArtifactPromoter:
     tests: Path
 
     def promote(self, candidate: CandidateOutcome) -> None:
+        """Replace canonical outputs only with a rebuilt candidate accepted by autopkgtest policy."""
         if candidate.status != CandidateStatus.REPAIRED or candidate.tests is None:
             raise ValueError(
                 "Only a rebuilt and accepted test candidate can be promoted"
@@ -559,6 +572,7 @@ class RepairProgress:
         return True
 
     def stop(self, record: dict[str, Any], reason: str) -> None:
+        """Record the terminal attempt and mark remediation progress as stopped."""
         self.attempts.append(record)
         self.stop_reason = reason
         self.stopped = True
@@ -590,6 +604,7 @@ class RepairProgress:
 
 @dataclass(frozen=True)
 class RepairProposal:
+    """Pair a cumulative patch with the newly validated decisions it introduces."""
     path: Path
     decisions: list[dict[str, Any]]
 
@@ -748,6 +763,7 @@ class ProposalPlanner:
         directory: Path,
         record: dict[str, Any],
     ) -> RepairProposal | None:
+        """Validate model decisions and render a cumulative patch within the repair retry policy."""
         decision, inference = self.model_decision(
             phase, evidence, text, number, directory
         )
@@ -799,6 +815,7 @@ class ProposalPlanner:
 
 
 def copy_initial_evidence(outputs: Path, tests: Path, report_dir: Path) -> None:
+    """Preserve original build and test diagnostics before candidate attempts replace them."""
     evidence = report_dir / "initial-failure"
     evidence.mkdir(parents=True, exist_ok=True)
     for name, path in [
@@ -860,6 +877,7 @@ def publish_report(args: argparse.Namespace, report: dict[str, Any]) -> None:
 
 
 def parse_args() -> argparse.Namespace:
+    """Define source, artifact, model, and budget arguments for a remediation run."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True)
     parser.add_argument("--catalog", type=Path, required=True)
@@ -1066,6 +1084,7 @@ def run(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    """Run bounded package remediation and return its final process verdict."""
     return run(parse_args())
 
 

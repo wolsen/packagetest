@@ -13,14 +13,17 @@ import shutil
 
 
 def read_json(path: Path):
+    """Read report JSON, allowing missing files and malformed content to fail visibly."""
     return json.loads(path.read_text())
 
 
 def safe_id(value: str) -> str:
+    """Normalize a report label into an HTML anchor identifier."""
     return re.sub(r'[^a-zA-Z0-9_-]+', '-', value).strip('-') or 'package'
 
 
 def status_class(value: str) -> str:
+    """Map pipeline verdicts to presentation classes used by report badges."""
     value = (value or 'UNKNOWN').upper()
     if value in {'SUCCEEDED', 'PASS', 'VALIDATED'}:
         return 'good'
@@ -32,11 +35,13 @@ def status_class(value: str) -> str:
 
 
 def status_badge(value: str) -> str:
+    """Render an escaped status label with its corresponding verdict style."""
     value = value or 'UNKNOWN'
     return f'<span class="badge {status_class(value)}">{html.escape(value)}</span>'
 
 
 def proposal_files(root: Path | None):
+    """List proposal files beneath an available downloaded report root in stable order."""
     return sorted(root.rglob('packaging-proposal.json')) if root and root.exists() else []
 
 
@@ -300,6 +305,7 @@ def render_diff(diff: str) -> str:
 
 
 def render_key_values(record: dict, keys: tuple[str, ...]) -> str:
+    """Render nonempty selected record fields as escaped HTML definition entries."""
     rows = []
     for key in keys:
         value = record.get(key)

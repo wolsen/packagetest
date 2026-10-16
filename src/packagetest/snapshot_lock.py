@@ -87,6 +87,7 @@ def select_commit(resolver: Resolver, checkout: Path, ref: str, cutoff: str | No
 
 
 def create_snapshot_lock(template: Path, output: Path, root: Path, *, ref='master', cutoff=None) -> dict:
+    """Resolve a single-package template and exclusively publish its validated immutable lock."""
     if output.exists():
         raise ValueError(f'Refusing to overwrite existing lock: {output}')
     lock = deepcopy(load_lock(template))

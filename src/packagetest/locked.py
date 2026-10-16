@@ -21,10 +21,12 @@ from .contracts import BuildTarget
 
 
 def _now() -> str:
+    """Record a timezone-aware UTC timestamp for build stage provenance."""
     return datetime.now(UTC).isoformat()
 
 
 def _hex(value: object, length: int) -> bool:
+    """Recognize a canonical lowercase hexadecimal identity of the required length."""
     return isinstance(value, str) and bool(re.fullmatch(rf'[a-f0-9]{{{length}}}', value))
 
 
@@ -118,11 +120,13 @@ def _validate_acquisition(source: str, acquisition: dict[str, Any]) -> None:
 
 
 def _validate_prepared_pins(acquisition: dict[str, Any]) -> None:
+    """Require both the source descriptor checksum and immutable upstream Git pin."""
     if not _hex(acquisition.get('dsc_sha256'), 64) or not _hex(acquisition.get('upstream_sha'), 40):
         raise ValueError('Prepared snapshots require source checksum and upstream SHA')
 
 
 def _validate_download(source: str, item: dict[str, Any]) -> None:
+    """Require authenticated transport and a pinned SHA-256 for source downloads."""
     if urlparse(item['url']).scheme != 'https' or not _hex(item['sha256'], 64):
         raise ValueError(f'{source}: an HTTPS URL and SHA256 are required')
 
@@ -137,6 +141,7 @@ def _validate_snapshot(acquisition: dict[str, Any], snapshot: dict[str, Any]) ->
 
 
 def _validate_build_tool_pins(requirements: list[dict[str, Any]]) -> None:
+    """Validate isolated build-tool names, versions, and exact artifact digests."""
     for requirement in requirements:
         if (not re.fullmatch(r'[a-zA-Z0-9_.-]+', requirement['name'])
                 or not re.fullmatch(r'[0-9][a-zA-Z0-9.+!-]*', requirement['version'])
@@ -238,13 +243,16 @@ def _validate_gbp_commits(source: str, acquisition: dict[str, Any]) -> None:
 
 
 class StageFailure(RuntimeError):
+    """Signal a failed packaging stage with its captured command diagnostics."""
     pass
 
 
 class LockedBuild:
+    """Own one isolated lock-driven build generation and its persistent evidence."""
     def __init__(self, lock: dict, root: Path, *, timeout: float = 3600,
                  prepared_sources: dict | None = None, external_artifacts: dict | None = None,
                  runner: CommandExecutor | None = None):
+        """Create generation storage and bind the reviewed lock, producer inputs, and executor."""
         self.lock = lock
         self.prepared_sources = prepared_sources or {}
         self.external_artifacts = external_artifacts or {}
@@ -266,6 +274,7 @@ class LockedBuild:
         self.save()
 
     def save(self):
+        """Atomically replace the generation manifest with the latest recorded build state."""
         path = self.root / 'generation-manifest.json'
         temporary = path.with_suffix('.tmp')
         temporary.write_text(json.dumps(self.manifest, indent=2) + '\n')
@@ -284,6 +293,7 @@ class LockedBuild:
         return self.last_result.stdout_tail.strip()
 
     def enter(self, stage: str):
+        """Begin a named stage, reset command evidence, and append its timestamped transition."""
         self.stage = stage
         self.last_result = None
         print(f'[{self.root.name}] {stage}', file=sys.stderr, flush=True)
@@ -291,6 +301,7 @@ class LockedBuild:
             handle.write(json.dumps({'stage': stage, 'at': _now()}) + '\n')
 
     def download(self, item: dict, destination: Path):
+        """Publish downloaded bytes only after checksum verification and remove partial files."""
         temporary = destination.with_suffix(destination.suffix + '.partial')
         try:
             with urlopen(item['url'], timeout=60) as response, temporary.open('wb') as output:
@@ -339,6 +350,7 @@ class LockedBuild:
         self.save()
 
     def archive_source(self, package: dict, source_dir: Path) -> Path:
+        """Download and verify a pinned Debian source set before extracting its checkout."""
         self.enter('source-acquisition')
         item = package['input']['dsc']
         filename = Path(urlparse(item['url']).path).name
@@ -356,6 +368,7 @@ class LockedBuild:
         return dsc
 
     def prepared_source(self, package: dict, source_dir: Path) -> Path:
+        """Verify and copy a prepared snapshot descriptor and every referenced component."""
         self.enter('prepared-source-validation')
         dsc = Path(self.prepared_sources[package['source']])
         if sha256(dsc) != package['input']['dsc_sha256']:

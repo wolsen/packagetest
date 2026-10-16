@@ -22,6 +22,7 @@ class SnapshotBuilder(Protocol):
 
 
 def snapshot_version(base: str, timestamp: int, count: int, sha: str) -> str:
+    """Derive an ordered Debian snapshot version from its release base and commit identity."""
     if count < 0:
         raise ValueError('Snapshot commit count cannot be negative')
     from .versioning import upstream_version_to_debian_version

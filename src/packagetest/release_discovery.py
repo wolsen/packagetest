@@ -28,10 +28,12 @@ _PRERELEASE_RE = re.compile(r"(b\d+|rc\d+)$", re.IGNORECASE)
 
 
 class ReleaseDiscoveryError(ValueError):
+    """Report unavailable or malformed upstream release-discovery evidence."""
     pass
 
 
 class ReleaseNotFoundError(ReleaseDiscoveryError):
+    """Identify a definitive missing metadata resource that permits discovery fallback."""
     pass
 
 
@@ -71,6 +73,7 @@ class HTTPTextClient:
 
 @dataclass(frozen=True)
 class OpenStackRelease:
+    """Bind one declared release version to its optional project repository and commit."""
     version: str
     project_repo: str | None
     project_hash: str | None
@@ -78,6 +81,7 @@ class OpenStackRelease:
 
 @dataclass(frozen=True)
 class OpenStackSeries:
+    """Describe an OpenStack series and its declared release identity and support status."""
     name: str
     release_id: str | None
     status: str
@@ -85,6 +89,7 @@ class OpenStackSeries:
 
 @dataclass(frozen=True)
 class ResolvedRelease:
+    """Capture the selected release and immutable upstream reference for one package."""
     series: str | None
     release_id: str | None
     version: str
@@ -97,11 +102,13 @@ class ResolvedRelease:
 
 @dataclass(frozen=True)
 class ParsedOpenStackTarget:
+    """Separate a requested release identity from its optional prerelease stage."""
     release_id: str
     stage: str | None
 
 
 def read_text_from_url(url: str) -> str:
+    """Fetch release metadata using the bounded HTTP client policy."""
     return HTTPTextClient().fetch(url)
 
 
@@ -158,6 +165,7 @@ def parse_series_status_yaml(content: str) -> list[OpenStackSeries]:
 
 
 def latest_release_from_deliverable_yaml(content: str) -> OpenStackRelease:
+    """Select the final declared release, rejecting empty deliverable inventories."""
     releases = releases_from_deliverable_yaml(content)
     if not releases:
         raise ValueError("No releases found in deliverable YAML")
@@ -216,6 +224,7 @@ def releases_from_deliverable_yaml(content: str) -> list[OpenStackRelease]:
 
 
 def parse_openstack_target(openstack_target: str) -> ParsedOpenStackTarget:
+    """Validate and normalize a release identifier and optional stage suffix."""
     match = _OPENSTACK_TARGET_RE.fullmatch(openstack_target)
     if not match:
         raise ReleaseDiscoveryError(f"Unsupported OpenStack target: {openstack_target}")
@@ -223,6 +232,7 @@ def parse_openstack_target(openstack_target: str) -> ParsedOpenStackTarget:
 
 
 def resolve_series(series: list[OpenStackSeries], openstack_target: str) -> OpenStackSeries:
+    """Match a requested release by canonical series name or declared release ID."""
     target = parse_openstack_target(openstack_target)
     for entry in series:
         if (entry.release_id and entry.release_id.lower() == target.release_id) or entry.name.lower() == target.release_id:
@@ -282,6 +292,7 @@ def _record_branch_line(line: str, current: str | None, branches: dict[str, str]
 
 
 def _release_index_by_version(releases: list[OpenStackRelease]) -> dict[str, int]:
+    """Index release positions for resolving declared stable branch locations."""
     return {release.version: index for index, release in enumerate(releases)}
 
 
@@ -316,6 +327,7 @@ def _candidate_releases_for_series(content: str, releases: list[OpenStackRelease
 
 
 def _numeric_series_prefix(version: str) -> str | None:
+    """Extract the leading numeric series component when a version declares one."""
     match = re.match(r"^(?P<prefix>\d+)\.", version)
     if match:
         return match.group("prefix")
@@ -412,6 +424,7 @@ def resolve_release_from_deliverable_yaml(
 
 
 def validate_snapshot_at(snapshot_at: str | None) -> str | None:
+    """Validate an optional ISO timestamp while preserving its serialized spelling."""
     if snapshot_at is None:
         return None
     try:
@@ -422,6 +435,7 @@ def validate_snapshot_at(snapshot_at: str | None) -> str | None:
 
 
 def derive_deliverable_name(package: PackageDefinition) -> str:
+    """Prefer the configured deliverable name, falling back to the upstream repository."""
     if package.openstack_deliverable:
         return package.openstack_deliverable
     upstream_repo = package.upstream_repo.rstrip("/")
@@ -497,6 +511,7 @@ class OpenStackReleaseResolver:
         return resolved_release
 
     def _series_status_entries(self) -> list[OpenStackSeries]:
+        """Load series status once under the shared cache lock."""
         with self._cache_lock:
             if self._series_status is None:
                 self._series_status = parse_series_status_yaml(self.fetcher(f"{self.base_url}/data/series_status.yaml"))
@@ -504,6 +519,7 @@ class OpenStackReleaseResolver:
             return self._series_status
 
     def _fetch_deliverable(self, series_name: str, deliverable_name: str) -> tuple[str, str]:
+        """Try series-specific then independent metadata, caching successful responses."""
         for scope in (series_name, "_independent"):
             path = f"deliverables/{scope}/{deliverable_name}.yaml"
             with self._cache_lock:
@@ -550,6 +566,7 @@ class OpenStackReleaseResolver:
         return sha
 
     def _default_branch_for_upstream_repo(self, upstream_repo: str) -> str:
+        """Read and cache repository metadata and require its declared default branch."""
         with self._cache_lock:
             cached = self._repo_metadata_cache.get(upstream_repo)
             if cached is None:
@@ -587,6 +604,7 @@ def _snapshot_branch(default: str, scope: str, release_id: str | None, content: 
 
 
 def _canonical_commit_api_url(upstream_repo: str, query: str) -> str:
+    """Construct the repository commit API URL with an already encoded query."""
     parsed = urlparse(upstream_repo)
     if not parsed.scheme or not parsed.netloc or not parsed.path:
         raise ReleaseDiscoveryError(f"Unsupported upstream repository URL: {upstream_repo}")
@@ -595,6 +613,7 @@ def _canonical_commit_api_url(upstream_repo: str, query: str) -> str:
 
 
 def _canonical_repo_api_url(upstream_repo: str) -> str:
+    """Construct the repository metadata API URL after checking its basic URL shape."""
     parsed = urlparse(upstream_repo)
     if not parsed.scheme or not parsed.netloc or not parsed.path:
         raise ReleaseDiscoveryError(f"Unsupported upstream repository URL: {upstream_repo}")

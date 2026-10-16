@@ -7,16 +7,19 @@ from pathlib import Path
 
 
 def _tail_lines(text: str, limit: int = 30) -> list[str]:
+    """Retain the final diagnostic lines within the requested display budget."""
     return text.splitlines()[-limit:]
 
 
 def _safe_string_list(value: object) -> list[str]:
+    """Accept a complete string list or discard malformed diagnostic command data."""
     if isinstance(value, list) and all(isinstance(part, str) for part in value):
         return value
     return []
 
 
 def _load_command_results(commands_path: Path) -> tuple[list[dict[str, object]], int]:
+    """Read JSONL command evidence while counting and reporting unreadable records."""
     try:
         lines = commands_path.read_text(encoding="utf-8").splitlines()
     except OSError as exc:
@@ -38,6 +41,7 @@ def _load_command_results(commands_path: Path) -> tuple[list[dict[str, object]],
 
 
 def _matches_source(command_result: dict[str, object], source: str) -> bool:
+    """Match a source name against complete working-directory path segments."""
     cwd = command_result.get("cwd")
     return isinstance(cwd, str) and source in Path(cwd).parts
 
@@ -167,6 +171,7 @@ def summarize(root: Path) -> int:
 
 
 def main() -> int:
+    """Summarize packaging failures beneath the requested artifact root."""
     base = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("artifacts")
     return summarize(base)
 

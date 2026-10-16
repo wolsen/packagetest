@@ -34,6 +34,7 @@ END_PATCH
 
 
 def base_prompt(source: str, phase: str, evidence: str, repo_context: str) -> str:
+    """Assemble an advisory repair request constrained by the supplied failure evidence."""
     return f"""You are reviewing a failed Ubuntu Debian snapshot package for OpenStack 2026.2.
 This is an advisory experiment using a local model. Diagnose the direct {phase} failure for source package {source}.
 
@@ -59,6 +60,7 @@ FAILURE EVIDENCE:
 
 
 def revision_prompt(first_prompt: str, output: str, validation: dict) -> str:
+    """Request a replacement model response using the prior output and patch validation feedback."""
     feedback = json.dumps(validation, indent=2, sort_keys=True)
     return f"""{first_prompt}
 
@@ -76,10 +78,13 @@ INDEPENDENT PATCH VALIDATION:
 
 
 class LlamaRunner:
+    """Run advisory inference through a local llama.cpp executable and pinned model file."""
     def __init__(self, executable: Path, model: Path, timeout: int):
+        """Bind the selected inference backend, model identity, and request timeout."""
         self.executable, self.model, self.timeout = executable, model, timeout
 
     def generate(self, prompt: str, attempt: int) -> tuple[str, dict]:
+        """Generate one advisory response and retain backend timing and diagnostic evidence."""
         started = time.monotonic()
         command = [
             str(self.executable), "-m", str(self.model), "-p", prompt,
@@ -102,10 +107,13 @@ class LlamaRunner:
 
 
 class OllamaRunner:
+    """Run advisory inference through the configured Ollama HTTP endpoint."""
     def __init__(self, url: str, model: str, timeout: int):
+        """Bind the selected inference backend, model identity, and request timeout."""
         self.url, self.model, self.timeout = url.rstrip("/"), model, timeout
 
     def generate(self, prompt: str, attempt: int) -> tuple[str, dict]:
+        """Generate one advisory response and retain backend timing and diagnostic evidence."""
         request = urllib.request.Request(
             self.url + "/api/generate",
             data=json.dumps({

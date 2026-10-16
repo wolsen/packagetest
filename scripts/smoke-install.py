@@ -20,6 +20,7 @@ if package is None:
 chroot = manifest['target']['chroot']
 # Invoke sg externally because this workflow process may predate group setup.
 def run(*args, **kwargs):
+    """Capture smoke-test command output and fail on a nonzero process result."""
     return subprocess.check_output(list(args), text=True, stderr=subprocess.STDOUT, **kwargs)
 # Root session is limited to this disposable runner's fresh chroot.
 session = run('sudo', 'schroot', '-b', '-c', chroot).strip()
@@ -33,6 +34,7 @@ try:
             source = path.parent / 'artifacts' / built['source'] / 'binary' / binary['file']
             subprocess.run(['sudo', 'cp', str(source), str(target)], check=True)
     def inside(*args):
+        """Execute a command as root inside the disposable smoke-test schroot session."""
         return run('sudo', 'schroot', '-r', '-c', session, '-u', 'root', '--directory', '/', '--', *args)
     report['apt_update'] = inside('apt-get', 'update')
     report['install'] = inside('bash', '-c', 'DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/packagetest-debs/*.deb')

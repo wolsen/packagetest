@@ -78,6 +78,7 @@ def uca_lts_for_openstack(series: str) -> str:
 def _target_pair(
     series: str, codename: str, suites: dict[str, str]
 ) -> list[SnapshotTarget]:
+    """Expand one OpenStack release into its development distro and applicable LTS UCA targets."""
     ubuntu_release = ubuntu_release_for_openstack(series)
     uca_release = uca_lts_for_openstack(series)
     missing = [

@@ -10,6 +10,7 @@ ACCEPTED_TEST_RESULTS = {'PASS', 'SUPERFICIAL', 'NO_TESTS'}
 
 
 def finalize(proposal_path: Path, build_path: Path, test_path: Path) -> dict | None:
+    """Attach build and test evidence and mark a proposal validated only after both gates pass."""
     if not proposal_path.exists():
         return None
     proposal = json.loads(proposal_path.read_text())
@@ -28,6 +29,7 @@ def finalize(proposal_path: Path, build_path: Path, test_path: Path) -> dict | N
 
 
 def main() -> int:
+    """Finalize the requested proposal using saved build and autopkgtest results."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('proposal', type=Path)
     parser.add_argument('build', type=Path)

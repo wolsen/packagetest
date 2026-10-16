@@ -18,6 +18,7 @@ from packagetest.snapshot_targets import load_target
 
 
 def clone_releases(destination: Path, repository: str, ref: str) -> None:
+    """Clone the requested OpenStack release metadata ref into a fresh workspace."""
     subprocess.run([
         'git', 'clone', '--quiet', '--depth', '1', '--branch', ref,
         repository, str(destination),
@@ -57,6 +58,7 @@ def generate(*, output: Path, workspace: Path, suite: str, series: str,
 
 
 def main() -> None:
+    """Generate and validate a catalog for the selected target and export its frozen metadata."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path,
                         default=Path('nightly-plan/catalog-input.json'))

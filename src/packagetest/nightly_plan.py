@@ -134,6 +134,7 @@ class SourceDiscovery:
 
 
     def _select_required_candidates(self) -> None:
+        """Expand selection with mandatory producers required by selected consumers."""
         for rule in self.constraints:
             if (
                 rule["source"] in self.selected
@@ -145,6 +146,7 @@ class SourceDiscovery:
                 )
 
     def _inspect(self, source: str) -> tuple[str, list[Catalog], list[str], str | None]:
+        """Read one source revision while retaining discovery failures as per-source evidence."""
         entry = self.entries[source]
         if entry.get("upstream_resolution_error"):
             return source, [], [], entry["upstream_resolution_error"]
@@ -447,6 +449,7 @@ class CatalogScheduler:
                 entry["wave"] = index
 
     def _bootstrap_outside_selection(self) -> None:
+        """Explain archive bootstrap edges whose producers are outside this run."""
         for source in sorted(self.graph):
             entry = self.entries[source]
             outside = set(entry["build_dependencies"]) - self.selected
@@ -1046,6 +1049,7 @@ def emit_dependency_pattern(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    """Freeze catalog selection, schedule dependency waves, and export pipeline evidence."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--catalog", type=Path, default=Path("nightly-plan/catalog-input.json")

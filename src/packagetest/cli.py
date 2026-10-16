@@ -1,3 +1,4 @@
+"""Expose advisory planning, reviewed-lock builds, and snapshot resolution commands."""
 from __future__ import annotations
 
 import argparse
@@ -16,6 +17,7 @@ from .locked import LockedBuild, load_lock
 logger = logging.getLogger(__name__)
 
 def _default_config_path() -> Path:
+    """Locate the bundled package selection used by the advisory planner."""
     return default_config_path("vertical_slice.json")
 
 def _add_release_metadata(row: dict, resolved_release: ResolvedRelease | None) -> None:
@@ -58,6 +60,7 @@ def _resolve_package_releases(
     plan: BuildPlan,
     args: argparse.Namespace,
 ) -> tuple[dict[str, ResolvedRelease], dict[str, str]]:
+    """Resolve selected packages concurrently while retaining per-source discovery errors."""
     resolver = OpenStackReleaseResolver()
     resolved_releases: dict[str, ResolvedRelease] = {}
     errors: dict[str, str] = {}
@@ -83,6 +86,7 @@ def _resolve_package_releases(
     return resolved_releases, errors
 
 def status_cmd(args: argparse.Namespace) -> int:
+    """Print a saved generation manifest, reporting an absent path as a command failure."""
     manifest = Path(args.manifest)
     if not manifest.exists():
         print(f"Manifest not found: {manifest}", file=sys.stderr)
@@ -91,6 +95,7 @@ def status_cmd(args: argparse.Namespace) -> int:
     return 0
 
 def build_cmd(args: argparse.Namespace) -> int:
+    """Validate a reviewed lock and either display it or execute its build stages."""
     try:
         lock = load_lock(Path(args.plan))
         if args.dry_run:
@@ -104,6 +109,7 @@ def build_cmd(args: argparse.Namespace) -> int:
 
 
 def snapshot_lock_cmd(args: argparse.Namespace) -> int:
+    """Resolve a snapshot template into a new immutable lock and print its evidence."""
     from .snapshot_lock import create_snapshot_lock
     try:
         result = create_snapshot_lock(Path(args.template), Path(args.output), Path(args.work_dir),
@@ -116,6 +122,7 @@ def snapshot_lock_cmd(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Define command-specific arguments and their dispatch functions."""
     parser = argparse.ArgumentParser(prog="packaging")
     _add_logging_flags(parser, default=False)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -150,6 +157,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _add_logging_flags(parser: argparse.ArgumentParser, *, default: bool | str) -> None:
+    """Add equivalent verbose and debug flags without overriding inherited defaults."""
     parser.add_argument(
         "--verbose",
         "--debug",
@@ -160,6 +168,7 @@ def _add_logging_flags(parser: argparse.ArgumentParser, *, default: bool | str) 
     )
 
 def _configure_logging(debug_enabled: bool) -> None:
+    """Configure process logging at the requested diagnostic detail level."""
     logging.basicConfig(
         level=logging.DEBUG if debug_enabled else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -167,6 +176,7 @@ def _configure_logging(debug_enabled: bool) -> None:
     )
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse command arguments, configure logging, and dispatch the selected operation."""
     parser = build_parser()
     args = parser.parse_args(argv)
     _configure_logging(getattr(args, "debug_logging", False))
