@@ -2,15 +2,14 @@
 import hashlib
 import io
 import json
-from pathlib import Path
 import runpy
 import stat
+import zipfile
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request
-import zipfile
 
 import pytest
-
 
 module = runpy.run_path(str(Path(__file__).parents[1] / 'scripts/download-workflow-artifacts.py'))
 WorkflowArtifacts = module['WorkflowArtifacts']

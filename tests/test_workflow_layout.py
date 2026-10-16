@@ -1,7 +1,7 @@
-from pathlib import Path
 import json
 import os
 import subprocess
+from pathlib import Path
 
 
 def test_each_build_matrix_runs_its_own_autopkgtest():

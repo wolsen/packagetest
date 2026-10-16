@@ -1,6 +1,10 @@
 import json
 
-from packagetest.remediation_evidence import extract_test_failure_evidence, lintian_evidence, structured_failure
+from packagetest.remediation_evidence import (
+    extract_test_failure_evidence,
+    lintian_evidence,
+    structured_failure,
+)
 
 
 def lintian_payload(fail_on, output):

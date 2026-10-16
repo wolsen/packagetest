@@ -1,76 +1,135 @@
 """Install validated output into a fresh file-based schroot and exercise its installed entry points."""
+
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 root = Path(sys.argv[1]).resolve()
-manifests = [root] if root.is_file() else sorted(root.glob('gen-*/generation-manifest.json'), key=lambda p: p.stat().st_mtime)
+manifests = (
+    [root]
+    if root.is_file()
+    else sorted(
+        root.glob("gen-*/generation-manifest.json"), key=lambda p: p.stat().st_mtime
+    )
+)
 if not manifests:
-    raise SystemExit('No build manifest')
+    raise SystemExit("No build manifest")
 path = manifests[-1]
 manifest = json.loads(path.read_text())
-if manifest['result'] != 'SUCCEEDED':
-    raise SystemExit('Build did not succeed')
-package = next((p for p in manifest['packages'] if p['source'] == 'python-oslo.i18n'), None)
+if manifest["result"] != "SUCCEEDED":
+    raise SystemExit("Build did not succeed")
+package = next(
+    (p for p in manifest["packages"] if p["source"] == "python-oslo.i18n"), None
+)
 if package is None:
-    package = next((p for p in manifest['packages'] if p['source'] == 'glance'), None)
+    package = next((p for p in manifest["packages"] if p["source"] == "glance"), None)
 if package is None:
-    raise SystemExit('No supported package smoke test')
-chroot = manifest['target']['chroot']
+    raise SystemExit("No supported package smoke test")
+chroot = manifest["target"]["chroot"]
+
+
 # Invoke sg externally because this workflow process may predate group setup.
 def run(*args, **kwargs):
     """Capture smoke-test command output and fail on a nonzero process result."""
-    return subprocess.check_output(list(args), text=True, stderr=subprocess.STDOUT, **kwargs)
+    return subprocess.check_output(
+        list(args), text=True, stderr=subprocess.STDOUT, **kwargs
+    )
+
+
 # Root session is limited to this disposable runner's fresh chroot.
-session = run('sudo', 'schroot', '-b', '-c', chroot).strip()
-report = {'session': session, 'result': 'FAILED'}
+session = run("sudo", "schroot", "-b", "-c", chroot).strip()
+report = {"session": session, "result": "FAILED"}
 try:
-    location = run('sudo', 'schroot', '--location', '-c', 'session:' + session).strip()
-    target = Path(location) / 'tmp' / 'packagetest-debs'
-    subprocess.run(['sudo', 'mkdir', '-p', str(target)], check=True)
-    for built in manifest['packages']:
-        for binary in built['binaries']:
-            source = path.parent / 'artifacts' / built['source'] / 'binary' / binary['file']
-            subprocess.run(['sudo', 'cp', str(source), str(target)], check=True)
+    location = run("sudo", "schroot", "--location", "-c", "session:" + session).strip()
+    target = Path(location) / "tmp" / "packagetest-debs"
+    subprocess.run(["sudo", "mkdir", "-p", str(target)], check=True)
+    for built in manifest["packages"]:
+        for binary in built["binaries"]:
+            source = (
+                path.parent / "artifacts" / built["source"] / "binary" / binary["file"]
+            )
+            subprocess.run(["sudo", "cp", str(source), str(target)], check=True)
+
     def inside(*args):
         """Execute a command as root inside the disposable smoke-test schroot session."""
-        return run('sudo', 'schroot', '-r', '-c', session, '-u', 'root', '--directory', '/', '--', *args)
-    report['apt_update'] = inside('apt-get', 'update')
-    report['install'] = inside('bash', '-c', 'DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/packagetest-debs/*.deb')
-    report['installed_versions'] = {}
-    for built in manifest['packages']:
-        for binary in built['binaries']:
-            actual = inside('dpkg-query', '-W', '-f=${Version}', binary['package']).strip()
-            report['installed_versions'][binary['package']] = actual
-            if actual != binary['version']:
-                raise RuntimeError(f'Installed version differs for {binary["package"]}')
-    if package['source'] == 'python-oslo.i18n':
-        report['version'] = inside('dpkg-query', '-W', '-f=${Version}', 'python3-oslo.i18n').strip()
-        if report['version'] != package['version']:
-            raise RuntimeError('Installed version differs from built version')
-        report['smoke'] = inside('python3', '-c', "from oslo_i18n import TranslatorFactory; t=TranslatorFactory('packagetest'); assert t.primary('hello') == 'hello'; print('oslo_i18n translation OK')")
-        if package.get('snapshot'):
-            report['python_distribution_version'] = inside('python3', '-c',
-                "from importlib.metadata import version; print(version('oslo.i18n'))").strip()
-            if report['python_distribution_version'] != package['snapshot']['pep440_version']:
-                raise RuntimeError('Installed Python snapshot version differs from pinned source version')
+        return run(
+            "sudo",
+            "schroot",
+            "-r",
+            "-c",
+            session,
+            "-u",
+            "root",
+            "--directory",
+            "/",
+            "--",
+            *args,
+        )
+
+    report["apt_update"] = inside("apt-get", "update")
+    report["install"] = inside(
+        "bash",
+        "-c",
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/packagetest-debs/*.deb",
+    )
+    report["installed_versions"] = {}
+    for built in manifest["packages"]:
+        for binary in built["binaries"]:
+            actual = inside(
+                "dpkg-query", "-W", "-f=${Version}", binary["package"]
+            ).strip()
+            report["installed_versions"][binary["package"]] = actual
+            if actual != binary["version"]:
+                raise RuntimeError(f"Installed version differs for {binary['package']}")
+    if package["source"] == "python-oslo.i18n":
+        report["version"] = inside(
+            "dpkg-query", "-W", "-f=${Version}", "python3-oslo.i18n"
+        ).strip()
+        if report["version"] != package["version"]:
+            raise RuntimeError("Installed version differs from built version")
+        report["smoke"] = inside(
+            "python3",
+            "-c",
+            "from oslo_i18n import TranslatorFactory; t=TranslatorFactory('packagetest'); assert t.primary('hello') == 'hello'; print('oslo_i18n translation OK')",
+        )
+        if package.get("snapshot"):
+            report["python_distribution_version"] = inside(
+                "python3",
+                "-c",
+                "from importlib.metadata import version; print(version('oslo.i18n'))",
+            ).strip()
+            if (
+                report["python_distribution_version"]
+                != package["snapshot"]["pep440_version"]
+            ):
+                raise RuntimeError(
+                    "Installed Python snapshot version differs from pinned source version"
+                )
     else:
-        report['version'] = inside('dpkg-query', '-W', '-f=${Version}', 'glance-api').strip()
-        report['cli_version'] = inside('glance-manage', '--version').strip()
-        probe = Path(__file__).with_name('glance-smoke.py')
-        subprocess.run(['sudo', 'cp', str(probe), str(target / 'glance-smoke.py')], check=True)
-        report['service'] = json.loads(inside('python3', '/tmp/packagetest-debs/glance-smoke.py'))
-    report['result'] = 'SUCCEEDED'
+        report["version"] = inside(
+            "dpkg-query", "-W", "-f=${Version}", "glance-api"
+        ).strip()
+        report["cli_version"] = inside("glance-manage", "--version").strip()
+        probe = Path(__file__).with_name("glance-smoke.py")
+        subprocess.run(
+            ["sudo", "cp", str(probe), str(target / "glance-smoke.py")], check=True
+        )
+        report["service"] = json.loads(
+            inside("python3", "/tmp/packagetest-debs/glance-smoke.py")
+        )
+    report["result"] = "SUCCEEDED"
 except Exception as exc:
-    report['error'] = getattr(exc, 'output', str(exc))
+    report["error"] = getattr(exc, "output", str(exc))
     raise
 finally:
-    cleanup = subprocess.run(['sudo', 'schroot', '-e', '-c', session], capture_output=True, text=True)
+    cleanup = subprocess.run(
+        ["sudo", "schroot", "-e", "-c", session], capture_output=True, text=True
+    )
     if cleanup.returncode:
-        report['result'] = 'FAILED'
-        report['cleanup_error'] = cleanup.stderr
-    (path.parent / 'smoke-install.json').write_text(json.dumps(report, indent=2) + '\n')
+        report["result"] = "FAILED"
+        report["cleanup_error"] = cleanup.stderr
+    (path.parent / "smoke-install.json").write_text(json.dumps(report, indent=2) + "\n")
     if cleanup.returncode:
-        raise RuntimeError('Could not end smoke-test schroot session')
-print(json.dumps({'result': report['result'], 'version': report['version']}))
+        raise RuntimeError("Could not end smoke-test schroot session")
+print(json.dumps({"result": report["result"], "version": report["version"]}))

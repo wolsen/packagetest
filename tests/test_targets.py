@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
+
 import pytest
+
 from packagetest.locked import load_lock
 
 LOCKS = Path(__file__).resolve().parents[1] / 'config/locks'

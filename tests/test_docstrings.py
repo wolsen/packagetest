@@ -2,7 +2,6 @@
 import runpy
 from pathlib import Path
 
-
 CHECKER = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'scripts/check-docstrings.py'))
 
 

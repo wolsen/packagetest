@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .models import PackageDefinition
 from .contracts import object_mapping, records, required_text, string_list, text_field
+from .models import PackageDefinition
 
 
 def load_package_definitions(path: Path) -> dict[str, PackageDefinition]:

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Create a bounded matrix of direct failures for advisory local-AI analysis."""
+
 from __future__ import annotations
 
 import argparse
 import json
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from packagetest.failure_analysis import select_direct_failures, write_json
@@ -14,10 +15,18 @@ from packagetest.failure_analysis import select_direct_failures, write_json
 
 def _write_summary(path: Path, failures: list[dict]) -> None:
     """Explain the selected direct failures, including the empty-plan case."""
-    summary = ["# Local AI failure-analysis plan", "", f"{len(failures)} direct failures selected; blocked dependents are excluded.", ""]
+    summary = [
+        "# Local AI failure-analysis plan",
+        "",
+        f"{len(failures)} direct failures selected; blocked dependents are excluded.",
+        "",
+    ]
     if failures:
         summary.extend(["| Source | Phase | Result |", "|---|---|---|"])
-        summary.extend(f"| `{row['source']}` | {row['phase']} | {row['result']} |" for row in failures)
+        summary.extend(
+            f"| `{row['source']}` | {row['phase']} | {row['result']} |"
+            for row in failures
+        )
     else:
         summary.append("No direct build or autopkgtest failures require analysis.")
 

@@ -1,9 +1,9 @@
 """Exercise candidate boundaries without launching packaging tools or a model."""
 
-from argparse import Namespace
 import hashlib
 import json
 import subprocess
+from argparse import Namespace
 
 import pytest
 

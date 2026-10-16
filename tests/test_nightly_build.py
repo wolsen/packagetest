@@ -1,7 +1,8 @@
 import builtins
 
-from packagetest.locked import LockedBuild, StageFailure
 import pytest
+
+from packagetest.locked import LockedBuild, StageFailure
 
 
 def test_dependency_preflight_does_not_import_source_preparation(monkeypatch):
@@ -14,6 +15,7 @@ def test_dependency_preflight_does_not_import_source_preparation(monkeypatch):
 
     monkeypatch.setattr(builtins, '__import__', reject_source_preparation)
     import importlib
+
     from packagetest import nightly_build
     importlib.reload(nightly_build)
 
@@ -37,8 +39,8 @@ def test_transitive_same_run_dependencies():
 
 
 def test_adapted_indep_dependency_is_pinned_to_candidate(tmp_path):
-    from packagetest.artifacts import fields
     from packagetest import nightly_build as module
+    from packagetest.artifacts import fields
     dsc = tmp_path / 'adapted.dsc'
     dsc.write_text('Source: client\nBuild-Depends: debhelper\n'
                    'Build-Depends-Indep: python3-sdk (>= 4.19.0)\n'
@@ -91,7 +93,11 @@ def test_named_build_inputs_reject_unknown_producers():
 
 def test_prepared_build_record_preserves_lock_identity_and_reuse_version_gate(tmp_path):
     """Named source records retain lock content and enforce frozen reused versions."""
-    from packagetest.nightly_build import BuildInputs, PreparedBuildSource, _prepared_build_lock
+    from packagetest.nightly_build import (
+        BuildInputs,
+        PreparedBuildSource,
+        _prepared_build_lock,
+    )
 
     dsc = tmp_path / 'demo.dsc'
     dsc.write_text('Source: demo\nVersion: 2.0-1\nBinary: python3-demo\n')
@@ -114,6 +120,7 @@ def test_prepared_build_record_preserves_lock_identity_and_reuse_version_gate(tm
 def test_dependency_only_preflight_never_prepares_source(tmp_path, monkeypatch):
     """Named build context must preserve the early handoff-only execution path."""
     from argparse import Namespace
+
     from packagetest import nightly_build as module
 
     inputs = module.BuildInputs(
@@ -136,6 +143,7 @@ def test_dependency_only_preflight_never_prepares_source(tmp_path, monkeypatch):
 def test_absent_unaccepted_producer_is_recorded_as_dependency_block(tmp_path, monkeypatch):
     """Omitting failed producer archives must preserve the dependency-only blocked verdict."""
     from argparse import Namespace
+
     from packagetest import nightly_build as module
 
     inputs = module.BuildInputs(

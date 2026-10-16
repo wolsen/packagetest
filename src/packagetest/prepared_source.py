@@ -3,28 +3,28 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Mapping
 import hashlib
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import traceback
+from collections.abc import Mapping
+from pathlib import Path
 
 from packagetest.artifacts import checksum_entries, fields, sha256, verify_source
 from packagetest.catalog import paragraphs
 from packagetest.contracts import (
-    PreparedSource,
-    PreparedManifest,
-    ControlMetadata,
-    BinaryMetadata,
     AutopkgtestMetadata,
+    BinaryMetadata,
+    ControlMetadata,
+    PreparedManifest,
+    PreparedSource,
     object_mapping,
+    prepared_manifest,
     records,
     text_field,
-    prepared_manifest,
 )
 from packagetest.nightly_source import prepare_source
 from packagetest.prepared_plan import verify_prepared_bundle

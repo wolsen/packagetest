@@ -1,6 +1,5 @@
 import json
 
-
 from packagetest import packaging_proposal as module
 
 

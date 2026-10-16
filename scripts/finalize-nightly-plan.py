@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Compatibility entry point for :mod:`packagetest.final_plan`."""
+
 import sys
 from pathlib import Path
 

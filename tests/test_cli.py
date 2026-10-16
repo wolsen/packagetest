@@ -1,8 +1,10 @@
 import json
 from argparse import Namespace
 from pathlib import Path
-from packagetest.cli import plan_cmd, main
+
+from packagetest.cli import main, plan_cmd
 from packagetest.release_discovery import ResolvedRelease
+
 
 def test_plan_cmd_outputs_release_resolution(capsys, monkeypatch):
     repo_root = Path(__file__).resolve().parents[1]

@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
 import re
 import time
 import tomllib
+from collections.abc import Callable, Mapping, Sequence
+from typing import NotRequired, TypedDict
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
-from typing import NotRequired, TypedDict
-
-from .contracts import object_list, object_mapping, string_list, text_field
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
+from .contracts import object_list, object_mapping, string_list, text_field
 
 DEPENDENCY_FILES = ("requirements.txt", "test-requirements.txt", "pyproject.toml")
 TEST_GROUP_NAMES = {"test", "tests", "testing"}

@@ -1,4 +1,5 @@
 """Select and order source packages for advisory build plans."""
+
 from __future__ import annotations
 
 import uuid
@@ -17,12 +18,16 @@ def build_plan(
     snapshot_at: str | None = None,
 ) -> BuildPlan:
     """Select requested sources and produce a dependency-ordered advisory plan."""
-    selected = _select_sources(definitions, requested_sources, include_dependency_closure)
+    selected = _select_sources(
+        definitions, requested_sources, include_dependency_closure
+    )
     order = _topological_order(definitions, selected)
     planned = [
         PlannedBuild(
             source_package=source,
-            depends_on_sources=[d for d in definitions[source].build_depends_on_sources if d in selected],
+            depends_on_sources=[
+                d for d in definitions[source].build_depends_on_sources if d in selected
+            ],
             package=definitions[source],
         )
         for source in order
@@ -37,8 +42,11 @@ def build_plan(
     )
 
 
-def _select_sources(definitions: dict[str, PackageDefinition], requested: list[str],
-                    include_dependencies: bool) -> set[str]:
+def _select_sources(
+    definitions: dict[str, PackageDefinition],
+    requested: list[str],
+    include_dependencies: bool,
+) -> set[str]:
     """Validate requested sources and optionally walk their transitive dependencies."""
     selected: set[str] = set()
     to_visit = deque(requested)
@@ -60,7 +68,9 @@ def _select_sources(definitions: dict[str, PackageDefinition], requested: list[s
 class DependencyOrder:
     """Own remaining edge counts while ordering one selected dependency graph."""
 
-    def __init__(self, definitions: dict[str, PackageDefinition], selected: set[str]) -> None:
+    def __init__(
+        self, definitions: dict[str, PackageDefinition], selected: set[str]
+    ) -> None:
         """Index only edges whose producers are part of this build selection."""
         self.indegree = {source: 0 for source in selected}
         self.children: dict[str, list[str]] = {source: [] for source in selected}
@@ -83,7 +93,9 @@ class DependencyOrder:
 
     def ordered(self) -> list[str]:
         """Consume ready nodes and reject any remaining cyclic component."""
-        queue = deque(sorted(source for source, count in self.indegree.items() if count == 0))
+        queue = deque(
+            sorted(source for source, count in self.indegree.items() if count == 0)
+        )
         out: list[str] = []
         while queue:
             node = queue.popleft()
@@ -96,6 +108,8 @@ class DependencyOrder:
         return out
 
 
-def _topological_order(definitions: dict[str, PackageDefinition], selected: set[str]) -> list[str]:
+def _topological_order(
+    definitions: dict[str, PackageDefinition], selected: set[str]
+) -> list[str]:
     """Return producers before consumers using the selected subgraph only."""
     return DependencyOrder(definitions, selected).ordered()

@@ -1,15 +1,14 @@
 """Verify publication policy, evidence retention, and consolidated report consumption."""
 import hashlib
 import json
-from pathlib import Path
 import runpy
 import tarfile
+from pathlib import Path
 
 import pytest
 
 from packagetest.nightly_plan import _job_result_rows
 from packagetest.pipeline_report import load_proposals
-
 
 module = runpy.run_path(str(Path(__file__).parents[1] / 'scripts/publish-package-artifacts.py'))
 PackageArtifacts = module['PackageArtifacts']

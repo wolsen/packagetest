@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fail a package job unless its final build and test candidates are usable."""
+
 import argparse
 import json
 from pathlib import Path

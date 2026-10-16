@@ -134,6 +134,7 @@ def test_optional_metadata_retries_transient_failure_before_absence(monkeypatch)
     """A later 404 is definitive absence even after a retryable HTTP failure."""
     from unittest.mock import Mock
     from urllib.error import HTTPError
+
     from packagetest import upstream_dependencies as metadata
 
     url = 'https://example.invalid/requirements.txt'
@@ -152,7 +153,9 @@ def test_optional_metadata_exhaustion_preserves_last_failure(monkeypatch):
     """Exhausted retries retain the last diagnostic and exponential backoff."""
     from unittest.mock import Mock
     from urllib.error import URLError
+
     import pytest
+
     from packagetest import upstream_dependencies as metadata
 
     request = Mock(side_effect=[TimeoutError('first'), URLError('second'),
@@ -203,6 +206,7 @@ test = [{include-group = "common"}, "stestr>=4"]
 def test_metadata_fetch_rejects_empty_retry_budget_before_network_access(monkeypatch):
     """Invalid fetch settings produce a clear error rather than an unbound diagnostic."""
     import pytest
+
     from packagetest import upstream_dependencies as metadata
 
     def unexpected(*args, **kwargs):

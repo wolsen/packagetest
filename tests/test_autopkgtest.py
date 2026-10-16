@@ -3,8 +3,14 @@ from pathlib import Path
 
 import pytest
 
-from packagetest.autopkgtest import (checked_file, classify, collect_test_diagnostics,
-                                     diagnostic_message, exit_status, run)
+from packagetest.autopkgtest import (
+    checked_file,
+    classify,
+    collect_test_diagnostics,
+    diagnostic_message,
+    exit_status,
+    run,
+)
 
 
 @pytest.mark.parametrize('code,summary,result', [
@@ -145,6 +151,7 @@ def test_candidate_hook_supports_variant_switches_and_rejects_archive_fallback(t
     import os
     import subprocess
     import sys
+
     from packagetest.autopkgtest import candidate_check_script
     query = tmp_path / 'dpkg-query'
     query.write_text('#!' + sys.executable + '\nprint(' + repr(database) + ', end="")\n')
@@ -163,6 +170,7 @@ def test_timeout_kills_and_reaps_testbed_process_group(tmp_path, monkeypatch):
     import signal
     import subprocess
     from unittest.mock import MagicMock
+
     from packagetest import autopkgtest
 
     process = MagicMock()

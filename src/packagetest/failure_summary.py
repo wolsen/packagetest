@@ -1,4 +1,5 @@
 """Print bounded diagnostics from packaging failure bundles and command traces."""
+
 from __future__ import annotations
 
 import json
@@ -66,7 +67,9 @@ def _print_trace_stream(label: str, value: object) -> None:
             print(f"        {line}")
 
 
-def _commands_for_source(results: list[dict[str, object]], source: str) -> list[dict[str, object]]:
+def _commands_for_source(
+    results: list[dict[str, object]], source: str
+) -> list[dict[str, object]]:
     """Select commands whose working directory contains the exact source path segment."""
     return [result for result in results if _matches_source(result, source)]
 
@@ -85,7 +88,9 @@ def _print_command_trace(*, root: Path, generation_id: str | None, source: str) 
     all_results, parse_errors = _load_command_results(commands_path)
     source_results = _commands_for_source(all_results, source)
     if not source_results:
-        print(f"  command_trace: no commands found for source {source} in {commands_path}")
+        print(
+            f"  command_trace: no commands found for source {source} in {commands_path}"
+        )
         return parse_errors
 
     print(f"  command_trace: {len(source_results)} command(s) from {commands_path}")
@@ -138,7 +143,11 @@ def _summarize_failure(root: Path, failure_file: Path, payload: dict) -> int:
     source_package = payload.get("source_package")
     generation_id = payload.get("generation_id")
     if isinstance(source_package, str):
-        return _print_command_trace(root=root, generation_id=generation_id if isinstance(generation_id, str) else None, source=source_package)
+        return _print_command_trace(
+            root=root,
+            generation_id=generation_id if isinstance(generation_id, str) else None,
+            source=source_package,
+        )
 
     return 0
 
@@ -164,7 +173,9 @@ def summarize(root: Path) -> int:
         parse_errors += _summarize_failure(root, failure_file, payload)
 
     if parse_errors:
-        print(f"Encountered {parse_errors} unreadable failure bundle(s).", file=sys.stderr)
+        print(
+            f"Encountered {parse_errors} unreadable failure bundle(s).", file=sys.stderr
+        )
         return 1
 
     return 0

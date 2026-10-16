@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Compatibility entry point for :mod:`packagetest.prepared_source`."""
+
 import sys
 from pathlib import Path
 

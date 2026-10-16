@@ -1,4 +1,5 @@
 """Expose advisory planning, reviewed-lock builds, and snapshot resolution commands."""
+
 from __future__ import annotations
 
 import argparse
@@ -9,16 +10,22 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from .config import default_config_path, load_package_definitions
+from .locked import LockedBuild, load_lock
 from .models import BuildPlan
 from .planner import build_plan
-from .release_discovery import OpenStackReleaseResolver, ReleaseDiscoveryError, ResolvedRelease
-from .locked import LockedBuild, load_lock
+from .release_discovery import (
+    OpenStackReleaseResolver,
+    ReleaseDiscoveryError,
+    ResolvedRelease,
+)
 
 logger = logging.getLogger(__name__)
+
 
 def _default_config_path() -> Path:
     """Locate the bundled package selection used by the advisory planner."""
     return default_config_path("vertical_slice.json")
+
 
 def _add_release_metadata(row: dict, resolved_release: ResolvedRelease | None) -> None:
     """Attach discovered upstream identity to one advisory plan row."""
@@ -53,8 +60,12 @@ def plan_cmd(args: argparse.Namespace) -> int:
             row["release_resolution_error"] = resolution_errors[source]
 
     print(json.dumps(payload, indent=2, sort_keys=True))
-    logger.debug("Plan command completed with %d release resolution errors", len(resolution_errors))
+    logger.debug(
+        "Plan command completed with %d release resolution errors",
+        len(resolution_errors),
+    )
     return 1 if resolution_errors else 0
+
 
 def _resolve_package_releases(
     plan: BuildPlan,
@@ -82,8 +93,11 @@ def _resolve_package_releases(
                 logger.debug("Resolved release metadata for %s", source_package)
             except ReleaseDiscoveryError as exc:
                 errors[source_package] = str(exc)
-                logger.debug("Release resolution failed for %s: %s", source_package, exc)
+                logger.debug(
+                    "Release resolution failed for %s: %s", source_package, exc
+                )
     return resolved_releases, errors
+
 
 def status_cmd(args: argparse.Namespace) -> int:
     """Print a saved generation manifest, reporting an absent path as a command failure."""
@@ -93,6 +107,7 @@ def status_cmd(args: argparse.Namespace) -> int:
         return 1
     print(manifest.read_text(encoding="utf-8"))
     return 0
+
 
 def build_cmd(args: argparse.Namespace) -> int:
     """Validate a reviewed lock and either display it or execute its build stages."""
@@ -111,9 +126,15 @@ def build_cmd(args: argparse.Namespace) -> int:
 def snapshot_lock_cmd(args: argparse.Namespace) -> int:
     """Resolve a snapshot template into a new immutable lock and print its evidence."""
     from .snapshot_lock import create_snapshot_lock
+
     try:
-        result = create_snapshot_lock(Path(args.template), Path(args.output), Path(args.work_dir),
-                                      ref=args.ref, cutoff=args.at)
+        result = create_snapshot_lock(
+            Path(args.template),
+            Path(args.output),
+            Path(args.work_dir),
+            ref=args.ref,
+            cutoff=args.at,
+        )
         print(json.dumps(result, indent=2))
         return 0
     except (ValueError, KeyError, OSError, RuntimeError) as exc:
@@ -126,7 +147,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="packaging")
     _add_logging_flags(parser, default=False)
     sub = parser.add_subparsers(dest="command", required=True)
-    p_plan = sub.add_parser("plan", help="Discover candidate releases; not an executable build lock")
+    p_plan = sub.add_parser(
+        "plan", help="Discover candidate releases; not an executable build lock"
+    )
     _add_logging_flags(p_plan, default=argparse.SUPPRESS)
     p_plan.add_argument("--config", default=str(_default_config_path()))
     p_plan.add_argument("--openstack-target", required=True)
@@ -135,14 +158,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_plan.add_argument("--no-dependency-closure", action="store_true", default=False)
     p_plan.add_argument("sources", nargs="+")
     p_plan.set_defaults(func=plan_cmd)
-    p_build = sub.add_parser("build", help="Build exact inputs from a reviewed schema-v1 lock")
+    p_build = sub.add_parser(
+        "build", help="Build exact inputs from a reviewed schema-v1 lock"
+    )
     _add_logging_flags(p_build, default=argparse.SUPPRESS)
     p_build.add_argument("--plan", required=True, help="Path to a schema-v1 build lock")
     p_build.add_argument("--run-dir", default="artifacts")
     p_build.add_argument("--command-timeout", type=float, default=3600)
     p_build.add_argument("--dry-run", action="store_true")
     p_build.set_defaults(func=build_cmd)
-    p_snapshot = sub.add_parser("lock-snapshot", help="Resolve a branch or cutoff into a new reviewed snapshot lock")
+    p_snapshot = sub.add_parser(
+        "lock-snapshot",
+        help="Resolve a branch or cutoff into a new reviewed snapshot lock",
+    )
     p_snapshot.add_argument("--template", required=True)
     p_snapshot.add_argument("--ref", default="master")
     p_snapshot.add_argument("--at", help="ISO 8601 commit cutoff including timezone")
@@ -167,6 +195,7 @@ def _add_logging_flags(parser: argparse.ArgumentParser, *, default: bool | str) 
         help="Enable verbose debug logging, including command stdout/stderr traces.",
     )
 
+
 def _configure_logging(debug_enabled: bool) -> None:
     """Configure process logging at the requested diagnostic detail level."""
     logging.basicConfig(
@@ -175,12 +204,14 @@ def _configure_logging(debug_enabled: bool) -> None:
         force=True,
     )
 
+
 def main(argv: list[str] | None = None) -> int:
     """Parse command arguments, configure logging, and dispatch the selected operation."""
     parser = build_parser()
     args = parser.parse_args(argv)
     _configure_logging(getattr(args, "debug_logging", False))
     return args.func(args)
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

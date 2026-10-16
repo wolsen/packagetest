@@ -5,14 +5,14 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shlex
-import subprocess
 import selectors
+import shlex
 import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Protocol, BinaryIO, IO
+from typing import IO, BinaryIO, Protocol
 
 from .models import CommandResult
 

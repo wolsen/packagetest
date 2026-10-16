@@ -3,22 +3,14 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Iterator, Mapping
-from packagetest.config import default_config_path
 import hashlib
 import json
 import os
-from pathlib import Path
 import sys
+from collections.abc import Iterator, Mapping
+from pathlib import Path
 
-from packagetest.prepared_plan import (
-    apply_prepared_metadata,
-    exact_dependencies,
-    load_prepared,
-    DependencyPlan,
-    EdgeReason,
-    ExternalDecision,
-)
+from packagetest.config import default_config_path
 from packagetest.contracts import (
     PreparedManifest,
     object_mapping,
@@ -26,6 +18,14 @@ from packagetest.contracts import (
     string_list,
     string_mapping,
     text_field,
+)
+from packagetest.prepared_plan import (
+    DependencyPlan,
+    EdgeReason,
+    ExternalDecision,
+    apply_prepared_metadata,
+    exact_dependencies,
+    load_prepared,
 )
 
 

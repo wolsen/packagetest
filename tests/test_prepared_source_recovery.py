@@ -1,14 +1,13 @@
 """Recover a repair baseline from actual checksum-pinned Debian source bundles."""
 import json
-from pathlib import Path
 import subprocess
 import tarfile
+from pathlib import Path
 
 import pytest
 
 from packagetest.prepared_source import export_prepared
 from packagetest.remediation import prepared_tree
-
 
 pytestmark = pytest.mark.packaging_component
 

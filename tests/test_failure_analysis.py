@@ -1,24 +1,24 @@
 import io
 import json
 import os
-from pathlib import Path
 import subprocess
 import tarfile
+from pathlib import Path
 
 import pytest
 
 from packagetest.failure_analysis import (
     QuiltPatchSuperseded,
     normalize_repair_decision,
-    parse_repair_decision,
     parse_model_response,
+    parse_repair_decision,
     render_source_repair,
     repository_context,
     safe_evidence_text,
     select_direct_failures,
-    validate_source_patch,
-    validate_repair_decision,
     validate_patch,
+    validate_repair_decision,
+    validate_source_patch,
 )
 from packagetest.remediation_evidence import extract_test_failure_evidence
 

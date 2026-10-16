@@ -1,13 +1,12 @@
 """Exercise source repair evidence and deterministic preparation retries."""
 
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
-
 
 from packagetest import source_remediation as module
 
@@ -206,6 +205,7 @@ def test_deterministic_repair_reaches_preparation_without_model(tmp_path, monkey
 def test_model_fallback_preserves_attempt_evidence(tmp_path, monkeypatch, outcome):
     """Fallback records validation failures, explicit no-fix decisions, and preparation results."""
     import argparse
+
     from packagetest import remediation as helper
 
     initial = tmp_path / 'initial'

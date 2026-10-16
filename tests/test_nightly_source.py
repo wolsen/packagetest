@@ -1,18 +1,20 @@
-import io
 import hashlib
+import io
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import tarfile
+from pathlib import Path
 
 import pytest
 
-from packagetest.nightly_source import (extract_snapshot,
-                                        integrated_upstream_patches,
-                                        prepare_source,
-                                        snapshot_debian_version)
+from packagetest.nightly_source import (
+    extract_snapshot,
+    integrated_upstream_patches,
+    prepare_source,
+    snapshot_debian_version,
+)
 
 
 def test_preserve_debian_epoch():
@@ -226,8 +228,11 @@ def test_launchpad_packaging_checkout_does_not_retry_permanent_failure(
 
 
 def test_ubuntu_importer_checkout_rejects_archive_version_mismatch(tmp_path):
-    from packagetest.nightly_source import (PackagingIdentityMismatch, SourcePreparer,
-                                            checkout_packaging_tree)
+    from packagetest.nightly_source import (
+        PackagingIdentityMismatch,
+        SourcePreparer,
+        checkout_packaging_tree,
+    )
     repository, revision = importer_packaging_repository(tmp_path, version='0.9-1')
     build = SourcePreparer(tmp_path / 'result')
     with pytest.raises(PackagingIdentityMismatch, match='differs from archive'):
@@ -256,8 +261,11 @@ def test_stale_importer_can_fall_back_only_to_exact_uca_ppa_source():
 
 
 def test_generic_archive_vcs_checkout_rejects_stale_binary_set(tmp_path):
-    from packagetest.nightly_source import (PackagingIdentityMismatch, SourcePreparer,
-                                            checkout_packaging_tree)
+    from packagetest.nightly_source import (
+        PackagingIdentityMismatch,
+        SourcePreparer,
+        checkout_packaging_tree,
+    )
     repository, revision = importer_packaging_repository(tmp_path)
     build = SourcePreparer(tmp_path / 'result')
     with pytest.raises(PackagingIdentityMismatch, match='binary set differs'):

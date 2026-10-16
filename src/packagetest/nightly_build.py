@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 import json
-from pathlib import Path
 import sys
 import traceback
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
 
 from packagetest.artifacts import fields, sha256
 from packagetest.contracts import (
@@ -21,10 +21,10 @@ from packagetest.contracts import (
     string_mapping,
     text_field,
 )
-from packagetest.prepared_plan import ActiveRelation, relation_groups
-from packagetest.relations import BuildContext
 from packagetest.handoff import build_repository, collect_producers, stamp_generation
 from packagetest.locked import LockedBuild
+from packagetest.prepared_plan import ActiveRelation, relation_groups
+from packagetest.relations import BuildContext
 from packagetest.snapshot_targets import build_target, catalog_target
 
 

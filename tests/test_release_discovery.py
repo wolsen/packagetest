@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
-import pytest
 from urllib.error import URLError
+
+import pytest
 
 from packagetest.models import PackageDefinition
 from packagetest.release_discovery import (
@@ -12,7 +13,6 @@ from packagetest.release_discovery import (
     parse_series_status_yaml,
     resolve_release_from_deliverable_yaml,
 )
-
 
 SERIES_STATUS = """
 - name: indri

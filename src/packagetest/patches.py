@@ -1,10 +1,11 @@
 """Quilt patch evidence and policy for frozen upstream sources."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 import re
 import subprocess
+from dataclasses import dataclass
+from pathlib import Path
 
 from .artifacts import sha256
 
@@ -12,14 +13,19 @@ from .artifacts import sha256
 def _applied_patch_evidence(tree: Path, patch: Path) -> dict | None:
     """Require reverse success and forward failure with zero fuzz before omitting a patch."""
     data = patch.read_bytes()
-    args = ['patch', '--dry-run', '--force', '--fuzz=0', '-p1']
-    reverse = subprocess.run(args + ['--reverse'], input=data, cwd=tree, capture_output=True)
+    args = ["patch", "--dry-run", "--force", "--fuzz=0", "-p1"]
+    reverse = subprocess.run(
+        args + ["--reverse"], input=data, cwd=tree, capture_output=True
+    )
     if reverse.returncode:
         return None
 
     forward = subprocess.run(args, input=data, cwd=tree, capture_output=True)
     if forward.returncode:
-        return {'sha256': sha256(patch), 'reverse_probe': reverse.stdout.decode(errors='replace')}
+        return {
+            "sha256": sha256(patch),
+            "reverse_probe": reverse.stdout.decode(errors="replace"),
+        }
 
     return None
 
@@ -32,10 +38,14 @@ def _omit_applied_entries(lines: list[str], tree: Path) -> list[dict]:
         if name is None:
             continue
 
-        evidence = _applied_patch_evidence(tree, tree / 'debian/patches' / name)
+        evidence = _applied_patch_evidence(tree, tree / "debian/patches" / name)
         if evidence is not None:
-            lines[index] = '# Fully present upstream (verified reverse dry run): ' + str(name)
-            omitted.append({'action': 'omit-already-applied-patch', 'name': str(name), **evidence})
+            lines[index] = (
+                "# Fully present upstream (verified reverse dry run): " + str(name)
+            )
+            omitted.append(
+                {"action": "omit-already-applied-patch", "name": str(name), **evidence}
+            )
 
     return omitted
 
@@ -46,14 +56,14 @@ def already_applied_patches(tree: Path) -> list[dict]:
     Also require that the forward patch does not apply, so ambiguous repeated
     contexts do not qualify. Both probes are dry runs; upstream is unchanged.
     """
-    series = tree / 'debian/patches/series'
+    series = tree / "debian/patches/series"
     if not series.exists():
         return []
 
     lines = series.read_text().splitlines()
     omitted = _omit_applied_entries(lines, tree)
     if omitted:
-        series.write_text('\n'.join(lines) + '\n')
+        series.write_text("\n".join(lines) + "\n")
 
     return omitted
 
@@ -61,7 +71,7 @@ def already_applied_patches(tree: Path) -> list[dict]:
 def _active_patch_name(line: str) -> Path | None:
     """Read an active quilt filename while retaining supported series options."""
     words = line.split()
-    if not words or words[0].startswith('#'):
+    if not words or words[0].startswith("#"):
         return None
 
     return _safe_patch_name(words[0])
@@ -72,35 +82,56 @@ def _forwarded_change_id(patch: Path) -> str | None:
     if not patch.is_file() or patch.is_symlink():
         return None
 
-    text = patch.read_text(errors='replace')
-    first_section = re.search(r'(?m)^(?:diff --git |---\s)', text)
-    header = text[:first_section.start()] if first_section else text
-    change_ids = set(re.findall(r'(?m)^Change-Id:\s*(I[0-9a-fA-F]{40})\s*$', header))
+    text = patch.read_text(errors="replace")
+    first_section = re.search(r"(?m)^(?:diff --git |---\s)", text)
+    header = text[: first_section.start()] if first_section else text
+    change_ids = set(re.findall(r"(?m)^Change-Id:\s*(I[0-9a-fA-F]{40})\s*$", header))
     if len(change_ids) != 1:
         return None
 
     return next(iter(change_ids))
 
 
-def _integrated_patch_evidence(patch: Path, checkout: Path, upstream_sha: str) -> dict | None:
+def _integrated_patch_evidence(
+    patch: Path, checkout: Path, upstream_sha: str
+) -> dict | None:
     """Find a forwarded Gerrit change within the frozen upstream commit ancestry."""
     change_id = _forwarded_change_id(patch)
     if change_id is None:
         return None
 
     result = subprocess.run(
-        ['git', 'log', upstream_sha, '-n', '1', '--format=%H',
-         '--fixed-strings', '--grep=' + f'Change-Id: {change_id}'],
-        cwd=checkout, text=True, capture_output=True, timeout=30, check=True)
+        [
+            "git",
+            "log",
+            upstream_sha,
+            "-n",
+            "1",
+            "--format=%H",
+            "--fixed-strings",
+            "--grep=" + f"Change-Id: {change_id}",
+        ],
+        cwd=checkout,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=True,
+    )
     commit = result.stdout.strip()
-    if not re.fullmatch(r'[0-9a-f]{40}', commit):
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
         return None
 
-    return {'sha256': sha256(patch), 'change_id': change_id,
-            'upstream_commit': commit, 'human_review_required': True}
+    return {
+        "sha256": sha256(patch),
+        "change_id": change_id,
+        "upstream_commit": commit,
+        "human_review_required": True,
+    }
 
 
-def _omit_integrated_entries(lines: list[str], tree: Path, checkout: Path, upstream_sha: str) -> list[dict]:
+def _omit_integrated_entries(
+    lines: list[str], tree: Path, checkout: Path, upstream_sha: str
+) -> list[dict]:
     """Comment forwarded changes only after collecting immutable integration evidence."""
     omitted = []
     for index, line in enumerate(lines):
@@ -108,17 +139,28 @@ def _omit_integrated_entries(lines: list[str], tree: Path, checkout: Path, upstr
         if name is None:
             continue
 
-        evidence = _integrated_patch_evidence(tree / 'debian/patches' / name, checkout, upstream_sha)
+        evidence = _integrated_patch_evidence(
+            tree / "debian/patches" / name, checkout, upstream_sha
+        )
         if evidence is not None:
-            lines[index] = (f"# Integrated upstream as {evidence['upstream_commit'][:12]} "
-                            f"({evidence['change_id']}): {line}")
-            omitted.append({'action': 'omit-integrated-upstream-patch', 'name': str(name), **evidence})
+            lines[index] = (
+                f"# Integrated upstream as {evidence['upstream_commit'][:12]} "
+                f"({evidence['change_id']}): {line}"
+            )
+            omitted.append(
+                {
+                    "action": "omit-integrated-upstream-patch",
+                    "name": str(name),
+                    **evidence,
+                }
+            )
 
     return omitted
 
 
-def integrated_upstream_patches(tree: Path, checkout: Path,
-                                upstream_sha: str) -> list[dict]:
+def integrated_upstream_patches(
+    tree: Path, checkout: Path, upstream_sha: str
+) -> list[dict]:
     """Omit forwarded patches whose Gerrit change is in frozen upstream.
 
     Textual patch probes become ambiguous after upstream evolves the merged
@@ -126,37 +168,48 @@ def integrated_upstream_patches(tree: Path, checkout: Path,
     ancestor commit identifies the forwarded change independently of later
     edits to the same files.
     """
-    if not re.fullmatch(r'[0-9a-f]{40}', upstream_sha):
-        raise ValueError('Integrated-patch check requires a frozen upstream SHA')
+    if not re.fullmatch(r"[0-9a-f]{40}", upstream_sha):
+        raise ValueError("Integrated-patch check requires a frozen upstream SHA")
 
-    series = tree / 'debian/patches/series'
+    series = tree / "debian/patches/series"
     if not series.is_file():
         return []
 
     lines = series.read_text().splitlines()
     omitted = _omit_integrated_entries(lines, tree, checkout, upstream_sha)
     if omitted:
-        series.write_text('\n'.join(lines) + '\n')
+        series.write_text("\n".join(lines) + "\n")
 
     return omitted
 
 
 SEMANTIC_PATCH_STOPWORDS = {
-    'false', 'from', 'import', 'none', 'return', 'self', 'test', 'true',
-    'value', 'with',
+    "false",
+    "from",
+    "import",
+    "none",
+    "return",
+    "self",
+    "test",
+    "true",
+    "value",
+    "with",
 }
 
 
 def _semantic_token_parts(token: str) -> set[str]:
     """Retain meaningful identifier components for advisory overlap scoring."""
-    return {part.lower() for part in token.split('_')
-            if len(part) >= 4 and part.lower() not in SEMANTIC_PATCH_STOPWORDS}
+    return {
+        part.lower()
+        for part in token.split("_")
+        if len(part) >= 4 and part.lower() not in SEMANTIC_PATCH_STOPWORDS
+    }
 
 
 def _semantic_patch_tokens(value: str) -> set[str]:
     """Tokenize patch identifiers without treating overlap as equivalence proof."""
     result = set()
-    for token in re.findall(r'[A-Za-z][A-Za-z0-9_]{3,}', value):
+    for token in re.findall(r"[A-Za-z][A-Za-z0-9_]{3,}", value):
         token = token.lower()
         if token not in SEMANTIC_PATCH_STOPWORDS:
             result.add(token)
@@ -169,8 +222,8 @@ def _semantic_patch_tokens(value: str) -> set[str]:
 def _safe_patch_name(value: str) -> Path:
     """Reject absolute or parent-relative patch filenames from quilt series."""
     name = Path(value)
-    if name.is_absolute() or '..' in name.parts:
-        raise ValueError('Unsafe quilt patch path')
+    if name.is_absolute() or ".." in name.parts:
+        raise ValueError("Unsafe quilt patch path")
 
     return name
 
@@ -178,7 +231,7 @@ def _safe_patch_name(value: str) -> Path:
 def _single_patch_name(line: str) -> Path | None:
     """Select active, option-free patches eligible for advisory overlap probes."""
     words = line.split()
-    if len(words) != 1 or words[0].startswith('#'):
+    if len(words) != 1 or words[0].startswith("#"):
         return None
 
     return _safe_patch_name(words[0])
@@ -187,13 +240,15 @@ def _single_patch_name(line: str) -> Path | None:
 def _upstream_overlap_target(target: str) -> bool:
     """Limit overlap evidence to relative upstream paths outside Debian metadata."""
     path = Path(target)
-    return not (path.is_absolute() or '..' in path.parts or path.parts[:1] == ('debian',))
+    return not (
+        path.is_absolute() or ".." in path.parts or path.parts[:1] == ("debian",)
+    )
 
 
 def _overlap_targets(text: str) -> list[str]:
     """Preserve unique section targets, rejecting the whole patch on unsafe paths."""
     targets = []
-    for target in re.findall(r'^\+\+\+\s+(?:b/)?([^\t\n ]+)', text, re.M):
+    for target in re.findall(r"^\+\+\+\s+(?:b/)?([^\t\n ]+)", text, re.M):
         if not _upstream_overlap_target(target):
             return []
 
@@ -205,18 +260,25 @@ def _overlap_targets(text: str) -> list[str]:
 
 def _added_patch_lines(text: str) -> str:
     """Extract added payload while excluding unified-diff file headers."""
-    return '\n'.join(line[1:] for line in text.splitlines()
-                     if line.startswith('+') and not line.startswith('+++'))
+    return "\n".join(
+        line[1:]
+        for line in text.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    )
 
 
 def _unresolved_patch(tree: Path, data: bytes) -> bool:
     """Require both forward and reverse zero-fuzz probes to fail before suggesting overlap."""
-    probe = ['patch', '--dry-run', '--batch', '--force', '--fuzz=0', '-p1']
+    probe = ["patch", "--dry-run", "--batch", "--force", "--fuzz=0", "-p1"]
     if subprocess.run(probe, input=data, cwd=tree, capture_output=True).returncode == 0:
         return False
 
-    return subprocess.run(probe + ['--reverse'], input=data, cwd=tree,
-                          capture_output=True).returncode != 0
+    return (
+        subprocess.run(
+            probe + ["--reverse"], input=data, cwd=tree, capture_output=True
+        ).returncode
+        != 0
+    )
 
 
 def _current_target_texts(tree: Path, targets: list[str]) -> list[str]:
@@ -227,7 +289,7 @@ def _current_target_texts(tree: Path, targets: list[str]) -> list[str]:
         if not path.is_file() or path.is_symlink():
             return []
 
-        parts.append(path.read_text(errors='replace'))
+        parts.append(path.read_text(errors="replace"))
 
     return parts
 
@@ -251,7 +313,9 @@ class PatchOverlap:
         targets = _overlap_targets(text)
         added = _added_patch_lines(text)
         tokens = _semantic_patch_tokens(added)
-        definitions = set(re.findall(r'\b(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)', added))
+        definitions = set(
+            re.findall(r"\b(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)", added)
+        )
         if not targets or len(tokens) < 8 or not definitions:
             return None
 
@@ -263,7 +327,7 @@ class PatchOverlap:
         if not parts or not _definitions_present(self.definitions, parts):
             return None
 
-        return self.overlap('\n'.join(parts))
+        return self.overlap("\n".join(parts))
 
     def overlap(self, text: str) -> float:
         """Calculate the fraction of patch identifiers present in candidate evidence."""
@@ -272,8 +336,12 @@ class PatchOverlap:
     def commit_overlap(self, checkout: Path, commit: dict) -> float | None:
         """Score a commit's scoped diff and message, ignoring failed or empty lookups."""
         result = subprocess.run(
-            ['git', 'show', '--format=%B', commit['sha'], '--', *self.targets],
-            cwd=checkout, text=True, capture_output=True, timeout=30)
+            ["git", "show", "--format=%B", commit["sha"], "--", *self.targets],
+            cwd=checkout,
+            text=True,
+            capture_output=True,
+            timeout=30,
+        )
         if result.returncode or not result.stdout.strip():
             return None
 
@@ -285,12 +353,17 @@ class PatchOverlap:
         for commit in commits:
             overlap = self.commit_overlap(checkout, commit)
             if _better_overlap(overlap, best):
-                best = {'sha': commit['sha'], 'subject': commit.get('subject', ''),
-                        'commit_overlap': round(overlap, 3)}
+                best = {
+                    "sha": commit["sha"],
+                    "subject": commit.get("subject", ""),
+                    "commit_overlap": round(overlap, 3),
+                }
 
         return best
 
-    def suggestion(self, tree: Path, checkout: Path, commits: list[dict], patch: Path, name: Path) -> dict | None:
+    def suggestion(
+        self, tree: Path, checkout: Path, commits: list[dict], patch: Path, name: Path
+    ) -> dict | None:
         """Return a human-review suggestion without editing patch content or the series."""
         overlap = self.current_overlap(tree)
         if overlap is None or overlap < 0.70:
@@ -301,10 +374,14 @@ class PatchOverlap:
             return None
 
         return {
-            'action': 'review-upstream-patch-overlap', 'name': str(name),
-            'sha256': sha256(patch), 'upstream_commit': best,
-            'current_overlap': round(overlap, 3), 'token_count': len(self.tokens),
-            'targets': self.targets, 'human_review_required': True,
+            "action": "review-upstream-patch-overlap",
+            "name": str(name),
+            "sha256": sha256(patch),
+            "upstream_commit": best,
+            "current_overlap": round(overlap, 3),
+            "token_count": len(self.tokens),
+            "targets": self.targets,
+            "human_review_required": True,
         }
 
 
@@ -313,12 +390,14 @@ def _better_overlap(overlap: float | None, best: dict | None) -> bool:
     if overlap is None or overlap < 0.70:
         return False
 
-    return best is None or overlap > best['commit_overlap']
+    return best is None or overlap > best["commit_overlap"]
 
 
-def _patch_overlap_suggestion(tree: Path, checkout: Path, commits: list[dict], name: Path) -> dict | None:
+def _patch_overlap_suggestion(
+    tree: Path, checkout: Path, commits: list[dict], name: Path
+) -> dict | None:
     """Probe a regular patch before attempting advisory semantic comparison."""
-    patch = tree / 'debian/patches' / name
+    patch = tree / "debian/patches" / name
     if not patch.is_file() or patch.is_symlink():
         return None
 
@@ -326,14 +405,16 @@ def _patch_overlap_suggestion(tree: Path, checkout: Path, commits: list[dict], n
     if not _unresolved_patch(tree, data):
         return None
 
-    overlap = PatchOverlap.parse(data.decode(errors='replace'))
+    overlap = PatchOverlap.parse(data.decode(errors="replace"))
     if overlap is None:
         return None
 
     return overlap.suggestion(tree, checkout, commits, patch, name)
 
 
-def _overlap_suggestions(lines: list[str], tree: Path, checkout: Path, commits: list[dict]) -> list[dict]:
+def _overlap_suggestions(
+    lines: list[str], tree: Path, checkout: Path, commits: list[dict]
+) -> list[dict]:
     """Collect suggestions for eligible active patch entries in series order."""
     adjustments = []
     for line in lines:
@@ -348,19 +429,24 @@ def _overlap_suggestions(lines: list[str], tree: Path, checkout: Path, commits: 
     return adjustments
 
 
-def superseded_upstream_patches(tree: Path, checkout: Path, selected: dict) -> list[dict]:
+def superseded_upstream_patches(
+    tree: Path, checkout: Path, selected: dict
+) -> list[dict]:
     """Suggest upstream commits for review without disabling a quilt patch.
 
     Identifier overlap is a search heuristic, never proof of equivalent
     behavior. Keep the patch active so source validation still fails closed.
     """
-    series = tree / 'debian/patches/series'
+    series = tree / "debian/patches/series"
     if not series.is_file():
         return []
 
     lines = series.read_text().splitlines()
-    commits = [item for item in selected.get('commits', [])
-               if re.fullmatch(r'[0-9a-f]{40}', item.get('sha', ''))]
+    commits = [
+        item
+        for item in selected.get("commits", [])
+        if re.fullmatch(r"[0-9a-f]{40}", item.get("sha", ""))
+    ]
     if not commits:
         return []
 

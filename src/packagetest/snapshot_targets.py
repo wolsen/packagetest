@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import json
-from pathlib import Path
 import re
+from collections.abc import Mapping
+from pathlib import Path
 from typing import NotRequired, TypedDict
 
 from .contracts import (
     BuildTarget,
     object_mapping,
-    string_mapping,
     required_text,
     string_list,
+    string_mapping,
 )
 from .repositories import Repository
 

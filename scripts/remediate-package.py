@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Compatibility entry point for :mod:`packagetest.remediation`."""
+
 import sys
 from pathlib import Path
 

@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """Ask a local model for two advisory packaging repairs and validate its diffs."""
+
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import time
 import urllib.request
+from datetime import UTC, datetime
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from packagetest.failure_analysis import (
@@ -21,7 +22,6 @@ from packagetest.failure_analysis import (
     validate_patch,
     write_json,
 )
-
 
 FORMAT = """Return exactly this format. Do not use Markdown fences.
 BEGIN_DIAGNOSIS
@@ -79,6 +79,7 @@ INDEPENDENT PATCH VALIDATION:
 
 class LlamaRunner:
     """Run advisory inference through a local llama.cpp executable and pinned model file."""
+
     def __init__(self, executable: Path, model: Path, timeout: int):
         """Bind the selected inference backend, model identity, and request timeout."""
         self.executable, self.model, self.timeout = executable, model, timeout
@@ -87,27 +88,50 @@ class LlamaRunner:
         """Generate one advisory response and retain backend timing and diagnostic evidence."""
         started = time.monotonic()
         command = [
-            str(self.executable), "-m", str(self.model), "-p", prompt,
-            "-n", "1536", "-c", "12288", "--temp", "0", "--seed", str(attempt),
-            "--threads", str(min(4, os.cpu_count() or 2)), "--no-display-prompt",
-            "--single-turn", "--simple-io", "--no-show-timings",
+            str(self.executable),
+            "-m",
+            str(self.model),
+            "-p",
+            prompt,
+            "-n",
+            "1536",
+            "-c",
+            "12288",
+            "--temp",
+            "0",
+            "--seed",
+            str(attempt),
+            "--threads",
+            str(min(4, os.cpu_count() or 2)),
+            "--no-display-prompt",
+            "--single-turn",
+            "--simple-io",
+            "--no-show-timings",
         ]
         env = dict(os.environ)
         runtime_dir = str(self.executable.resolve().parent)
-        env["LD_LIBRARY_PATH"] = runtime_dir + (":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else "")
-        completed = subprocess.run(command, text=True, capture_output=True, timeout=self.timeout, env=env)
+        env["LD_LIBRARY_PATH"] = runtime_dir + (
+            ":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else ""
+        )
+        completed = subprocess.run(
+            command, text=True, capture_output=True, timeout=self.timeout, env=env
+        )
         metadata = {
-            "backend": "llama.cpp", "returncode": completed.returncode,
+            "backend": "llama.cpp",
+            "returncode": completed.returncode,
             "duration_seconds": round(time.monotonic() - started, 3),
             "stderr_tail": completed.stderr[-4000:],
         }
         if completed.returncode:
-            raise RuntimeError(f"llama-cli exited {completed.returncode}: {completed.stderr[-1000:]}")
+            raise RuntimeError(
+                f"llama-cli exited {completed.returncode}: {completed.stderr[-1000:]}"
+            )
         return completed.stdout, metadata
 
 
 class OllamaRunner:
     """Run advisory inference through the configured Ollama HTTP endpoint."""
+
     def __init__(self, url: str, model: str, timeout: int):
         """Bind the selected inference backend, model identity, and request timeout."""
         self.url, self.model, self.timeout = url.rstrip("/"), model, timeout
@@ -116,26 +140,44 @@ class OllamaRunner:
         """Generate one advisory response and retain backend timing and diagnostic evidence."""
         request = urllib.request.Request(
             self.url + "/api/generate",
-            data=json.dumps({
-                "model": self.model, "prompt": prompt, "stream": False, "think": False, "keep_alive": 0,
-                "options": {"num_ctx": 12288, "num_predict": 1536, "temperature": 0, "seed": attempt},
-            }).encode(),
+            data=json.dumps(
+                {
+                    "model": self.model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "think": False,
+                    "keep_alive": 0,
+                    "options": {
+                        "num_ctx": 12288,
+                        "num_predict": 1536,
+                        "temperature": 0,
+                        "seed": attempt,
+                    },
+                }
+            ).encode(),
             headers={"Content-Type": "application/json"},
         )
         started = time.monotonic()
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             payload = json.load(response)
         return payload.get("response", ""), {
-            "backend": "ollama", "duration_seconds": round(time.monotonic() - started, 3),
-            "prompt_tokens": payload.get("prompt_eval_count"), "generated_tokens": payload.get("eval_count"),
+            "backend": "ollama",
+            "duration_seconds": round(time.monotonic() - started, 3),
+            "prompt_tokens": payload.get("prompt_eval_count"),
+            "generated_tokens": payload.get("eval_count"),
         }
 
 
 class AdvisoryAnalysis:
     """Keep prior response and validation evidence across two advisory attempts."""
 
-    def __init__(self, repository: Path, output: Path,
-                 runner: LlamaRunner | OllamaRunner, prompt: str) -> None:
+    def __init__(
+        self,
+        repository: Path,
+        output: Path,
+        runner: LlamaRunner | OllamaRunner,
+        prompt: str,
+    ) -> None:
         """Initialize one analysis without applying any proposed change."""
         self.repository = repository
         self.output = output
@@ -150,7 +192,11 @@ class AdvisoryAnalysis:
 
     def _attempt(self, number: int) -> dict:
         """Persist one inference and preserve partial evidence on any failure."""
-        current_prompt = self.prompt if number == 1 else revision_prompt(self.prompt, self.prior_output, self.validation)
+        current_prompt = (
+            self.prompt
+            if number == 1
+            else revision_prompt(self.prompt, self.prior_output, self.validation)
+        )
         (self.output / f"attempt-{number}.prompt.txt").write_text(current_prompt)
         attempt = {"number": number, "result": "MODEL_ERROR"}
         try:
@@ -161,25 +207,34 @@ class AdvisoryAnalysis:
         except Exception as exc:
             attempt["error"] = str(exc)
             (self.output / f"attempt-{number}.output.txt").write_text(self.prior_output)
-            write_json(self.output / f"attempt-{number}.validation.json", {
-                "result": "MODEL_ERROR", "error": str(exc), "paths": []})
+            write_json(
+                self.output / f"attempt-{number}.validation.json",
+                {"result": "MODEL_ERROR", "error": str(exc), "paths": []},
+            )
             self.validation = {"result": "MODEL_ERROR", "error": str(exc), "paths": []}
 
         return attempt
 
-    def _validate_output(self, output: str, inference: dict, number: int, attempt: dict) -> None:
+    def _validate_output(
+        self, output: str, inference: dict, number: int, attempt: dict
+    ) -> None:
         """Record parsed patch validation without claiming build correctness."""
         parsed = parse_model_response(output)
         patch_path = self.output / f"attempt-{number}.patch"
         patch_path.write_text(parsed.patch)
-        self.validation = validate_patch(parsed.patch, self.repository) if parsed.patch else {
-            "result": "NO_PATCH", "paths": [], "error": "model proposed no patch"
-        }
+        self.validation = (
+            validate_patch(parsed.patch, self.repository)
+            if parsed.patch
+            else {"result": "NO_PATCH", "paths": [], "error": "model proposed no patch"}
+        )
         write_json(self.output / f"attempt-{number}.validation.json", self.validation)
         attempt.update(
-            result=self.validation["result"], diagnosis=parsed.diagnosis,
-            patch_file=patch_path.name, validation_file=f"attempt-{number}.validation.json",
-            inference=inference, **{key: value for key, value in self.validation.items() if key != "result"},
+            result=self.validation["result"],
+            diagnosis=parsed.diagnosis,
+            patch_file=patch_path.name,
+            validation_file=f"attempt-{number}.validation.json",
+            inference=inference,
+            **{key: value for key, value in self.validation.items() if key != "result"},
         )
 
 
@@ -195,7 +250,11 @@ def _outcome_label(selected: int | None, attempts: list[dict]) -> str:
     if selected:
         return "PATCH_PROPOSED"
 
-    return "DIAGNOSIS_ONLY" if any(item.get("diagnosis") for item in attempts) else "ANALYSIS_ERROR"
+    return (
+        "DIAGNOSIS_ONLY"
+        if any(item.get("diagnosis") for item in attempts)
+        else "ANALYSIS_ERROR"
+    )
 
 
 def _model_checksum(args: argparse.Namespace) -> str | None:
@@ -216,22 +275,34 @@ def run(args: argparse.Namespace) -> dict:
     evidence = safe_evidence_text(args.evidence)
     repo_context = repository_context(repository, args.source, evidence)
     prompt = base_prompt(args.source, args.phase, evidence, repo_context)
-    runner = (OllamaRunner(args.ollama_url, args.model_name, args.timeout)
-              if args.ollama_url else LlamaRunner(args.llama_cli, args.model, args.timeout))
+    runner = (
+        OllamaRunner(args.ollama_url, args.model_name, args.timeout)
+        if args.ollama_url
+        else LlamaRunner(args.llama_cli, args.model, args.timeout)
+    )
     analysis = AdvisoryAnalysis(repository, args.output, runner, prompt)
     attempts = analysis.execute()
     selected, outcome = _analysis_outcome(attempts)
     report = {
-        "schema_version": 1, "source": args.source, "original_phase": args.phase,
-        "original_result": args.original_result, "result": outcome, "advisory": True,
-        "build_validated": False, "selected_attempt": selected, "attempts": attempts,
+        "schema_version": 1,
+        "source": args.source,
+        "original_phase": args.phase,
+        "original_result": args.original_result,
+        "result": outcome,
+        "advisory": True,
+        "build_validated": False,
+        "selected_attempt": selected,
+        "attempts": attempts,
         "model": {
             "name": args.model_name,
             "sha256": _model_checksum(args),
         },
-        "ci": {"run_id": os.environ.get("GITHUB_RUN_ID"), "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
-               "checkout_sha": os.environ.get("GITHUB_SHA")},
-        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "ci": {
+            "run_id": os.environ.get("GITHUB_RUN_ID"),
+            "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+            "checkout_sha": os.environ.get("GITHUB_SHA"),
+        },
+        "finished_at": datetime.now(UTC).isoformat(),
     }
     write_json(args.output / "result.json", report)
     write_summary(args.output / "summary.md", report)
@@ -246,29 +317,45 @@ def _attempt_row(attempt: dict) -> str:
     """Render one advisory attempt with affected paths and inference duration."""
     paths = ", ".join(f"`{item}`" for item in attempt.get("paths", [])) or "—"
     duration = attempt.get("inference", {}).get("duration_seconds", "—")
-    return (f"| {attempt['number']} | {attempt['result']} | {paths} | {duration} s |")
+    return f"| {attempt['number']} | {attempt['result']} | {paths} | {duration} s |"
 
 
 def write_summary(path: Path, report: dict) -> None:
     """Write the advisory verdict, diagnosis, and validation limitations."""
     lines = [
-        f"# Local AI analysis: {report['source']}", "",
+        f"# Local AI analysis: {report['source']}",
+        "",
         f"Original phase: **{report['original_phase']}** ({report['original_result']}).  ",
-        f"Outcome: **{report['result']}**. This result is advisory.", "",
-        "| Attempt | Result | Proposed files | Inference time |", "|---:|---|---|---:|",
+        f"Outcome: **{report['result']}**. This result is advisory.",
+        "",
+        "| Attempt | Result | Proposed files | Inference time |",
+        "|---:|---|---|---:|",
     ]
     lines.extend(_attempt_row(attempt) for attempt in report["attempts"])
     selected = report.get("selected_attempt")
     lines.extend(["", "## Diagnosis", ""])
-    diagnosis = next((a.get("diagnosis") for a in reversed(report["attempts"]) if a.get("diagnosis")), "No usable diagnosis was returned.")
+    diagnosis = next(
+        (
+            a.get("diagnosis")
+            for a in reversed(report["attempts"])
+            if a.get("diagnosis")
+        ),
+        "No usable diagnosis was returned.",
+    )
     lines.append(diagnosis)
     lines.extend(["", "## Validation", ""])
     if selected:
-        lines.append(f"Attempt {selected} applies cleanly to the triggering checkout. **Build correctness is unverified.**")
+        lines.append(
+            f"Attempt {selected} applies cleanly to the triggering checkout. **Build correctness is unverified.**"
+        )
     else:
-        lines.append("Neither proposed patch applied cleanly. No patch should be used without manual repair.")
+        lines.append(
+            "Neither proposed patch applied cleanly. No patch should be used without manual repair."
+        )
 
-    lines.append("The downloadable artifact preserves both prompts, raw responses, patches, and validation records.")
+    lines.append(
+        "The downloadable artifact preserves both prompts, raw responses, patches, and validation records."
+    )
     path.write_text("\n".join(lines) + "\n")
 
 
@@ -302,15 +389,26 @@ def aggregate(input_dir: Path, output: Path) -> int:
     output.mkdir(parents=True, exist_ok=True)
     write_json(output / "results.json", reports)
     applies = sum(report.get("selected_attempt") is not None for report in reports)
-    lines = ["# Local AI packaging-repair experiment", "",
-             f"Analyzed {len(reports)} direct failures; {applies} produced a patch that applies cleanly.", "",
-             "| Source | Failed phase | AI outcome | Selected patch | Functional rebuild |",
-             "|---|---|---|---:|---|"]
+    lines = [
+        "# Local AI packaging-repair experiment",
+        "",
+        f"Analyzed {len(reports)} direct failures; {applies} produced a patch that applies cleanly.",
+        "",
+        "| Source | Failed phase | AI outcome | Selected patch | Functional rebuild |",
+        "|---|---|---|---:|---|",
+    ]
     for report in reports:
         selected = report.get("selected_attempt")
-        lines.append(f"| `{report['source']}` | {report['original_phase']} | {report['result']} | {selected or '—'} | not run |")
+        lines.append(
+            f"| `{report['source']}` | {report['original_phase']} | {report['result']} | {selected or '—'} | not run |"
+        )
 
-    lines.extend(["", "A clean application is only a syntax/integration check. The model is not considered good enough for autonomous repairs until selected patches pass package rebuild and autopkgtest review."])
+    lines.extend(
+        [
+            "",
+            "A clean application is only a syntax/integration check. The model is not considered good enough for autonomous repairs until selected patches pass package rebuild and autopkgtest review.",
+        ]
+    )
     (output / "summary.md").write_text("\n".join(lines) + "\n")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as stream:
@@ -319,11 +417,17 @@ def aggregate(input_dir: Path, output: Path) -> int:
     return 0
 
 
-def _validate_analysis_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+def _validate_analysis_args(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> None:
     """Require failure evidence and one complete model backend configuration."""
     required = (args.source, args.phase, args.evidence)
-    if not all(required) or (not args.ollama_url and (not args.llama_cli or not args.model)):
-        parser.error("analysis requires source, phase, evidence, and either Ollama or llama.cpp")
+    if not all(required) or (
+        not args.ollama_url and (not args.llama_cli or not args.model)
+    ):
+        parser.error(
+            "analysis requires source, phase, evidence, and either Ollama or llama.cpp"
+        )
 
 
 def main() -> int:

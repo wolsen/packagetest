@@ -3,23 +3,23 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
-from collections.abc import Callable
-from typing import Any
 import difflib
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import shlex
 import shutil
 import subprocess
 import sys
-import time
 import tempfile
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from enum import StrEnum
+from pathlib import Path
+from typing import Any
 
 from packagetest.contracts import RemediationSession
 from packagetest.failure_analysis import (
@@ -37,7 +37,6 @@ from packagetest.remediation_evidence import (
     source_context,
     tail,
 )
-
 
 MODEL_NAME = "Qwen2.5-Coder-7B-Instruct-Q4_K_M"
 SUCCESSFUL_TESTS = {"PASS", "SUPERFICIAL", "SKIP", "NO_TESTS"}
@@ -74,30 +73,40 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def prepared_tree(outputs: Path, *, catalog: Path | None = None,
-                  source: str | None = None, ci: dict | None = None) -> Path:
+def prepared_tree(
+    outputs: Path,
+    *,
+    catalog: Path | None = None,
+    source: str | None = None,
+    ci: dict | None = None,
+) -> Path:
     """Use an existing preparation tree or recover the same-run frozen source bundle."""
     roots = [
         path.parent.parent
         for path in outputs.glob("source-preparation/*/debian/control")
     ]
     if not roots:
-        return _restore_source_tree(outputs / 'source-preparation', catalog, source, ci)
+        return _restore_source_tree(outputs / "source-preparation", catalog, source, ci)
 
     if len(roots) != 1:
         raise ValueError(f"expected one prepared source tree, found {len(roots)}")
     return roots[0]
 
 
-def _restore_source_tree(bundle: Path, catalog: Path | None, source: str | None,
-                         ci: dict | None) -> Path:
+def _restore_source_tree(
+    bundle: Path, catalog: Path | None, source: str | None, ci: dict | None
+) -> Path:
     """Find the frozen catalog entry before asking source recovery to verify its bytes."""
     from packagetest.prepared_source import restore_prepared_tree
 
     if catalog is None:
-        raise ValueError('Recovering a repair source bundle requires the frozen catalog')
+        raise ValueError(
+            "Recovering a repair source bundle requires the frozen catalog"
+        )
 
-    entries = {entry['source']: entry for entry in json.loads(catalog.read_text())['packages']}
+    entries = {
+        entry["source"]: entry for entry in json.loads(catalog.read_text())["packages"]
+    }
     return restore_prepared_tree(bundle, entries[source], ci)
 
 
@@ -450,8 +459,9 @@ def test_attempt(
     return rc, report
 
 
-class CandidateStatus(str, Enum):
+class CandidateStatus(StrEnum):
     """Classify the first failed candidate gate or acceptance by both build and tests."""
+
     BUILD_FAILED = "BUILD_FAILED"
     AUTOPKGTEST_FAILED = "AUTOPKGTEST_FAILED"
     REPAIRED = "REPAIRED"
@@ -460,6 +470,7 @@ class CandidateStatus(str, Enum):
 @dataclass(frozen=True)
 class CandidateOutcome:
     """Bind a candidate verdict to its build, optional test artifacts, and diagnostic log."""
+
     status: CandidateStatus
     build: Path
     tests: Path | None
@@ -605,6 +616,7 @@ class RepairProgress:
 @dataclass(frozen=True)
 class RepairProposal:
     """Pair a cumulative patch with the newly validated decisions it introduces."""
+
     path: Path
     decisions: list[dict[str, Any]]
 
@@ -942,7 +954,7 @@ def finish(
             "run_attempt": args.run_attempt,
             "checkout_sha": os.environ.get("GITHUB_SHA"),
         },
-        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "finished_at": datetime.now(UTC).isoformat(),
     }
     write_json(args.report / "result.json", report)
     publish_report(args, report)
@@ -961,8 +973,14 @@ class RemediationRun:
         self.evidence = failure_evidence(self.args.outputs, self.args.tests)
         (self.args.report / "failure-evidence.txt").write_text(self.evidence + "\n")
         self.tree = prepared_tree(
-            self.args.outputs, catalog=getattr(self.args, 'catalog', None), source=self.args.source,
-            ci={'run_id': str(self.args.run_id), 'run_attempt': str(self.args.run_attempt)})
+            self.args.outputs,
+            catalog=getattr(self.args, "catalog", None),
+            source=self.args.source,
+            ci={
+                "run_id": str(self.args.run_id),
+                "run_attempt": str(self.args.run_attempt),
+            },
+        )
         copy_initial_evidence(self.args.outputs, self.args.tests, self.args.report)
         self.progress = RepairProgress()
         self.selected: int | None = None

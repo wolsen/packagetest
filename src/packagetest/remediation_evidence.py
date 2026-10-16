@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from itertools import chain
 import hashlib
 import json
-from pathlib import Path, PurePath
 import re
-
+from collections.abc import Iterator
+from itertools import chain
+from pathlib import Path, PurePath
 
 LINTIAN_LEVELS = {
     "E": ("error", 0),
@@ -50,13 +49,18 @@ def _lintian_tags(output: str, threshold: int) -> tuple[list[str], list[str]]:
     return tags, gating
 
 
-def _lintian_details(output: str, gating: list[str], supporting: list[str]) -> list[str]:
+def _lintian_details(
+    output: str, gating: list[str], supporting: list[str]
+) -> list[str]:
     """Show gating tags, or a diagnostic tail when the exit status lacks matching tags."""
     if gating:
         lines = ["GATING TAGS:", *gating]
     else:
-        lines = ["GATING TAGS: none were found despite the nonzero return code",
-                 "DIAGNOSTIC TAIL:", *output.splitlines()[-40:]]
+        lines = [
+            "GATING TAGS: none were found despite the nonzero return code",
+            "DIAGNOSTIC TAIL:",
+            *output.splitlines()[-40:],
+        ]
 
     if supporting:
         lines.extend(["LOWER-SEVERITY SAMPLE:", *supporting])
@@ -208,9 +212,17 @@ def _structured_test_focus(evidence: str, limit: int) -> str:
 
 def _missing_module_focus(evidence: str, limit: int) -> str | None:
     """Deduplicate import-failure and enclosing build-error lines without reordering them."""
-    markers = ("Failed to import test module:", "ModuleNotFoundError:",
-               "make[", "dpkg-buildpackage: error:")
-    relevant = [line for line in evidence.splitlines() if any(marker in line for marker in markers)]
+    markers = (
+        "Failed to import test module:",
+        "ModuleNotFoundError:",
+        "make[",
+        "dpkg-buildpackage: error:",
+    )
+    relevant = [
+        line
+        for line in evidence.splitlines()
+        if any(marker in line for marker in markers)
+    ]
     return "\n".join(dict.fromkeys(relevant))[:limit] if relevant else None
 
 
@@ -350,7 +362,11 @@ def _context_paths(evidence: str, patches: set[str]) -> list[str]:
 
 def _allowed_traceback_path(path: PurePath) -> bool:
     """Exclude absolute, traversing, and Debian packaging paths from traceback context."""
-    return not path.is_absolute() and ".." not in path.parts and path.parts[:1] != ("debian",)
+    return (
+        not path.is_absolute()
+        and ".." not in path.parts
+        and path.parts[:1] != ("debian",)
+    )
 
 
 def _traceback_paths(evidence: str) -> list[str]:
@@ -391,7 +407,11 @@ def _changed_definition_tokens(patch: str) -> set[str]:
 
 def _definition_centers(lines: list[str], tokens: set[str]) -> set[int]:
     """Find current definition locations when upstream hunk line numbers have drifted."""
-    return {index for index, line in enumerate(lines) if any(token in line for token in tokens)}
+    return {
+        index
+        for index, line in enumerate(lines)
+        if any(token in line for token in tokens)
+    }
 
 
 def _hunk_centers(patch: str, lines: list[str]) -> set[int]:
@@ -459,8 +479,11 @@ def _mentioned_packaging_paths(tree: Path, evidence: str) -> set[str]:
 
 def _upstream_path_candidates(tree: Path, old: str) -> list[Path]:
     """Find at most eight source files sharing a missing path's basename outside Debian metadata."""
-    return [path for path in tree.rglob(PurePath(old).name)
-            if "debian" not in path.relative_to(tree).parts and path.is_file()][:8]
+    return [
+        path
+        for path in tree.rglob(PurePath(old).name)
+        if "debian" not in path.relative_to(tree).parts and path.is_file()
+    ][:8]
 
 
 def _missing_path_blocks(tree: Path, evidence: str) -> Iterator[str]:

@@ -1,29 +1,44 @@
 """Bounded, advisory analysis of packaging failures by a local model."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
-from collections import Counter
 import difflib
 import hashlib
 import json
-from pathlib import Path, PurePosixPath
 import re
 import shutil
 import subprocess
 import tarfile
 import tempfile
-from typing import Iterable
-
+from collections import Counter
+from collections.abc import Iterable
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path, PurePosixPath
 
 BUILD_FAILURES = {"FAILED", "INFRA_ERROR"}
 TEST_FAILURES = {"FAIL", "INFRA_ERROR"}
 ALLOWED_PATCH_ROOTS = {"config", "scripts", "src", "tests"}
 FORBIDDEN_PATCH_PREFIXES = (".github/", ".git/", "artifacts/")
 TEXT_SUFFIXES = {
-    "", ".build", ".buildinfo", ".changes", ".conf", ".control", ".dsc",
-    ".ini", ".json", ".log", ".md", ".patch", ".py", ".rules", ".sh",
-    ".txt", ".yaml", ".yml",
+    "",
+    ".build",
+    ".buildinfo",
+    ".changes",
+    ".conf",
+    ".control",
+    ".dsc",
+    ".ini",
+    ".json",
+    ".log",
+    ".md",
+    ".patch",
+    ".py",
+    ".rules",
+    ".sh",
+    ".txt",
+    ".yaml",
+    ".yml",
 }
 
 
@@ -53,10 +68,17 @@ class ModelResponse:
 REPAIR_DECISION_SCHEMA = {
     "type": "object",
     "properties": {
-        "action": {"type": "string", "enum": [
-            "add_dependency", "remove_rule_argument", "refresh_quilt_patch", "drop_quilt_patch",
-            "replace_packaging_path", "no_fix",
-        ]},
+        "action": {
+            "type": "string",
+            "enum": [
+                "add_dependency",
+                "remove_rule_argument",
+                "refresh_quilt_patch",
+                "drop_quilt_patch",
+                "replace_packaging_path",
+                "no_fix",
+            ],
+        },
         "subject": {"type": "string"},
         "replacement": {"type": "string"},
         "evidence": {"type": "string"},
@@ -73,7 +95,10 @@ def _decoded_decision(text: str, decoder: json.JSONDecoder) -> dict | None:
     except json.JSONDecodeError:
         return None
 
-    if isinstance(value, dict) and set(REPAIR_DECISION_SCHEMA["required"]) <= value.keys():
+    if (
+        isinstance(value, dict)
+        and set(REPAIR_DECISION_SCHEMA["required"]) <= value.keys()
+    ):
         return value
 
     return None
@@ -104,7 +129,9 @@ def parse_repair_decision(text: str) -> dict:
     if decision["action"] not in REPAIR_DECISION_SCHEMA["properties"]["action"]["enum"]:
         raise ValueError(f"unsupported repair action: {decision['action']}")
 
-    if not all(isinstance(decision[key], str) for key in REPAIR_DECISION_SCHEMA["required"]):
+    if not all(
+        isinstance(decision[key], str) for key in REPAIR_DECISION_SCHEMA["required"]
+    ):
         raise ValueError("repair decision values must be strings")
 
     return decision
@@ -113,22 +140,32 @@ def parse_repair_decision(text: str) -> dict:
 def _validate_no_fix(decision: dict, evidence: str) -> dict:
     """Validate the evidence and fields required for the no_fix action."""
     if decision["subject"].strip() or decision["replacement"].strip():
-        return {"result": "REJECTED", "error": "no_fix requires empty subject and replacement"}
+        return {
+            "result": "REJECTED",
+            "error": "no_fix requires empty subject and replacement",
+        }
 
     return {"result": "ACCEPTED", "error": ""}
 
 
 def _validate_dependency_decision(decision: dict, evidence: str) -> dict:
     """Validate the evidence and fields required for the add_dependency action."""
-    modules = re.findall(r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)", evidence)
+    modules = re.findall(
+        r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)", evidence
+    )
     package = decision["subject"].removeprefix("python3-").replace("-", "_").lower()
     supported = {module.split(".")[0].replace("-", "_").lower() for module in modules}
     if not supported or package not in supported:
-        return {"result": "REJECTED", "error":
-                f"add_dependency requires a matching ModuleNotFoundError; imports={sorted(supported)}"}
+        return {
+            "result": "REJECTED",
+            "error": f"add_dependency requires a matching ModuleNotFoundError; imports={sorted(supported)}",
+        }
 
     if decision["replacement"].strip():
-        return {"result": "REJECTED", "error": "add_dependency requires an empty replacement"}
+        return {
+            "result": "REJECTED",
+            "error": "add_dependency requires an empty replacement",
+        }
 
     return {"result": "ACCEPTED", "error": ""}
 
@@ -143,11 +180,16 @@ def _validate_argument_decision(decision: dict, evidence: str) -> dict:
     argument = decision["subject"].strip()
     rejected = re.findall(r"error:\s+unrecognized arguments?:\s*([^\\\n\"]+)", evidence)
     if not _argument_rejected(argument, rejected):
-        return {"result": "REJECTED", "error":
-                f"remove_rule_argument requires an exact unrecognized argument; errors={rejected[-3:]}"}
+        return {
+            "result": "REJECTED",
+            "error": f"remove_rule_argument requires an exact unrecognized argument; errors={rejected[-3:]}",
+        }
 
     if decision["replacement"].strip():
-        return {"result": "REJECTED", "error": "remove_rule_argument requires an empty replacement"}
+        return {
+            "result": "REJECTED",
+            "error": "remove_rule_argument requires an empty replacement",
+        }
 
     return {"result": "ACCEPTED", "error": ""}
 
@@ -160,11 +202,19 @@ def _validate_quilt_decision(decision: dict, evidence: str) -> dict:
         return {"result": "REJECTED", "error": f"unsafe quilt patch name: {name!r}"}
 
     if name not in evidence or not re.search(
-            rf"(?is){re.escape(name)}.*(?:FAILED|does not apply|subprocess returned exit status)", evidence):
-        return {"result": "REJECTED", "error": f"{action} requires a named patch application failure"}
+        rf"(?is){re.escape(name)}.*(?:FAILED|does not apply|subprocess returned exit status)",
+        evidence,
+    ):
+        return {
+            "result": "REJECTED",
+            "error": f"{action} requires a named patch application failure",
+        }
 
     if decision["replacement"].strip():
-        return {"result": "REJECTED", "error": f"{action} requires an empty replacement"}
+        return {
+            "result": "REJECTED",
+            "error": f"{action} requires an empty replacement",
+        }
 
     return {"result": "ACCEPTED", "error": ""}
 
@@ -183,7 +233,10 @@ def _validate_path_decision(decision: dict, evidence: str) -> dict:
     """Require an evidenced missing path and a distinct safe replacement path."""
     old, new = decision["subject"].strip(), decision["replacement"].strip()
     if not old or old not in evidence:
-        return {"result": "REJECTED", "error": "replace_packaging_path requires the missing path from evidence"}
+        return {
+            "result": "REJECTED",
+            "error": "replace_packaging_path requires the missing path from evidence",
+        }
 
     error = _packaging_path_error(old, new)
     if error:
@@ -210,7 +263,9 @@ def validate_repair_decision(decision: dict, evidence: str) -> dict:
 
 def _missing_imports(evidence: str) -> list[str]:
     """Extract missing-module names without treating unrelated model text as evidence."""
-    return re.findall(r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)", evidence)
+    return re.findall(
+        r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)", evidence
+    )
 
 
 def _import_root(module: str) -> str:
@@ -227,7 +282,9 @@ def _normalize_dependency_decision(decision: dict, evidence: str) -> dict:
         return normalized
 
     module = _import_root(quoted[0])
-    package_module = decision.get("subject", "").removeprefix("python3-").replace("-", "_").lower()
+    package_module = (
+        decision.get("subject", "").removeprefix("python3-").replace("-", "_").lower()
+    )
     if module in supported and package_module != module:
         normalized["subject"] = "python3-" + module.replace("_", "-")
 
@@ -237,12 +294,20 @@ def _normalize_dependency_decision(decision: dict, evidence: str) -> dict:
 def _safe_source_file(tree: Path, value: str) -> bool:
     """Require a safe relative path naming a regular nonsymlink source file."""
     path = PurePosixPath(value)
-    return not _unsafe_relative_path(path) and (tree / path).is_file() and not (tree / path).is_symlink()
+    return (
+        not _unsafe_relative_path(path)
+        and (tree / path).is_file()
+        and not (tree / path).is_symlink()
+    )
 
 
 def _reversed_packaging_paths(tree: Path, rules: str, old: str, new: str) -> bool:
     """Recognize reversed fields only when packaging references the absent path once."""
-    return rules.count(new) == 1 and not (tree / new).exists() and _safe_source_file(tree, old)
+    return (
+        rules.count(new) == 1
+        and not (tree / new).exists()
+        and _safe_source_file(tree, old)
+    )
 
 
 def _normalize_path_decision(decision: dict, tree: Path) -> dict:
@@ -277,10 +342,15 @@ def _replace_file_patch(path: str, before: str, after: str) -> str:
     """Render a Git-formatted file diff, rejecting proposals with no content change."""
     if before == after:
         raise ValueError(f"repair did not change {path}")
-    body = "".join(difflib.unified_diff(
-        before.splitlines(keepends=True), after.splitlines(keepends=True),
-        fromfile=f"a/{path}", tofile=f"b/{path}", n=3,
-    ))
+    body = "".join(
+        difflib.unified_diff(
+            before.splitlines(keepends=True),
+            after.splitlines(keepends=True),
+            fromfile=f"a/{path}",
+            tofile=f"b/{path}",
+            n=3,
+        )
+    )
     return f"diff --git a/{path} b/{path}\n{body}"
 
 
@@ -293,12 +363,18 @@ def _hunk_payloads(section: str) -> list[list[str]]:
     """Split unified hunks into payload lines without interpreting their declared offsets."""
     headers = list(re.finditer(r"^@@\s+[^\n]+@@[^\n]*(?:\n|$)", section, re.M))
     ends = [header.start() for header in headers[1:]] + [len(section)]
-    return [section[header.end():end].splitlines(keepends=True) for header, end in zip(headers, ends)]
+    # A section without hunk headers intentionally yields no payloads.
+    return [
+        section[header.end() : end].splitlines(keepends=True)
+        for header, end in zip(headers, ends, strict=False)
+    ]
 
 
 def _hunk_operations(payload: list[str]) -> list[tuple[str, str]]:
     """Keep context and change lines, excluding unified-diff metadata markers."""
-    return [(line[0], line[1:]) for line in payload if line and line[0] in {" ", "+", "-"}]
+    return [
+        (line[0], line[1:]) for line in payload if line and line[0] in {" ", "+", "-"}
+    ]
 
 
 def _normalized_positions(lines: list[str], old: list[str]) -> list[int]:
@@ -309,10 +385,16 @@ def _normalized_positions(lines: list[str], old: list[str]) -> list[int]:
     needle = list(map(_normalized_context, old))
     content = list(map(_normalized_context, lines))
     width = len(needle)
-    return [start for start in range(len(content) - width + 1) if content[start:start + width] == needle]
+    return [
+        start
+        for start in range(len(content) - width + 1)
+        if content[start : start + width] == needle
+    ]
 
 
-def _replace_hunk(lines: list[str], start: int, operations: list[tuple[str, str]]) -> None:
+def _replace_hunk(
+    lines: list[str], start: int, operations: list[tuple[str, str]]
+) -> None:
     """Replay a matched hunk while retaining the source's unchanged context formatting."""
     cursor = start
     replacement = []
@@ -374,13 +456,21 @@ def _removed_construct(removed: list[str], pattern: str) -> tuple[int, str] | No
 def _construct_start(lines: list[str], pattern: str) -> int | None:
     """Find a uniquely named, correctly indented construct in current source."""
     expression = re.compile(pattern)
-    matches = [index for index, value in enumerate(lines) if expression.match(value.rstrip("\r\n"))]
+    matches = [
+        index
+        for index, value in enumerate(lines)
+        if expression.match(value.rstrip("\r\n"))
+    ]
     return matches[0] if len(matches) == 1 else None
 
 
 def _decorator_start(lines: list[str], start: int, indent: int) -> int:
     """Include contiguous single-line decorators at the declaration's indentation."""
-    while start and lines[start - 1].strip().startswith("@") and _line_indent(lines[start - 1]) == indent:
+    while (
+        start
+        and lines[start - 1].strip().startswith("@")
+        and _line_indent(lines[start - 1]) == indent
+    ):
         start -= 1
 
     return start
@@ -397,12 +487,16 @@ def _declaration_end(lines: list[str], start: int, indent: int) -> int:
 
 def _remove_python_declaration(lines: list[str], removed: list[str]) -> bool:
     """Remove one uniquely named Python declaration from a drifted test file."""
-    construct = _removed_construct(removed, r"^(\s*)(?:async\s+def|def|class)\s+([A-Za-z_][A-Za-z0-9_]*)\b")
+    construct = _removed_construct(
+        removed, r"^(\s*)(?:async\s+def|def|class)\s+([A-Za-z_][A-Za-z0-9_]*)\b"
+    )
     if construct is None:
         return False
 
     indent, name = construct
-    start = _construct_start(lines, rf"^\s{{{indent}}}(?:async\s+def|def|class)\s+{re.escape(name)}\b")
+    start = _construct_start(
+        lines, rf"^\s{{{indent}}}(?:async\s+def|def|class)\s+{re.escape(name)}\b"
+    )
     if start is None:
         return False
 
@@ -426,7 +520,9 @@ def _assignment_end(lines: list[str], start: int) -> int | None:
 def _remove_python_assignment(lines: list[str], removed: list[str]) -> bool:
     """Remove one parenthesized assignment despite formatting-only drift."""
     construct = _removed_construct(
-        [value.rstrip() for value in removed], r"^(\s*)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\($")
+        [value.rstrip() for value in removed],
+        r"^(\s*)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\($",
+    )
     if construct is None:
         return False
 
@@ -461,7 +557,9 @@ def _independent_groups(payload: list[str]) -> list[list[tuple[str, str]]]:
 
 def _is_change_line(value: str) -> bool:
     """Recognize added or removed payload lines without mistaking headers for edits."""
-    return bool(value) and value[0] in {"+", "-"} and not value.startswith(("+++", "---"))
+    return (
+        bool(value) and value[0] in {"+", "-"} and not value.startswith(("+++", "---"))
+    )
 
 
 def _normalized_counts(lines: list[str]) -> Counter[str]:
@@ -487,17 +585,23 @@ class QuiltChangeGroup:
     @classmethod
     def from_operations(cls, group: list[tuple[str, str]]) -> QuiltChangeGroup:
         """Separate old and new payloads while preserving their original line endings."""
-        return cls([value for operation, value in group if operation == "-"],
-                   [value for operation, value in group if operation == "+"])
+        return cls(
+            [value for operation, value in group if operation == "-"],
+            [value for operation, value in group if operation == "+"],
+        )
 
     def already_present(self, lines: list[str]) -> bool:
         """Retain the existing policy requiring every normalized addition occurrence."""
-        return _contains_payload(_normalized_counts(lines), _normalized_counts(self.added))
+        return _contains_payload(
+            _normalized_counts(lines), _normalized_counts(self.added)
+        )
 
     def remove_python_construct(self, lines: list[str]) -> bool:
         """Permit declaration or assignment fallback only for a pure deletion group."""
-        return not self.added and (_remove_python_declaration(lines, self.removed)
-                                   or _remove_python_assignment(lines, self.removed))
+        return not self.added and (
+            _remove_python_declaration(lines, self.removed)
+            or _remove_python_assignment(lines, self.removed)
+        )
 
     def apply(self, lines: list[str]) -> ChangeResult:
         """Prefer existing additions, then unique payload replacement, then deletion fallback."""
@@ -507,7 +611,7 @@ class QuiltChangeGroup:
         positions = _normalized_positions(lines, self.removed)
         if len(positions) == 1:
             start = positions[0]
-            lines[start:start + len(self.removed)] = self.added
+            lines[start : start + len(self.removed)] = self.added
             return ChangeResult.APPLIED
 
         if self.remove_python_construct(lines):
@@ -518,8 +622,11 @@ class QuiltChangeGroup:
 
 def _section_change_groups(section: str) -> list[QuiltChangeGroup]:
     """Collect independent edits in hunk order without using context as an anchor."""
-    return [QuiltChangeGroup.from_operations(group)
-            for payload in _hunk_payloads(section) for group in _independent_groups(payload)]
+    return [
+        QuiltChangeGroup.from_operations(group)
+        for payload in _hunk_payloads(section)
+        for group in _independent_groups(payload)
+    ]
 
 
 def _apply_independent_change_groups(path: Path, section: str) -> bool:
@@ -557,7 +664,9 @@ class QuiltSection:
         old = re.findall(r"^---\s+([^\t\n ]+)", text, re.M)
         new = re.findall(r"^\+\+\+\s+([^\t\n ]+)", text, re.M)
         if len(old) != 1 or len(new) != 1:
-            raise ValueError("automatic quilt refresh requires one target per patch section")
+            raise ValueError(
+                "automatic quilt refresh requires one target per patch section"
+            )
 
         return cls(_quilt_target(new[0], strip), text, old[0] == "/dev/null")
 
@@ -565,7 +674,12 @@ class QuiltSection:
 def _quilt_target(value: str, strip: int) -> str:
     """Strip a patch path while excluding deleted, escaping, or packaging targets."""
     path = PurePosixPath(value)
-    if value == "/dev/null" or path.is_absolute() or ".." in path.parts or len(path.parts) <= strip:
+    if (
+        value == "/dev/null"
+        or path.is_absolute()
+        or ".." in path.parts
+        or len(path.parts) <= strip
+    ):
         raise ValueError(f"automatic quilt refresh does not support target: {value}")
 
     return _upstream_target(PurePosixPath(*path.parts[strip:]), value)
@@ -581,7 +695,7 @@ def _upstream_target(path: PurePosixPath, original: str) -> str:
 
 def _active_patch_words(line: str) -> list[str]:
     """Ignore series comments before tokenizing an active patch entry."""
-    if line.lstrip().startswith('#'):
+    if line.lstrip().startswith("#"):
         return []
 
     return line.split()
@@ -596,7 +710,9 @@ def _active_quilt_entry(series: Path, name: str) -> list[str]:
             entries.append(words)
 
     if len(entries) != 1:
-        raise ValueError(f"expected one active {name!r} entry in debian/patches/series, found {len(entries)}")
+        raise ValueError(
+            f"expected one active {name!r} entry in debian/patches/series, found {len(entries)}"
+        )
 
     return entries[0]
 
@@ -615,8 +731,14 @@ def _quilt_section_starts(text: str) -> list[int]:
     """Prefer Git section boundaries and fall back to traditional diff headers."""
     starts = [match.start() for match in re.finditer(r"^diff --git ", text, re.M)]
     if not starts:
-        starts = [match.start() for match in re.finditer(
-            r"^---\s+[^\t\n ]+(?:[ \t]+[^\n]*)?\n\+\+\+\s+[^\t\n ]+(?:[ \t]+[^\n]*)?$", text, re.M)]
+        starts = [
+            match.start()
+            for match in re.finditer(
+                r"^---\s+[^\t\n ]+(?:[ \t]+[^\n]*)?\n\+\+\+\s+[^\t\n ]+(?:[ \t]+[^\n]*)?$",
+                text,
+                re.M,
+            )
+        ]
 
     return starts
 
@@ -628,25 +750,35 @@ def _quilt_sections(text: str, strip: int) -> list[QuiltSection]:
         raise ValueError("automatic quilt refresh requires unified patch sections")
 
     ends = [*starts[1:], len(text)]
-    return [QuiltSection.parse(text[start:end], strip) for start, end in zip(starts, ends)]
+    return [
+        QuiltSection.parse(text[start:end], strip)
+        for start, end in zip(starts, ends, strict=True)
+    ]
 
 
 def _validate_quilt_targets(sections: list[QuiltSection]) -> None:
     """Bound refresh scope and prohibit repeated modifications to the same target."""
     targets = [section.target for section in sections]
     if len(set(targets)) != len(targets) or len(targets) > 32:
-        raise ValueError("automatic quilt refresh requires 1-32 unique upstream targets")
+        raise ValueError(
+            "automatic quilt refresh requires 1-32 unique upstream targets"
+        )
 
 
 def _patch_payload(text: str, prefix: str) -> Counter[str]:
     """Count added or removed lines without treating diff headers as payload."""
-    return Counter(line[1:] for line in text.splitlines()
-                   if line.startswith(prefix) and not line.startswith(prefix * 3))
+    return Counter(
+        line[1:]
+        for line in text.splitlines()
+        if line.startswith(prefix) and not line.startswith(prefix * 3)
+    )
 
 
 def _contains_payload(content: Counter[str], payload: Counter[str]) -> bool:
     """Require a nonempty payload with every occurrence present in current source."""
-    return bool(payload) and all(content[line] >= count for line, count in payload.items())
+    return bool(payload) and all(
+        content[line] >= count for line, count in payload.items()
+    )
 
 
 def _absent_payload(content: Counter[str], payload: Counter[str]) -> bool:
@@ -666,15 +798,20 @@ class QuiltPayload:
     @classmethod
     def read(cls, path: Path, section: QuiltSection) -> QuiltPayload:
         """Capture source and patch payload counts before attempting fallback repairs."""
-        removals = _patch_payload(section.text, '-')
-        return cls(Counter(path.read_text(errors='replace').splitlines()),
-                   _patch_payload(section.text, '+'), removals,
-                   Counter({line: count for line, count in removals.items() if line}))
+        removals = _patch_payload(section.text, "-")
+        return cls(
+            Counter(path.read_text(errors="replace").splitlines()),
+            _patch_payload(section.text, "+"),
+            removals,
+            Counter({line: count for line, count in removals.items() if line}),
+        )
 
     def mostly_upstream(self, upstream_provenance: bool) -> bool:
         """Retain the existing threshold for patches carrying upstream provenance."""
         total = sum(self.additions.values())
-        matches = sum(min(self.content[line], count) for line, count in self.additions.items())
+        matches = sum(
+            min(self.content[line], count) for line, count in self.additions.items()
+        )
         return upstream_provenance and total >= 5 and matches / total >= 0.8
 
     def omission(self, upstream_provenance: bool) -> str | None:
@@ -693,19 +830,21 @@ class QuiltPayload:
 
 def _delete_payload(path: Path, removals: Counter[str]) -> None:
     """Remove the requested occurrence counts after the caller proves they exist."""
-    lines = path.read_text(errors='replace').splitlines(keepends=True)
+    lines = path.read_text(errors="replace").splitlines(keepends=True)
     for removed, count in removals.items():
         for _ in range(count):
-            index = next(i for i, line in enumerate(lines) if line.rstrip('\r\n') == removed)
+            index = next(
+                i for i, line in enumerate(lines) if line.rstrip("\r\n") == removed
+            )
             del lines[index]
 
-    path.write_text(''.join(lines))
+    path.write_text("".join(lines))
 
 
 def _supporting_section(target: str) -> bool:
     """Recognize test and release-note paths used by the supporting-section policy."""
     parts = PurePosixPath(target).parts
-    return 'tests' in parts or parts[:1] == ('releasenotes',)
+    return "tests" in parts or parts[:1] == ("releasenotes",)
 
 
 @dataclass
@@ -724,23 +863,34 @@ class QuiltSectionRefresh:
         """Locate the validated section target inside the copied source tree."""
         return self.working / self.section.target
 
-    def run_patch(self, *, dry_run: bool, reverse: bool = False) -> subprocess.CompletedProcess:
+    def run_patch(
+        self, *, dry_run: bool, reverse: bool = False
+    ) -> subprocess.CompletedProcess:
         """Run a bounded patch probe or application with explicit fuzz policy."""
-        command = ['patch']
+        command = ["patch"]
         if dry_run:
-            command.append('--dry-run')
+            command.append("--dry-run")
 
-        command.extend(['--batch', '--forward', '--fuzz=2'])
+        command.extend(["--batch", "--forward", "--fuzz=2"])
         if reverse:
-            command = ['patch', '--dry-run', '--batch', '--force', '--reverse', '--fuzz=0']
+            command = [
+                "patch",
+                "--dry-run",
+                "--batch",
+                "--force",
+                "--reverse",
+                "--fuzz=0",
+            ]
 
-        command.extend([f'-p{self.strip}', '-i', str(self.patch_path)])
-        return subprocess.run(command, cwd=self.working, text=True, capture_output=True, timeout=30)
+        command.extend([f"-p{self.strip}", "-i", str(self.patch_path)])
+        return subprocess.run(
+            command, cwd=self.working, text=True, capture_output=True, timeout=30
+        )
 
     def initial_omission(self) -> str | None:
         """Handle removed targets and upstream ownership before running patch."""
         if not self.section.created and not self.target_path.exists():
-            return 'upstream target was removed'
+            return "upstream target was removed"
 
         self.validate_target()
         if self.section.created and self.target_path.exists():
@@ -750,16 +900,20 @@ class QuiltSectionRefresh:
 
     def validate_target(self) -> None:
         """Reject existing targets that are not ordinary files."""
-        if self.target_path.exists() and (not self.target_path.is_file() or self.target_path.is_symlink()):
-            raise ValueError(f'automatic quilt refresh requires a regular target: {self.section.target}')
+        if self.target_path.exists() and (
+            not self.target_path.is_file() or self.target_path.is_symlink()
+        ):
+            raise ValueError(
+                f"automatic quilt refresh requires a regular target: {self.section.target}"
+            )
 
     def created_omission(self) -> str:
         """Distinguish an incorporated file from a file now owned by upstream."""
         payload = QuiltPayload.read(self.target_path, self.section)
         if _contains_payload(payload.content, payload.additions):
-            return 'created file is already present upstream'
+            return "created file is already present upstream"
 
-        return 'upstream now owns the formerly packaging-created file'
+        return "upstream now owns the formerly packaging-created file"
 
     def apply(self) -> str | None:
         """Prefer ordinary application before classifying or repairing a failed section."""
@@ -774,7 +928,9 @@ class QuiltSectionRefresh:
 
         if self.section.created:
             diagnostic = (completed.stdout + completed.stderr).strip()[-2000:]
-            raise ValueError(f'new-file patch section for {self.section.target} cannot be refreshed: {diagnostic}')
+            raise ValueError(
+                f"new-file patch section for {self.section.target} cannot be refreshed: {diagnostic}"
+            )
 
         return self.repair_existing(completed)
 
@@ -782,8 +938,10 @@ class QuiltSectionRefresh:
         """Apply a successful probe and reject any probe/application disagreement."""
         result = self.run_patch(dry_run=False)
         if result.returncode:
-            raise ValueError(f'validated patch section failed to apply for {self.section.target}: '
-                             + (result.stdout + result.stderr).strip()[-2000:])
+            raise ValueError(
+                f"validated patch section failed to apply for {self.section.target}: "
+                + (result.stdout + result.stderr).strip()[-2000:]
+            )
 
     def repair_existing(self, completed: subprocess.CompletedProcess) -> str | None:
         """Try payload classification and context repair before reverse probing."""
@@ -800,63 +958,87 @@ class QuiltSectionRefresh:
 
         reverse = self.run_patch(dry_run=True, reverse=True)
         if reverse.returncode == 0:
-            return 'patch is already present upstream'
+            return "patch is already present upstream"
 
         return self.final_fallback(payload, completed, reverse)
 
-    def final_fallback(self, payload: QuiltPayload, completed: subprocess.CompletedProcess,
-                       reverse: subprocess.CompletedProcess) -> str | None:
+    def final_fallback(
+        self,
+        payload: QuiltPayload,
+        completed: subprocess.CompletedProcess,
+        reverse: subprocess.CompletedProcess,
+    ) -> str | None:
         """Handle pure deletions and drifted supporting sections, or report failure."""
         if not payload.additions:
             return self.deletion_fallback(payload, completed, reverse)
 
         return self.supporting_fallback(completed, reverse)
 
-    def deletion_fallback(self, payload: QuiltPayload, completed: subprocess.CompletedProcess,
-                          reverse: subprocess.CompletedProcess) -> str | None:
+    def deletion_fallback(
+        self,
+        payload: QuiltPayload,
+        completed: subprocess.CompletedProcess,
+        reverse: subprocess.CompletedProcess,
+    ) -> str | None:
         """Retain pure-deletion behavior only when its complete payload is accounted for."""
         if _contains_payload(payload.content, payload.nonempty_removals):
             _delete_payload(self.target_path, payload.nonempty_removals)
             return None
 
         if _absent_payload(payload.content, payload.removals):
-            return 'deleted payload is already absent upstream'
+            return "deleted payload is already absent upstream"
 
         return self.supporting_fallback(completed, reverse)
 
-    def supporting_fallback(self, completed: subprocess.CompletedProcess,
-                            reverse: subprocess.CompletedProcess) -> str:
+    def supporting_fallback(
+        self,
+        completed: subprocess.CompletedProcess,
+        reverse: subprocess.CompletedProcess,
+    ) -> str:
         """Omit supporting sections only after an earlier section was omitted."""
         if self.has_omissions and _supporting_section(self.section.target):
-            return 'supporting test or release-note section drifted after runtime sections were incorporated'
+            return "supporting test or release-note section drifted after runtime sections were incorporated"
 
-        diagnostic = (completed.stdout + completed.stderr + reverse.stdout + reverse.stderr).strip()[-2000:]
-        raise ValueError(f'patch section for {self.section.target} cannot be refreshed or identified upstream: {diagnostic}')
+        diagnostic = (
+            completed.stdout + completed.stderr + reverse.stdout + reverse.stderr
+        ).strip()[-2000:]
+        raise ValueError(
+            f"patch section for {self.section.target} cannot be refreshed or identified upstream: {diagnostic}"
+        )
 
 
 def _quilt_original(path: Path) -> str | None:
     """Capture an existing regular target for rendering the refreshed diff."""
     if path.is_file() and not path.is_symlink():
-        return path.read_text(errors='replace')
+        return path.read_text(errors="replace")
 
     return None
 
 
 def _refreshed_section(target: str, original: str | None, working: Path) -> str:
     """Render an applied section with fresh three-line context."""
-    after = (working / target).read_text(errors='replace')
-    return ''.join(difflib.unified_diff(
-        original.splitlines(keepends=True) if original is not None else [],
-        after.splitlines(keepends=True),
-        fromfile=f'a/{target}' if original is not None else '/dev/null',
-        tofile=f'b/{target}', n=3))
+    after = (working / target).read_text(errors="replace")
+    return "".join(
+        difflib.unified_diff(
+            original.splitlines(keepends=True) if original is not None else [],
+            after.splitlines(keepends=True),
+            fromfile=f"a/{target}" if original is not None else "/dev/null",
+            tofile=f"b/{target}",
+            n=3,
+        )
+    )
 
 
-def _render_refreshed_patch(original_patch: str, working: Path, before: dict[str, str | None],
-                            applied: list[str], omitted: list[tuple[str, str]]) -> str:
+def _render_refreshed_patch(
+    original_patch: str,
+    working: Path,
+    before: dict[str, str | None],
+    applied: list[str],
+    omitted: list[tuple[str, str]],
+) -> str:
     """Preserve the patch header and signal when no applied section changes source."""
-    header = original_patch.split('--- ', 1)[0].rstrip()
-    refreshed = [header + '\n' if header else '']
+    header = original_patch.split("--- ", 1)[0].rstrip()
+    refreshed = [header + "\n" if header else ""]
     for target in applied:
         diff = _refreshed_section(target, before[target], working)
         if diff:
@@ -865,26 +1047,34 @@ def _render_refreshed_patch(original_patch: str, working: Path, before: dict[str
     if len(refreshed) == 1:
         _raise_superseded(omitted)
 
-    return ''.join(refreshed)
+    return "".join(refreshed)
 
 
 def _raise_superseded(omitted: list[tuple[str, str]]) -> None:
     """Report all omission evidence when the complete quilt patch has disappeared."""
-    reasons = '; '.join(f'{target}: {reason}' for target, reason in omitted)
+    reasons = "; ".join(f"{target}: {reason}" for target, reason in omitted)
     raise QuiltPatchSuperseded(
-        'mechanical quilt refresh found the complete patch superseded upstream'
-        + (f': {reasons}' if reasons else ''))
+        "mechanical quilt refresh found the complete patch superseded upstream"
+        + (f": {reasons}" if reasons else "")
+    )
 
 
-def _apply_quilt_sections(sections: list[QuiltSection], working: Path, temporary: Path,
-                          strip: int, upstream_provenance: bool) -> tuple[list[str], list[tuple[str, str]]]:
+def _apply_quilt_sections(
+    sections: list[QuiltSection],
+    working: Path,
+    temporary: Path,
+    strip: int,
+    upstream_provenance: bool,
+) -> tuple[list[str], list[tuple[str, str]]]:
     """Apply sections in order while retaining evidence that informs later sections."""
     applied = []
     omitted = []
     for index, section in enumerate(sections):
-        path = temporary / f'section-{index}.patch'
+        path = temporary / f"section-{index}.patch"
         path.write_text(section.text)
-        refresh = QuiltSectionRefresh(working, section, path, strip, upstream_provenance, bool(omitted))
+        refresh = QuiltSectionRefresh(
+            working, section, path, strip, upstream_provenance, bool(omitted)
+        )
         reason = refresh.apply()
         if reason is None:
             applied.append(section.target)
@@ -896,35 +1086,49 @@ def _apply_quilt_sections(sections: list[QuiltSection], working: Path, temporary
 
 def _read_quilt_patch(tree: Path, name: str) -> tuple[str, int]:
     """Require a present patch and series entry before interpreting its strip policy."""
-    patch_path = tree / 'debian/patches' / name
-    series_path = tree / 'debian/patches/series'
+    patch_path = tree / "debian/patches" / name
+    series_path = tree / "debian/patches/series"
     if not patch_path.is_file() or patch_path.is_symlink() or not series_path.is_file():
-        raise ValueError(f'quilt patch is missing: {name}')
+        raise ValueError(f"quilt patch is missing: {name}")
 
     strip = _quilt_strip(_active_quilt_entry(series_path, name))
-    return patch_path.read_text(errors='replace'), strip
+    return patch_path.read_text(errors="replace"), strip
 
 
 def _refresh_quilt_patch(tree: Path, name: str) -> str:
     """Refresh applicable sections and omit sections already present upstream."""
     original_patch, strip = _read_quilt_patch(tree, name)
-    upstream_provenance = bool(re.search(
-        r'(?mi)^(?:Origin:\s*upstream(?:,|\s|$)|Applied-Upstream:|Change-Id:)', original_patch))
+    upstream_provenance = bool(
+        re.search(
+            r"(?mi)^(?:Origin:\s*upstream(?:,|\s|$)|Applied-Upstream:|Change-Id:)",
+            original_patch,
+        )
+    )
     sections = _quilt_sections(original_patch, strip)
     _validate_quilt_targets(sections)
-    with tempfile.TemporaryDirectory(prefix='packagetest-quilt-refresh-') as temp:
-        working = Path(temp) / 'source'
+    with tempfile.TemporaryDirectory(prefix="packagetest-quilt-refresh-") as temp:
+        working = Path(temp) / "source"
         shutil.copytree(tree, working, symlinks=True)
-        before = {section.target: _quilt_original(working / section.target) for section in sections}
-        applied, omitted = _apply_quilt_sections(sections, working, Path(temp), strip, upstream_provenance)
-        revised = _render_refreshed_patch(original_patch, working, before, applied, omitted)
+        before = {
+            section.target: _quilt_original(working / section.target)
+            for section in sections
+        }
+        applied, omitted = _apply_quilt_sections(
+            sections, working, Path(temp), strip, upstream_provenance
+        )
+        revised = _render_refreshed_patch(
+            original_patch, working, before, applied, omitted
+        )
 
-    return _replace_file_patch(f'debian/patches/{name}', original_patch, revised)
+    return _replace_file_patch(f"debian/patches/{name}", original_patch, revised)
 
 
 def _control_field_start(lines: list[str], field: str) -> int:
     """Locate the requested control field or report the missing dependency stanza."""
-    start = next((index for index, line in enumerate(lines) if line.startswith(field + ":")), None)
+    start = next(
+        (index for index, line in enumerate(lines) if line.startswith(field + ":")),
+        None,
+    )
     if start is None:
         raise ValueError(f"control paragraph has no {field} field")
 
@@ -940,7 +1144,9 @@ def _control_field_end(lines: list[str], start: int) -> int:
     return len(lines)
 
 
-def _dependency_insert_position(lines: list[str], start: int, end: int, package: str) -> int:
+def _dependency_insert_position(
+    lines: list[str], start: int, end: int, package: str
+) -> int:
     """Insert before substitutions or lexically later dependency continuation lines."""
     for index in range(start + 1, end):
         token = lines[index].strip().split(maxsplit=1)[0].rstrip(",")
@@ -956,7 +1162,9 @@ def _add_control_dependency(text: str, field: str, package: str) -> str:
     start = _control_field_start(lines, field)
     end = _control_field_end(lines, start)
     current = "".join(lines[start:end])
-    if re.search(rf"(?<![A-Za-z0-9+.-]){re.escape(package)}(?![A-Za-z0-9+.-])", current):
+    if re.search(
+        rf"(?<![A-Za-z0-9+.-]){re.escape(package)}(?![A-Za-z0-9+.-])", current
+    ):
         return text
 
     # The field always includes its header, so its last line exists even at EOF.
@@ -977,9 +1185,15 @@ def _render_argument_removal(decision: dict, tree: Path) -> str:
     path = tree / "debian/rules"
     before = path.read_text()
     lines = before.splitlines(keepends=True)
-    matching = [index for index, line in enumerate(lines) if line.strip().rstrip("\\").strip() == argument]
+    matching = [
+        index
+        for index, line in enumerate(lines)
+        if line.strip().rstrip("\\").strip() == argument
+    ]
     if len(matching) != 1:
-        raise ValueError(f"expected one exact {argument!r} line in debian/rules, found {len(matching)}")
+        raise ValueError(
+            f"expected one exact {argument!r} line in debian/rules, found {len(matching)}"
+        )
 
     del lines[matching[0]]
     return _replace_file_patch("debian/rules", before, "".join(lines))
@@ -991,10 +1205,13 @@ def _render_quilt_drop(decision: dict, tree: Path) -> str:
     path = tree / "debian/patches/series"
     before = path.read_text()
     lines = before.splitlines(keepends=True)
-    matching = [index for index, line in enumerate(lines)
-                if _series_line_matches(line, name)]
+    matching = [
+        index for index, line in enumerate(lines) if _series_line_matches(line, name)
+    ]
     if len(matching) != 1:
-        raise ValueError(f"expected one active {name!r} entry in debian/patches/series, found {len(matching)}")
+        raise ValueError(
+            f"expected one active {name!r} entry in debian/patches/series, found {len(matching)}"
+        )
 
     index = matching[0]
     lines[index] = "# Superseded upstream after snapshot rebase: " + lines[index]
@@ -1011,7 +1228,9 @@ def _render_path_replacement(decision: dict, tree: Path) -> str:
     path = tree / "debian/rules"
     before = path.read_text()
     if before.count(old) != 1:
-        raise ValueError(f"expected one {old!r} reference in debian/rules, found {before.count(old)}")
+        raise ValueError(
+            f"expected one {old!r} reference in debian/rules, found {before.count(old)}"
+        )
 
     if (tree / old).exists():
         raise ValueError(f"original upstream path still exists: {old}")
@@ -1029,7 +1248,12 @@ def _render_dependency_addition(decision: dict, tree: Path) -> str:
     before = path.read_text()
     paragraphs = re.split(r"(\n\s*\n)", before)
     paragraphs[0] = _add_control_dependency(
-        paragraphs[0], "Build-Depends-Indep" if "Build-Depends-Indep:" in paragraphs[0] else "Build-Depends", package)
+        paragraphs[0],
+        "Build-Depends-Indep"
+        if "Build-Depends-Indep:" in paragraphs[0]
+        else "Build-Depends",
+        package,
+    )
     if decision.get("scope") == "build":
         return _replace_file_patch("debian/control", before, "".join(paragraphs))
 
@@ -1039,12 +1263,19 @@ def _render_dependency_addition(decision: dict, tree: Path) -> str:
 
 def _series_line_matches(line: str, name: str) -> bool:
     """Match an active series entry while preserving its optional quilt flags."""
-    return bool(line.split()) and not line.lstrip().startswith("#") and line.split()[0] == name
+    return (
+        bool(line.split())
+        and not line.lstrip().startswith("#")
+        and line.split()[0] == name
+    )
 
 
 def _python_runtime_paragraph(paragraph: str) -> bool:
     """Identify Python 3 binary stanzas with an existing runtime dependency field."""
-    return bool(re.search(r"(?m)^Package:\s+python3-", paragraph)) and "Depends:" in paragraph
+    return (
+        bool(re.search(r"(?m)^Package:\s+python3-", paragraph))
+        and "Depends:" in paragraph
+    )
 
 
 def _add_runtime_dependencies(paragraphs: list[str], package: str) -> None:
@@ -1087,7 +1318,9 @@ def _response_patch(text: str) -> str:
 
     # llama-cli may echo the prompt or omit wrappers around an otherwise usable diff.
     candidates = re.findall(
-        r"(?ms)^diff --git a/\S+ b/\S+.*?(?=^```|^END_PATCH\s*$|^Exiting\.\.\.\s*$|\Z)", text)
+        r"(?ms)^diff --git a/\S+ b/\S+.*?(?=^```|^END_PATCH\s*$|^Exiting\.\.\.\s*$|\Z)",
+        text,
+    )
     return candidates[-1].strip() if candidates else ""
 
 
@@ -1108,7 +1341,9 @@ def _unfenced_patch(patch: str) -> str:
 def parse_model_response(text: str) -> ModelResponse:
     """Read the diagnosis and normalize a wrapped or standalone patch response."""
     diagnosis = _between(text, "BEGIN_DIAGNOSIS", "END_DIAGNOSIS").strip()
-    return ModelResponse(diagnosis=diagnosis, patch=_unfenced_patch(_response_patch(text)))
+    return ModelResponse(
+        diagnosis=diagnosis, patch=_unfenced_patch(_response_patch(text))
+    )
 
 
 def _between(text: str, start: str, end: str) -> str:
@@ -1152,16 +1387,39 @@ def validate_patch(patch: str, repository: Path) -> dict:
         return result
     with tempfile.TemporaryDirectory(prefix="packagetest-ai-patch-") as temp:
         checkout = Path(temp) / "checkout"
-        shutil.copytree(repository, checkout, ignore=shutil.ignore_patterns(
-            ".git", ".venv", ".cache", "artifacts", "evidence", "failure-analysis", "__pycache__"))
+        shutil.copytree(
+            repository,
+            checkout,
+            ignore=shutil.ignore_patterns(
+                ".git",
+                ".venv",
+                ".cache",
+                "artifacts",
+                "evidence",
+                "failure-analysis",
+                "__pycache__",
+            ),
+        )
         patch_path = Path(temp) / "proposal.patch"
         patch_path.write_text(patch)
-        command = ["git", "apply", "--recount", "--whitespace=error-all", str(patch_path)]
-        completed = subprocess.run(command, cwd=checkout, text=True, capture_output=True, timeout=30)
+        command = [
+            "git",
+            "apply",
+            "--recount",
+            "--whitespace=error-all",
+            str(patch_path),
+        ]
+        completed = subprocess.run(
+            command, cwd=checkout, text=True, capture_output=True, timeout=30
+        )
         if completed.returncode:
             result["error"] = (completed.stderr or completed.stdout).strip()[-4000:]
             return result
-        result.update(result="APPLIES", error="", patch_sha256=hashlib.sha256(patch.encode()).hexdigest())
+        result.update(
+            result="APPLIES",
+            error="",
+            patch_sha256=hashlib.sha256(patch.encode()).hexdigest(),
+        )
     return result
 
 
@@ -1172,7 +1430,9 @@ def _source_patch_path(value: str) -> None:
         raise ValueError(f"unsafe source patch path: {value}")
 
     if path.parts[0] != "debian" or path == PurePosixPath("debian/changelog"):
-        raise ValueError(f"automatic remediation is restricted to Debian packaging: {value}")
+        raise ValueError(
+            f"automatic remediation is restricted to Debian packaging: {value}"
+        )
 
 
 def _unsafe_relative_path(path: PurePosixPath) -> bool:
@@ -1214,8 +1474,11 @@ def source_patch_paths(patch: str) -> list[str]:
 
 def _added_patch_lines(patch: str) -> list[str]:
     """Extract added content without interpreting outer diff file headers as payload."""
-    return [line[1:] for line in patch.splitlines()
-            if line.startswith("+") and not line.startswith("+++")]
+    return [
+        line[1:]
+        for line in patch.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    ]
 
 
 def _test_bypass_error(patch: str, paths: list[str]) -> str:
@@ -1223,7 +1486,8 @@ def _test_bypass_error(patch: str, paths: list[str]) -> str:
     added = "\n".join(_added_patch_lines(patch))
     bypass = re.compile(
         r"(?im)(pytest\.mark\.skip|unittest\.skip|@skip|xfail|DEB_BUILD_OPTIONS.*nocheck|"
-        r"override_dh_auto_test[^\n]*:\s*(?:true|:)|exit\s+0\s*(?:#.*)?$)")
+        r"override_dh_auto_test[^\n]*:\s*(?:true|:)|exit\s+0\s*(?:#.*)?$)"
+    )
     if bypass.search(added):
         return "patch attempts to skip or bypass tests"
 
@@ -1250,16 +1514,23 @@ def _packaging_content_error(patch: str, paths: list[str]) -> str:
 
 def _series_patch_names(patch: str) -> set[str]:
     """Select uncommented added patch names using the existing series-reference policy."""
-    return {line.strip() for line in _added_patch_lines(patch)
-            if not line.lstrip().startswith("#") and line.strip().endswith(".patch")}
+    return {
+        line.strip()
+        for line in _added_patch_lines(patch)
+        if not line.lstrip().startswith("#") and line.strip().endswith(".patch")
+    }
 
 
 def _series_reference_error(patch: str, paths: list[str], tree: Path) -> str:
     """Require added series references to exist already or be included in the proposal."""
     series_additions = _series_patch_names(patch)
     changed = set(paths)
-    missing = sorted(name for name in series_additions
-                     if f"debian/patches/{name}" not in changed and not (tree / "debian/patches" / name).is_file())
+    missing = sorted(
+        name
+        for name in series_additions
+        if f"debian/patches/{name}" not in changed
+        and not (tree / "debian/patches" / name).is_file()
+    )
     if missing:
         return f"series references patch files that do not exist: {missing}"
     return ""
@@ -1267,12 +1538,16 @@ def _series_reference_error(patch: str, paths: list[str], tree: Path) -> str:
 
 def _source_patch_policy_error(patch: str, paths: list[str], tree: Path) -> str:
     """Apply content restrictions in their established rejection order."""
-    return (_test_bypass_error(patch, paths)
-            or _packaging_content_error(patch, paths)
-            or _series_reference_error(patch, paths, tree))
+    return (
+        _test_bypass_error(patch, paths)
+        or _packaging_content_error(patch, paths)
+        or _series_reference_error(patch, paths, tree)
+    )
 
 
-def _check_source_application(patch: str, paths: list[str], tree: Path, apply: bool) -> subprocess.CompletedProcess:
+def _check_source_application(
+    patch: str, paths: list[str], tree: Path, apply: bool
+) -> subprocess.CompletedProcess:
     """Run Git validation or application with nested quilt whitespace handled explicitly."""
     tree = tree.resolve()
     patch_path = (tree.parent / ".packagetest-remediation.patch").resolve()
@@ -1280,13 +1555,18 @@ def _check_source_application(patch: str, paths: list[str], tree: Path, apply: b
     # A unified diff stored inside debian/patches legitimately contains a
     # single-space context marker for blank lines. In an outer remediation
     # diff that marker looks like newly-added trailing whitespace to git.
-    whitespace = ("nowarn" if all(path.startswith("debian/patches/") for path in paths)
-                  else "error-all")
+    whitespace = (
+        "nowarn"
+        if all(path.startswith("debian/patches/") for path in paths)
+        else "error-all"
+    )
     command = ["git", "apply", "--recount", f"--whitespace={whitespace}"]
     if not apply:
         command.append("--check")
     command.append(str(patch_path))
-    completed = subprocess.run(command, cwd=tree, text=True, capture_output=True, timeout=30)
+    completed = subprocess.run(
+        command, cwd=tree, text=True, capture_output=True, timeout=30
+    )
     patch_path.unlink(missing_ok=True)
     return completed
 
@@ -1304,8 +1584,11 @@ def _source_patch_result(patch: str, paths: list[str], tree: Path, apply: bool) 
         result["error"] = (completed.stderr or completed.stdout).strip()[-4000:]
         return result
 
-    result.update(result="APPLIED" if apply else "APPLIES", error="",
-                  patch_sha256=hashlib.sha256(patch.encode()).hexdigest())
+    result.update(
+        result="APPLIED" if apply else "APPLIES",
+        error="",
+        patch_sha256=hashlib.sha256(patch.encode()).hexdigest(),
+    )
     return result
 
 
@@ -1375,7 +1658,11 @@ def safe_evidence_text(evidence: Path, *, limit: int = 12_000) -> str:
 def _tar_text_path(name: str) -> bool:
     """Allow only nontraversing relative archive paths with recognized text suffixes."""
     path = PurePosixPath(name)
-    return not path.is_absolute() and ".." not in path.parts and Path(name).suffix.lower() in TEXT_SUFFIXES
+    return (
+        not path.is_absolute()
+        and ".." not in path.parts
+        and Path(name).suffix.lower() in TEXT_SUFFIXES
+    )
 
 
 def _eligible_tar_member(member: tarfile.TarInfo) -> bool:
@@ -1383,7 +1670,9 @@ def _eligible_tar_member(member: tarfile.TarInfo) -> bool:
     return member.isfile() and member.size <= 512 * 1024 and _tar_text_path(member.name)
 
 
-def _tar_member_chunk(archive: tarfile.TarFile, member: tarfile.TarInfo, path: Path) -> EvidenceChunk | None:
+def _tar_member_chunk(
+    archive: tarfile.TarFile, member: tarfile.TarInfo, path: Path
+) -> EvidenceChunk | None:
     """Read one eligible member directly into bounded evidence without filesystem extraction."""
     if not _eligible_tar_member(member):
         return None
@@ -1472,18 +1761,25 @@ def _implicated_sources(packages: list[dict], missing_modules: set[str]) -> list
 def _context_sources(catalog_path: Path, source: str, evidence: str) -> list[str]:
     """Include implicated producers when readable evidence supports catalog matching."""
     sources = [source]
-    missing = {item.split(".")[0] for item in re.findall(r"No module named ['\"]([^'\"]+)", evidence)}
+    missing = {
+        item.split(".")[0]
+        for item in re.findall(r"No module named ['\"]([^'\"]+)", evidence)
+    }
     if missing and catalog_path.is_file():
         try:
             packages = json.loads(catalog_path.read_text())["packages"]
-            sources = list(dict.fromkeys([*_implicated_sources(packages, missing), source]))
+            sources = list(
+                dict.fromkeys([*_implicated_sources(packages, missing), source])
+            )
         except (KeyError, TypeError, ValueError):
             pass
 
     return sources
 
 
-def repository_context(repository: Path, source: str, evidence: str = "", *, limit: int = 10_000) -> str:
+def repository_context(
+    repository: Path, source: str, evidence: str = "", *, limit: int = 10_000
+) -> str:
     """Include frozen catalog metadata for the failed source and implicated producers."""
     catalog_path = repository / "nightly-plan" / "catalog.json"
     sources = _context_sources(catalog_path, source, evidence)

@@ -1,12 +1,16 @@
 import hashlib
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
 
-from packagetest.prepared_plan import (apply_prepared_metadata, exact_dependencies,
-                                       relation_groups, stable_digest)
+from packagetest.prepared_plan import (
+    apply_prepared_metadata,
+    exact_dependencies,
+    relation_groups,
+    stable_digest,
+)
 
 
 def manifest(source, version, binaries, *, build='', tests=None, binary_depends=''):

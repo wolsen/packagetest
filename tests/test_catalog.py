@@ -4,9 +4,17 @@ from urllib.error import HTTPError
 
 import pytest
 
-from packagetest.catalog import (archive_python_packages, dependency_names, make_catalog,
-                                package_record, paragraphs, source_name,
-                                ubuntu_source_indexes, validate_archive_sources, vcs_git)
+from packagetest.catalog import (
+    archive_python_packages,
+    dependency_names,
+    make_catalog,
+    package_record,
+    paragraphs,
+    source_name,
+    ubuntu_source_indexes,
+    validate_archive_sources,
+    vcs_git,
+)
 
 
 def archive(name, binaries=None, depends=''):
@@ -262,7 +270,7 @@ def test_latest_archive_version_wins_independent_of_index_order(tmp_path):
         'packagetest-resolute-security-main-Sources',
     ]
     for filename, version in zip(names, ['1:2.0-0ubuntu2', '1:2.0-0ubuntu1',
-                                          '1:2.0-0ubuntu1.1']):
+                                          '1:2.0-0ubuntu1.1'], strict=True):
         row = archive('example')
         row['Version'] = version
         path = tmp_path / filename
@@ -396,6 +404,7 @@ def test_archive_selection_decodes_and_preserves_index_provenance(tmp_path, suff
     import gzip
     import hashlib
     import lzma
+
     from packagetest.catalog import ArchiveSelection
 
     data = '\n'.join(f'{key}: {value}' for key, value in archive('example').items()).encode()

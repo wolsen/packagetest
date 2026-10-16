@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import re
+import subprocess
 from dataclasses import dataclass
 from functools import lru_cache
 from itertools import chain
-import re
-import subprocess
 
 
 @dataclass(frozen=True)

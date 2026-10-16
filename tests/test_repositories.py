@@ -8,8 +8,14 @@ import pytest
 from packagetest.autopkgtest import _testbed_setup
 from packagetest.catalog import populate_binary_catalog
 from packagetest.prepared_plan import archive_versions
-from packagetest.repositories import (PPA_FINGERPRINT, binary_indexes, profile_target,
-                                      repository_line, repository_setup, target_repositories)
+from packagetest.repositories import (
+    PPA_FINGERPRINT,
+    binary_indexes,
+    profile_target,
+    repository_line,
+    repository_setup,
+    target_repositories,
+)
 
 
 @pytest.mark.parametrize('profile', ['stonking', 'resolute', 'resolute-uca-hibiscus'])

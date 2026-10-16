@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-
 from packagetest import pipeline_report as module
 
 

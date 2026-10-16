@@ -1,8 +1,10 @@
 import os
 import subprocess
 from pathlib import Path
+
 import pytest
-from packagetest.snapshot_lock import Resolver, select_commit, create_snapshot_lock
+
+from packagetest.snapshot_lock import Resolver, create_snapshot_lock, select_commit
 
 
 def git(repo, *args, date=None):
@@ -57,6 +59,7 @@ def test_existing_reviewed_lock_never_overwritten(tmp_path):
 
 def test_resolution_preserves_packaging_pins_and_only_writes_after_sdist(tmp_path, monkeypatch):
     import json
+
     import packagetest.snapshot_lock as module
     template = Path(__file__).resolve().parents[1] / 'config/locks/oslo-i18n-stonking-snapshot.json'
     original = json.loads(template.read_text())

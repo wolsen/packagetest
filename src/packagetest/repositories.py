@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Mapping
 import shlex
-from urllib.parse import urlparse
+from collections.abc import Mapping
 from typing import TypedDict
+from urllib.parse import urlparse
 
 from .contracts import object_mapping, text_field
 

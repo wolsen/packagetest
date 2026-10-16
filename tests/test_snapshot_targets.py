@@ -3,9 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from packagetest.snapshot_targets import (build_target, load_targets,
-                                           uca_lts_for_openstack,
-                                           ubuntu_release_for_openstack)
+from packagetest.snapshot_targets import (
+    build_target,
+    load_targets,
+    ubuntu_release_for_openstack,
+    uca_lts_for_openstack,
+)
 
 
 @pytest.mark.parametrize('series,ubuntu,uca', [

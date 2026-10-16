@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Compatibility entry point for :mod:`packagetest.pipeline_report`."""
+
 import sys
 from pathlib import Path
 

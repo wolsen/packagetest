@@ -4,7 +4,13 @@ import subprocess
 import pytest
 
 from packagetest.artifacts import sha256
-from packagetest.handoff import build_repository, collect_producers, dependency_waves, lock_digest, stamp_generation
+from packagetest.handoff import (
+    build_repository,
+    collect_producers,
+    dependency_waves,
+    lock_digest,
+    stamp_generation,
+)
 
 
 def bundle(tmp_path):
@@ -373,9 +379,9 @@ def test_repository_refuses_duplicate_binary_identity_and_cleans_up(tmp_path):
 @pytest.mark.packaging_component
 def test_consolidated_producer_archive_preserves_verified_handoff(tmp_path):
     """A minimal published bundle still verifies binary bytes and frozen source components."""
-    from pathlib import Path
     import runpy
     import tarfile
+    from pathlib import Path
 
     root, lock, deb = bundle(tmp_path)
     outputs = tmp_path / 'outputs'

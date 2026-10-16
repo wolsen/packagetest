@@ -35,12 +35,13 @@ dev = ["setuptools>=68", "wheel>=0.45", "pytest>=8", "ruff>=0.17,<0.18", "mypy>=
 target-version = "py311"
 
 [tool.ruff.lint]
-# Start with correctness checks across the existing tree; formatting is enforced
-# on the new typed boundaries while older modules are migrated incrementally.
-select = ["E9", "F"]
+# Check correctness, common bug patterns, modern Python, imports, and public
+# documentation. The AST docstring gate also covers private and nested helpers.
+select = ["E9", "F", "B", "UP", "I", "D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107"]
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/*.py" = ["E402"]
+"tests/*.py" = ["D"]
 
 [tool.mypy]
 files = [

@@ -4,6 +4,7 @@ import tarfile
 from pathlib import Path
 
 import pytest
+
 from packagetest.artifacts import sha256
 from packagetest.locked import load_lock
 from packagetest.snapshot import canonical_sdist, snapshot_version

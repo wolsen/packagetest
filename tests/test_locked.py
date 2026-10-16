@@ -3,12 +3,13 @@ import subprocess
 from pathlib import Path
 
 import pytest
+
 from packagetest.artifacts import sha256, verify_binaries
 from packagetest.locked import (
-    load_lock,
     LockedBuild,
-    needs_lintian_distribution_overlay,
     StageFailure,
+    load_lock,
+    needs_lintian_distribution_overlay,
 )
 
 LOCK = Path(__file__).resolve().parents[1] / 'config/locks/oslo-i18n-noble-baseline.json'

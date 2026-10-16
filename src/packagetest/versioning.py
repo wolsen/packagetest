@@ -1,8 +1,9 @@
 """Translate OpenStack version spellings and compare versions using Debian ordering."""
+
 from __future__ import annotations
 
-import re
 import logging
+import re
 import subprocess
 
 logger = logging.getLogger(__name__)
@@ -14,8 +15,12 @@ _OPERATORS = {
     1: "gt",
 }
 
-_OPENSTACK_TARGET_RE = re.compile(r"^(?P<base>\d+\.\d+)(?:-(?P<stage>b\d+|rc\d+|final))?$")
-_UPSTREAM_DOT_ZERO_PRERELEASE_RE = re.compile(r"^(?P<base>\d+(?:\.\d+){2,})\.0(?P<stage>b\d+|rc\d+)$")
+_OPENSTACK_TARGET_RE = re.compile(
+    r"^(?P<base>\d+\.\d+)(?:-(?P<stage>b\d+|rc\d+|final))?$"
+)
+_UPSTREAM_DOT_ZERO_PRERELEASE_RE = re.compile(
+    r"^(?P<base>\d+(?:\.\d+){2,})\.0(?P<stage>b\d+|rc\d+)$"
+)
 _UPSTREAM_PLAIN_PRERELEASE_RE = re.compile(r"^(?P<base>.+\d)(?P<stage>b\d+|rc\d+)$")
 
 
@@ -34,8 +39,14 @@ def _dpkg_compare(left: str, right: str, op: str) -> bool:
     logger.debug("Running version comparison command: %s", " ".join(cmd))
     completed = subprocess.run(cmd, check=False, capture_output=True, text=True)
     logger.debug("Version comparison exit_code=%d", completed.returncode)
-    logger.debug("Version comparison stdout:\n%s", completed.stdout if completed.stdout else "<empty>")
-    logger.debug("Version comparison stderr:\n%s", completed.stderr if completed.stderr else "<empty>")
+    logger.debug(
+        "Version comparison stdout:\n%s",
+        completed.stdout if completed.stdout else "<empty>",
+    )
+    logger.debug(
+        "Version comparison stderr:\n%s",
+        completed.stderr if completed.stderr else "<empty>",
+    )
     return completed.returncode == 0
 
 
@@ -59,18 +70,26 @@ def openstack_target_to_upstream_version(target: str) -> str:
     return f"{base}~{stage}"
 
 
-def openstack_target_to_debian_version(target: str, *, ubuntu_revision: str = "0ubuntu1") -> str:
+def openstack_target_to_debian_version(
+    target: str, *, ubuntu_revision: str = "0ubuntu1"
+) -> str:
     """Combine a translated OpenStack target with the requested Ubuntu revision."""
     upstream_version = openstack_target_to_upstream_version(target)
-    return upstream_version_to_debian_version(upstream_version, ubuntu_revision=ubuntu_revision)
+    return upstream_version_to_debian_version(
+        upstream_version, ubuntu_revision=ubuntu_revision
+    )
 
 
-def upstream_version_to_debian_version(upstream_version: str, *, ubuntu_revision: str = "0ubuntu1") -> str:
+def upstream_version_to_debian_version(
+    upstream_version: str, *, ubuntu_revision: str = "0ubuntu1"
+) -> str:
     """Normalize Python prerelease spelling and append the Ubuntu package revision."""
     if "~b" not in upstream_version and "~rc" not in upstream_version:
         prerelease_match = _UPSTREAM_DOT_ZERO_PRERELEASE_RE.fullmatch(upstream_version)
         if prerelease_match:
-            upstream_version = f"{prerelease_match.group('base')}~{prerelease_match.group('stage')}"
+            upstream_version = (
+                f"{prerelease_match.group('base')}~{prerelease_match.group('stage')}"
+            )
         else:
             prerelease_match = _UPSTREAM_PLAIN_PRERELEASE_RE.fullmatch(upstream_version)
             if prerelease_match:

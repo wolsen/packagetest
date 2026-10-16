@@ -2,32 +2,31 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
-from copy import deepcopy
 import hashlib
 import json
-from pathlib import Path
 import subprocess
-from urllib.parse import urlparse
+from collections.abc import Mapping
+from copy import deepcopy
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, TypedDict
+from urllib.parse import urlparse
 
 from .artifacts import checksum_entries, sha256, verify_source
 from .contracts import (
     BuildTarget,
-    PreparedSource,
     PreparedManifest,
     PreparedMetadata,
+    PreparedSource,
     SourceArtifact,
     object_mapping,
+    prepared_manifest,
+    prepared_metadata,
     records,
     string_list,
     text_field,
-    prepared_manifest,
-    prepared_metadata,
 )
 from .relations import BuildContext, is_deferred_relation, parse_relation
-
 
 Phase = Literal["build", "test", "runtime"]
 
