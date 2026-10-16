@@ -91,8 +91,6 @@
   "src/packagetest/release_discovery.py:parse_series_status_yaml": 11,
   "src/packagetest/release_discovery.py:releases_from_deliverable_yaml": 11,
   "src/packagetest/release_discovery.py:resolve_release_from_deliverable_yaml": 28,
-  "src/packagetest/remediation.py:ProposalPlanner.model_decision": 6,
-  "src/packagetest/remediation.py:ProposalPlanner.new_decisions": 10,
   "src/packagetest/remediation.py:batch_missing_dependency_decisions": 8,
   "src/packagetest/remediation.py:llama_generate": 6,
   "src/packagetest/remediation.py:publish_report": 7,

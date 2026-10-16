@@ -549,15 +549,22 @@ class ProposalPlanner:
     prior: set[str] = field(default_factory=set)
     accepted: list[dict[str, Any]] = field(default_factory=list)
 
-    def model_decision(
-        self, phase: str, evidence: str, text: str, number: int, directory: Path
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _model_timeout(self, evidence: str) -> int:
+        """Cap functional-test inference time while retaining import-failure allowances."""
         timeout = self.args.model_timeout
         if (
             re.search(r"(?m)^FAIL: ", evidence)
             and "ModuleNotFoundError" not in evidence
         ):
             timeout = min(timeout, FUNCTIONAL_FAILURE_MODEL_TIMEOUT)
+
+        return timeout
+
+    def model_decision(
+        self, phase: str, evidence: str, text: str, number: int, directory: Path
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Normalize one inference result and preserve the original when fields change."""
+        timeout = self._model_timeout(evidence)
         output, inference = llama_generate(
             self.args.llama_cli,
             self.args.model,
@@ -570,19 +577,22 @@ class ProposalPlanner:
         decision = normalize_repair_decision(raw, self.tree, evidence)
         if decision.get("action") == "add_dependency" and phase == "build":
             decision["scope"] = "build"
+
         if decision != raw:
             write_json(directory / "raw-decision.json", raw)
+
         write_json(directory / "decision.json", decision)
         return decision, inference
 
-    def new_decisions(
+    def _validated_decision(
         self,
         decision: dict[str, Any],
         inference: dict[str, Any],
         evidence: str,
         directory: Path,
         record: dict[str, Any],
-    ) -> tuple[list[dict[str, Any]], dict[str, Any]] | None:
+    ) -> dict[str, Any] | None:
+        """Reject repeated or unsupported decisions and record explicit stop/retry outcomes."""
         if decision_key(decision) in self.prior:
             record.update(
                 decision=decision, inference=inference, result="DUPLICATE_DECISION"
@@ -591,6 +601,7 @@ class ProposalPlanner:
                 record, "model repeated an existing decision without progress"
             )
             return None
+
         validation = validate_repair_decision(decision, evidence)
         write_json(directory / "decision-validation.json", validation)
         if validation["result"] != "ACCEPTED":
@@ -606,6 +617,7 @@ class ProposalPlanner:
                 "model could not produce a valid decision for unchanged evidence",
             )
             return None
+
         if decision["action"] == "no_fix":
             record.update(
                 decision=decision,
@@ -615,6 +627,14 @@ class ProposalPlanner:
             )
             self.progress.stop(record, "model reported no supported repair")
             return None
+
+        return validation
+
+    def _new_batch(
+        self, decision: dict[str, Any], inference: dict[str, Any], evidence: str,
+        record: dict[str, Any],
+    ) -> list[dict[str, Any]] | None:
+        """Require a nonempty set of new validated repairs within the remaining budget."""
         batch = batch_missing_dependency_decisions(decision, evidence)
         new = [item for item in batch if decision_key(item) not in self.prior]
         if not new:
@@ -625,16 +645,38 @@ class ProposalPlanner:
                 record, "repair batch contained no new validated decisions"
             )
             return None
+
         if len(self.prior) + len(new) > self.args.max_repairs:
             record.update(
                 decision=decision, inference=inference, result="REPAIR_BUDGET_EXHAUSTED"
             )
             self.progress.stop(record, "validated repair budget exhausted")
             return None
+
+        return new
+
+    def new_decisions(
+        self,
+        decision: dict[str, Any],
+        inference: dict[str, Any],
+        evidence: str,
+        directory: Path,
+        record: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]] | None:
+        """Accept a validated repair batch and retain its decision keys and evidence."""
+        validation = self._validated_decision(decision, inference, evidence, directory, record)
+        if validation is None:
+            return None
+
+        new = self._new_batch(decision, inference, evidence, record)
+        if new is None:
+            return None
+
         self.prior.update(decision_key(item) for item in new)
         if len(new) > 1:
             write_json(directory / "batched-decisions.json", new)
             record["batched_decisions"] = new
+
         return new, validation
 
     def propose(
@@ -652,6 +694,7 @@ class ProposalPlanner:
         batch = self.new_decisions(decision, inference, evidence, directory, record)
         if batch is None:
             return None
+
         new, decision_validation = batch
         try:
             patch = render_cumulative_repair([*self.accepted, *new], self.tree)
@@ -668,6 +711,7 @@ class ProposalPlanner:
                 "validated decisions could not be rendered for unchanged evidence",
             )
             return None
+
         path = directory / "proposal.patch"
         path.write_text(patch)
         validation = (
@@ -690,6 +734,7 @@ class ProposalPlanner:
                 "rendered patches failed validation for unchanged evidence",
             )
             return None
+
         return RepairProposal(path, new)
 
 
