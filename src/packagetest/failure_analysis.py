@@ -44,6 +44,8 @@ def select_direct_failures(rows: Iterable[dict]) -> list[dict]:
 
 @dataclass(frozen=True)
 class ModelResponse:
+    """A model diagnosis and its extracted advisory patch."""
+
     diagnosis: str
     patch: str
 
@@ -64,22 +66,37 @@ REPAIR_DECISION_SCHEMA = {
 }
 
 
-def parse_repair_decision(text: str) -> dict:
-    """Extract the last schema-shaped JSON object from noisy llama-cli output."""
+def _decoded_decision(text: str, decoder: json.JSONDecoder) -> dict | None:
+    """Decode one candidate object only when all required decision fields are present."""
+    try:
+        value, _ = decoder.raw_decode(text)
+    except json.JSONDecodeError:
+        return None
+
+    if isinstance(value, dict) and set(REPAIR_DECISION_SCHEMA["required"]) <= value.keys():
+        return value
+
+    return None
+
+
+def _decision_candidates(text: str) -> list[dict]:
+    """Scan object starts in noisy model output, retaining their original order."""
     decoder = json.JSONDecoder()
     matches = []
     for offset, character in enumerate(text):
         if character != "{":
             continue
 
-        try:
-            value, _ = decoder.raw_decode(text[offset:])
-        except json.JSONDecodeError:
-            continue
-
-        if isinstance(value, dict) and set(REPAIR_DECISION_SCHEMA["required"]) <= value.keys():
+        value = _decoded_decision(text[offset:], decoder)
+        if value is not None:
             matches.append(value)
 
+    return matches
+
+
+def parse_repair_decision(text: str) -> dict:
+    """Validate the last schema-shaped object, never falling back past an invalid decision."""
+    matches = _decision_candidates(text)
     if not matches:
         raise ValueError("model output contains no repair decision JSON")
 
@@ -1037,33 +1054,40 @@ def render_source_repair(decision: dict, tree: Path) -> str:
     return render(decision, tree)
 
 
-def parse_model_response(text: str) -> ModelResponse:
-    """Parse a deliberately simple format that small local models can follow."""
-    diagnosis = _between(text, "BEGIN_DIAGNOSIS", "END_DIAGNOSIS").strip()
+def _response_patch(text: str) -> str:
+    """Prefer the last wrapped patch, falling back to the final complete Git diff."""
     patch = _between(text, "BEGIN_PATCH", "END_PATCH").strip()
-    # llama-cli can echo the prompt and small models sometimes omit the requested
-    # wrapper while still returning one usable diff. Prefer the wrapper, but keep
-    # the final complete diff as a conservative fallback.
-    if not patch:
-        candidates = re.findall(
-            r"(?ms)^diff --git a/\S+ b/\S+.*?(?=^```|^END_PATCH\s*$|^Exiting\.\.\.\s*$|\Z)",
-            text,
-        )
-        if candidates:
-            patch = candidates[-1].strip()
+    if patch:
+        return patch
+
+    # llama-cli may echo the prompt or omit wrappers around an otherwise usable diff.
+    candidates = re.findall(
+        r"(?ms)^diff --git a/\S+ b/\S+.*?(?=^```|^END_PATCH\s*$|^Exiting\.\.\.\s*$|\Z)", text)
+    return candidates[-1].strip() if candidates else ""
+
+
+def _unfenced_patch(patch: str) -> str:
+    """Remove optional Markdown fences and normalize nonempty patches to a final newline."""
     if patch.startswith("```diff"):
         patch = patch[7:]
     elif patch.startswith("```"):
         patch = patch[3:]
+
     if patch.endswith("```"):
         patch = patch[:-3]
+
     patch = patch.strip()
-    if patch and not patch.endswith("\n"):
-        patch += "\n"
-    return ModelResponse(diagnosis=diagnosis, patch=patch)
+    return patch + "\n" if patch else ""
+
+
+def parse_model_response(text: str) -> ModelResponse:
+    """Read the diagnosis and normalize a wrapped or standalone patch response."""
+    diagnosis = _between(text, "BEGIN_DIAGNOSIS", "END_DIAGNOSIS").strip()
+    return ModelResponse(diagnosis=diagnosis, patch=_unfenced_patch(_response_patch(text)))
 
 
 def _between(text: str, start: str, end: str) -> str:
+    """Return the final complete marker-delimited block, or an empty string."""
     matches = list(re.finditer(rf"{start}\s*(.*?)\s*{end}", text, re.DOTALL))
     return matches[-1].group(1) if matches else ""
 

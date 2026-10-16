@@ -743,3 +743,16 @@ def test_normalized_repair_preserves_original_context_whitespace(tmp_path):
 
     assert _apply_hunks_with_normalized_context(path, section) is True
     assert path.read_text() == '\tcontext  value\n    new\n'
+
+
+@pytest.mark.parametrize('invalid, message', [
+    ({'action': 'unsupported', 'subject': '', 'replacement': '', 'evidence': ''}, 'unsupported repair action'),
+    ({'action': 'no_fix', 'subject': None, 'replacement': '', 'evidence': ''}, 'values must be strings'),
+])
+def test_decision_parser_does_not_fall_back_past_invalid_final_decision(invalid, message):
+    """An earlier valid response must not hide an invalid final model decision."""
+    valid = {'action': 'no_fix', 'subject': '', 'replacement': '', 'evidence': ''}
+    text = 'prompt echo: ' + json.dumps(valid) + '\nanswer: ' + json.dumps(invalid)
+
+    with pytest.raises(ValueError, match=message):
+        parse_repair_decision(text)
