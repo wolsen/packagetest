@@ -97,7 +97,9 @@ _TERM = re.compile(r"!?[a-z0-9][a-z0-9+.-]*")
 
 
 def _validate_restrictions(
-    architectures: tuple[str, ...], profiles: tuple[tuple[str, ...], ...], expression: str
+    architectures: tuple[str, ...],
+    profiles: tuple[tuple[str, ...], ...],
+    expression: str,
 ) -> None:
     """Reject malformed terms and contradictory restriction syntax."""
     terms = (*architectures, *chain.from_iterable(profiles))
@@ -112,7 +114,9 @@ def _validate_restriction_groups(
 ) -> None:
     """Keep architecture polarity uniform and profile groups nonempty."""
     if len({term.startswith("!") for term in architectures}) > 1:
-        raise ValueError("Architecture restrictions cannot mix positive and negative terms")
+        raise ValueError(
+            "Architecture restrictions cannot mix positive and negative terms"
+        )
 
     if any(not group for group in profiles):
         raise ValueError("Empty build profile restriction")
