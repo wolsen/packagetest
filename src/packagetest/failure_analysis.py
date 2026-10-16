@@ -879,27 +879,48 @@ def _refresh_quilt_patch(tree: Path, name: str) -> str:
     return _replace_file_patch(f'debian/patches/{name}', original_patch, revised)
 
 
-def _add_control_dependency(text: str, field: str, package: str) -> str:
-    lines = text.splitlines(keepends=True)
+def _control_field_start(lines: list[str], field: str) -> int:
+    """Locate the requested control field or report the missing dependency stanza."""
     start = next((index for index, line in enumerate(lines) if line.startswith(field + ":")), None)
     if start is None:
         raise ValueError(f"control paragraph has no {field} field")
-    end = start + 1
-    while end < len(lines) and (lines[end].startswith((" ", "\t")) or not lines[end].strip()):
-        if not lines[end].strip():
-            break
-        end += 1
+
+    return start
+
+
+def _control_field_end(lines: list[str], start: int) -> int:
+    """Stop a folded control field at the next field or blank paragraph separator."""
+    for end in range(start + 1, len(lines)):
+        if not lines[end].startswith((" ", "\t")) or not lines[end].strip():
+            return end
+
+    return len(lines)
+
+
+def _dependency_insert_position(lines: list[str], start: int, end: int, package: str) -> int:
+    """Insert before substitutions or lexically later dependency continuation lines."""
+    for index in range(start + 1, end):
+        token = lines[index].strip().split(maxsplit=1)[0].rstrip(",")
+        if token.startswith("${") or token.lower() > package:
+            return index
+
+    return end
+
+
+def _add_control_dependency(text: str, field: str, package: str) -> str:
+    """Add a missing dependency while preserving the surrounding control paragraph."""
+    lines = text.splitlines(keepends=True)
+    start = _control_field_start(lines, field)
+    end = _control_field_end(lines, start)
     current = "".join(lines[start:end])
     if re.search(rf"(?<![A-Za-z0-9+.-]){re.escape(package)}(?![A-Za-z0-9+.-])", current):
         return text
-    if end and not lines[end - 1].endswith("\n"):
+
+    # The field always includes its header, so its last line exists even at EOF.
+    if not lines[end - 1].endswith("\n"):
         lines[end - 1] += "\n"
-    insert = end
-    for index in range(start + 1, end):
-        token = lines[index].strip().split(maxsplit=1)[0].rstrip(",") if lines[index].strip() else ""
-        if token.startswith("${") or token.lower() > package:
-            insert = index
-            break
+
+    insert = _dependency_insert_position(lines, start, end, package)
     lines.insert(insert, f" {package},\n")
     return "".join(lines)
 
