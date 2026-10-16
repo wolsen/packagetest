@@ -13,28 +13,74 @@ from pathlib import Path
 from .artifacts import sha256, verify_source, verify_binaries
 
 
-def classify(returncode: int, summary: str) -> dict:
+def _summary_tests(summary: str) -> list[dict]:
+    """Parse recognized autopkgtest summary rows while ignoring unrelated output."""
     tests = []
     for line in summary.splitlines():
         match = re.match(r'^(\S+)\s+(PASS|FAIL|SKIP|FLAKY)(?:\s+(.*))?$', line)
         if match:
-            tests.append(dict(zip(('name', 'result', 'detail'), (match[1], match[2], match[3] or ''))))
+            tests.append({'name': match[1], 'result': match[2], 'detail': match[3] or ''})
+
+    return tests
+
+
+def _has_test_result(tests: list[dict], results: set[str]) -> bool:
+    """Report whether any parsed test carries one of the requested outcomes."""
+    return any(test['result'] in results for test in tests)
+
+
+def _failed_result(returncode: int, tests: list[dict]) -> str | None:
+    """Give infrastructure exits precedence over test failures and coverage outcomes."""
     if returncode in {16, 20} or returncode < 0:
-        result = 'INFRA_ERROR'
-    elif returncode in {4, 6, 12, 14} or any(t['result'] == 'FAIL' for t in tests):
-        result = 'FAIL'
-    elif returncode == 8:
-        if tests and all(t['result'] == 'PASS' and '(superficial)' in t['detail'] for t in tests):
-            result = 'SUPERFICIAL'
-        else:
-            result = 'SKIP' if any(t['name'] != '*' for t in tests) else 'NO_TESTS'
-    elif returncode == 2 or any(t['result'] in {'SKIP', 'FLAKY'} for t in tests):
-        result = 'SKIP'
-    elif returncode == 0 and any(t['result'] == 'PASS' for t in tests):
-        result = 'SUPERFICIAL' if all('(superficial)' in t['detail'] for t in tests) else 'PASS'
-    else:
-        result = 'INFRA_ERROR'
-    return {'result': result, 'returncode': returncode, 'tests': tests}
+        return 'INFRA_ERROR'
+
+    if returncode in {4, 6, 12, 14} or _has_test_result(tests, {'FAIL'}):
+        return 'FAIL'
+
+    return None
+
+
+def _all_superficial_passes(tests: list[dict]) -> bool:
+    """Require actual test rows and a superficial PASS in every row."""
+    return bool(tests) and all(test['result'] == 'PASS' and '(superficial)' in test['detail']
+                               for test in tests)
+
+
+def _no_substantive_result(tests: list[dict]) -> str:
+    """Distinguish superficial coverage, named skips, and absence of runnable tests."""
+    if _all_superficial_passes(tests):
+        return 'SUPERFICIAL'
+
+    return 'SKIP' if any(test['name'] != '*' for test in tests) else 'NO_TESTS'
+
+
+def _successful_result(returncode: int, tests: list[dict]) -> str:
+    """Accept a clean exit only with a PASS row, preserving superficial coverage."""
+    if returncode == 0 and _has_test_result(tests, {'PASS'}):
+        return 'SUPERFICIAL' if all('(superficial)' in test['detail'] for test in tests) else 'PASS'
+
+    return 'INFRA_ERROR'
+
+
+def _test_result(returncode: int, tests: list[dict]) -> str:
+    """Apply coverage rules only after excluding infrastructure and test failures."""
+    failure = _failed_result(returncode, tests)
+    if failure is not None:
+        return failure
+
+    if returncode == 8:
+        return _no_substantive_result(tests)
+
+    if returncode == 2 or _has_test_result(tests, {'SKIP', 'FLAKY'}):
+        return 'SKIP'
+
+    return _successful_result(returncode, tests)
+
+
+def classify(returncode: int, summary: str) -> dict:
+    """Classify autopkgtest status while retaining every parsed test and the raw exit code."""
+    tests = _summary_tests(summary)
+    return {'result': _test_result(returncode, tests), 'returncode': returncode, 'tests': tests}
 
 
 def exit_status(result: str) -> int:
@@ -48,24 +94,66 @@ def exit_status(result: str) -> int:
     return 0 if result in {'PASS', 'SKIP', 'NO_TESTS', 'SUPERFICIAL'} else 1
 
 
-def diagnostic_message(report: dict, *, limit: int = 2000) -> str:
-    """Return the useful failure evidence hidden behind autopkgtest's exit code."""
-    details = []
-    for test in report.get('tests', []):
-        if test.get('result') in {'FAIL', 'SKIP', 'FLAKY'}:
-            text = f"{test.get('name', 'unknown')} {test['result']}"
-            if test.get('detail'):
-                text += f": {test['detail']}"
-            diagnostic = report.get('test_diagnostics', {}).get(test.get('name'))
-            if diagnostic:
-                text += f': {diagnostic}'
-            details.append(text)
-    if report.get('error'):
-        details.append(str(report['error']))
-    if not details and report.get('summary'):
-        details.extend(line for line in str(report['summary']).splitlines() if line.strip())
+def _test_diagnostic(report: dict, test: dict) -> str | None:
+    """Combine one nonpassing test's summary detail and captured output tail."""
+    if test.get('result') not in {'FAIL', 'SKIP', 'FLAKY'}:
+        return None
+
+    text = f"{test.get('name', 'unknown')} {test['result']}"
+    if test.get('detail'):
+        text += f": {test['detail']}"
+
+    diagnostic = report.get('test_diagnostics', {}).get(test.get('name'))
+    if diagnostic:
+        text += f': {diagnostic}'
+
+    return text
+
+
+def _summary_diagnostics(summary: str) -> list[str]:
+    """Retain nonblank raw summary lines when no structured diagnostic exists."""
+    return [line for line in str(summary).splitlines() if line.strip()]
+
+
+def _bounded_diagnostic(details: list[str], limit: int) -> str:
+    """Bound the combined diagnostic while supplying a useful empty-report fallback."""
     message = '; '.join(details) or 'No test-level diagnostic was recorded; inspect console.log'
     return message if len(message) <= limit else message[:limit - 3] + '...'
+
+
+def diagnostic_message(report: dict, *, limit: int = 2000) -> str:
+    """Return the useful failure evidence hidden behind autopkgtest's exit code."""
+    details = list(filter(None, (_test_diagnostic(report, test) for test in report.get('tests', []))))
+    if report.get('error'):
+        details.append(str(report['error']))
+
+    if not details and report.get('summary'):
+        details.extend(_summary_diagnostics(report['summary']))
+
+    return _bounded_diagnostic(details, limit)
+
+
+def _test_output_tail(directory: Path, name: str, suffix: str, limit: int) -> str | None:
+    """Read a bounded nonempty test-output tail only from a regular nonsymlink file."""
+    path = directory / f'{name}-{suffix}'
+    if not path.is_file() or path.is_symlink():
+        return None
+
+    value = path.read_text(errors='replace').strip()
+    if value:
+        return f'{suffix}: {value[-limit:]}'
+
+    return None
+
+
+def _failed_test_tail(directory: Path, test: dict, limit: int) -> str:
+    """Join stderr before stdout for named failing tests, retaining the overall limit."""
+    if test.get('result') != 'FAIL' or not test.get('name'):
+        return ''
+
+    parts = filter(None, (_test_output_tail(directory, test['name'], suffix, limit)
+                          for suffix in ('stderr', 'stdout')))
+    return '; '.join(parts)[-limit:]
 
 
 def collect_test_diagnostics(directory: Path, tests: list[dict], *, limit: int = 4000) -> dict:
@@ -73,20 +161,12 @@ def collect_test_diagnostics(directory: Path, tests: list[dict], *, limit: int =
     diagnostics = {}
     if not directory.is_dir():
         return diagnostics
+
     for test in tests:
-        if test.get('result') != 'FAIL' or not test.get('name'):
-            continue
-        parts = []
-        for suffix in ('stderr', 'stdout'):
-            path = directory / f"{test['name']}-{suffix}"
-            if not path.is_file() or path.is_symlink():
-                continue
-            value = path.read_text(errors='replace').strip()
-            if value:
-                parts.append(f'{suffix}: {value[-limit:]}')
-        if parts:
-            value = '; '.join(parts)
-            diagnostics[test['name']] = value[-limit:]
+        value = _failed_test_tail(directory, test, limit)
+        if value:
+            diagnostics[test['name']] = value
+
     return diagnostics
 
 
