@@ -108,6 +108,7 @@ def _test_failure_lines(lines: list[str]) -> list[str]:
             line,
         ):
             selected.append(line)
+
     return selected
 
 
@@ -116,6 +117,7 @@ def extract_test_failure_evidence(text: str, *, limit: int = 12_000) -> str:
     marker = "displaying pip3 freeze output"
     if marker in text:
         text = text[: text.index(marker)]
+
     lines = text.splitlines()
     selected = _test_failure_lines(lines)
     # Preserve order while collapsing repeated traceback lines from overlapping windows.
@@ -123,6 +125,7 @@ def extract_test_failure_evidence(text: str, *, limit: int = 12_000) -> str:
     body = "\n".join(unique)
     if len(body) > limit:
         body = body[:limit] + "\n[later structured test evidence omitted]"
+
     return "STRUCTURED TEST FAILURE\n" + body
 
 
@@ -131,12 +134,14 @@ def structured_failure(path: Path) -> str:
     payload = json.loads(path.read_text())
     if payload.get("category") == "LINTIAN":
         return lintian_evidence(payload)
+
     command = payload.get("command") or {}
     output = "\n".join(
         filter(None, [command.get("stdout", ""), command.get("stderr", "")])
     )
     if any(token in output for token in ("FAIL: ", "ERROR: ", "FAILED (")):
         return extract_test_failure_evidence(output)
+
     return "\n".join(
         [
             "STRUCTURED COMMAND FAILURE",
@@ -148,8 +153,10 @@ def structured_failure(path: Path) -> str:
 
 
 def tail(path: Path, limit: int = 10_000) -> str:
+    """Read a bounded file tail, marking omitted earlier content."""
     if not path.is_file():
         return ""
+
     text = path.read_text(errors="replace")
     return text if len(text) <= limit else "[earlier output omitted]\n" + text[-limit:]
 
@@ -224,6 +231,7 @@ def _diagnostic_focus(evidence: str, limit: int) -> str:
     positions = [evidence.rfind(marker) for marker in markers if marker in evidence]
     if not positions:
         return evidence[-limit:]
+
     center = min(positions)
     return evidence[max(0, center - 800) : center + limit - 800]
 
@@ -259,10 +267,12 @@ def failure_signature(evidence: str) -> str:
         value = failure_focus(evidence)
         value = re.sub(r"/home/runner/work/_temp/[^\s'\"]+", "/tmp/WORK", value)
         value = re.sub(r"\b[0-9a-f]{12,64}\b", "HASH", value)
+
     return hashlib.sha256(value.encode()).hexdigest()
 
 
 def _patch_names(evidence: str) -> set[str]:
+    """Prefer explicitly diagnosed patch names over general mentions."""
     names = set(re.findall(r"([A-Za-z0-9][A-Za-z0-9_.+~-]*\.patch)", evidence))
     failed = set(
         re.findall(
@@ -285,19 +295,24 @@ def _source_build_dependencies(text: str) -> str:
         if not re.match(r"^(Build-Depends(?:-Indep)?):", lines[index]):
             index += 1
             continue
+
         block = [lines[index]]
         index += 1
         while index < len(lines) and lines[index].startswith((" ", "\t")):
             block.append(lines[index])
             index += 1
+
         fields.append("".join(block).rstrip())
+
     return "\n".join(fields)
 
 
 def _missing_import_context(tree: Path, evidence: str) -> str:
+    """Show source build dependencies and inferred Debian packages for missing imports."""
     control = tree / "debian/control"
     if not control.is_file() or control.is_symlink():
         return ""
+
     fields = _source_build_dependencies(control.read_text(errors="replace"))
     modules = list(
         dict.fromkeys(
@@ -314,60 +329,82 @@ def _missing_import_context(tree: Path, evidence: str) -> str:
     if candidates:
         value += "\n--- Debian package candidates inferred from missing imports ---\n"
         value += "\n".join(dict.fromkeys(candidates)) + "\n"
+
     return value
 
 
 def _context_paths(evidence: str, patches: set[str]) -> list[str]:
+    """Prioritize failed quilt patches before traceback or general packaging context."""
     if patches:
         # The series and failed patch take priority over large control files.
         return [
             "debian/patches/series",
             *(f"debian/patches/{name}" for name in sorted(patches)),
         ]
+
     if not re.search(r"(?m)^FAIL: ", evidence):
         return ["debian/rules", "debian/control", "debian/patches/series"]
+
+    return _traceback_paths(evidence)[:6]
+
+
+def _allowed_traceback_path(path: PurePath) -> bool:
+    """Exclude absolute, traversing, and Debian packaging paths from traceback context."""
+    return not path.is_absolute() and ".." not in path.parts and path.parts[:1] != ("debian",)
+
+
+def _traceback_paths(evidence: str) -> list[str]:
+    """Collect unique safe Python traceback paths in their first-seen order."""
     relative = []
     for value in re.findall(r'File "(?:/<<PKGBUILDDIR>>/)?([^"\n]+\.py)"', evidence):
         path = PurePath(value)
-        if path.is_absolute() or ".." in path.parts or path.parts[:1] == ("debian",):
-            continue
-        if path.as_posix() not in relative:
+        if _allowed_traceback_path(path):
             relative.append(path.as_posix())
-    return relative[:6]
+
+    return list(dict.fromkeys(relative))
 
 
 def _readable_context_file(path: Path) -> bool:
+    """Require a small regular nonsymlink file for model source context."""
     return (
         path.is_file() and not path.is_symlink() and path.stat().st_size <= 256 * 1024
     )
 
 
 def _file_blocks(tree: Path, relative: list[str]) -> Iterator[str]:
+    """Render eligible source files in the caller-specified priority order."""
     for name in relative:
         path = tree / name
         if _readable_context_file(path):
             yield f"\n--- {name} ---\n{path.read_text(errors='replace')}\n"
 
 
-def _hunk_centers(patch: str, lines: list[str]) -> set[int]:
-    centers = {
-        max(0, int(line) - 1)
-        for line in re.findall(r"^@@\s+-\d+(?:,\d+)?\s+\+(\d+)", patch, re.M)
-    }
+def _changed_definition_tokens(patch: str) -> set[str]:
+    """Extract definition names from changed payload lines rather than diff headers."""
     changed = "\n".join(
         line[1:]
         for line in patch.splitlines()
         if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
     )
-    tokens = set(re.findall(r"\b(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)", changed))
-    # Definitions locate relevant code when upstream hunk line numbers drift.
-    for index, line in enumerate(lines):
-        if any(token in line for token in tokens):
-            centers.add(index)
-    return centers
+    return set(re.findall(r"\b(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)", changed))
 
 
-def _focused_source(patch: str, lines: list[str]) -> str:
+def _definition_centers(lines: list[str], tokens: set[str]) -> set[int]:
+    """Find current definition locations when upstream hunk line numbers have drifted."""
+    return {index for index, line in enumerate(lines) if any(token in line for token in tokens)}
+
+
+def _hunk_centers(patch: str, lines: list[str]) -> set[int]:
+    """Combine declared hunk positions with matching current definition locations."""
+    centers = {
+        max(0, int(line) - 1)
+        for line in re.findall(r"^@@\s+-\d+(?:,\d+)?\s+\+(\d+)", patch, re.M)
+    }
+    return centers | _definition_centers(lines, _changed_definition_tokens(patch))
+
+
+def _excerpt_ranges(patch: str, lines: list[str]) -> list[tuple[int, int]]:
+    """Merge overlapping windows around the first eight relevant hunk centers."""
     ranges: list[tuple[int, int]] = []
     for center in sorted(_hunk_centers(patch, lines))[:8]:
         start, end = max(0, center - 18), min(len(lines), center + 19)
@@ -375,18 +412,26 @@ def _focused_source(patch: str, lines: list[str]) -> str:
             ranges[-1] = (ranges[-1][0], max(ranges[-1][1], end))
         else:
             ranges.append((start, end))
+
+    return ranges[:4]
+
+
+def _focused_source(patch: str, lines: list[str]) -> str:
+    """Render numbered focused excerpts, falling back to the first eighty source lines."""
     excerpts = [
         "\n".join(f"{index + 1:>6}: {lines[index]}" for index in range(start, end))
-        for start, end in ranges[:4]
+        for start, end in _excerpt_ranges(patch, lines)
     ]
     return "\n...\n".join(excerpts) if excerpts else "\n".join(lines[:80])
 
 
 def _patch_blocks(tree: Path, patches: set[str]) -> Iterator[str]:
+    """Render focused upstream files named by the first four targets in each patch."""
     for name in sorted(patches):
         patch = tree / "debian/patches" / name
         if not patch.is_file():
             continue
+
         text = patch.read_text(errors="replace")
         targets = re.findall(r"^\+\+\+ (?:b/)?([^\t\n ]+)", text, re.M)
         for target in targets[:4]:
@@ -398,7 +443,8 @@ def _patch_blocks(tree: Path, patches: set[str]) -> Iterator[str]:
                 yield f"\n--- focused current upstream {target} ---\n{body}\n"
 
 
-def _missing_path_blocks(tree: Path, evidence: str) -> Iterator[str]:
+def _mentioned_packaging_paths(tree: Path, evidence: str) -> set[str]:
+    """Find evidence paths that are actually referenced by Debian rules."""
     rules_path = tree / "debian/rules"
     rules = rules_path.read_text(errors="replace") if rules_path.is_file() else ""
     mentioned = {
@@ -408,14 +454,22 @@ def _missing_path_blocks(tree: Path, evidence: str) -> Iterator[str]:
         )
         if value in rules
     }
-    for old in sorted(mentioned):
+    return mentioned
+
+
+def _upstream_path_candidates(tree: Path, old: str) -> list[Path]:
+    """Find at most eight source files sharing a missing path's basename outside Debian metadata."""
+    return [path for path in tree.rglob(PurePath(old).name)
+            if "debian" not in path.relative_to(tree).parts and path.is_file()][:8]
+
+
+def _missing_path_blocks(tree: Path, evidence: str) -> Iterator[str]:
+    """Suggest upstream basename matches only for referenced packaging paths that are missing."""
+    for old in sorted(_mentioned_packaging_paths(tree, evidence)):
         if (tree / old).exists():
             continue
-        matches = [
-            path
-            for path in tree.rglob(PurePath(old).name)
-            if "debian" not in path.relative_to(tree).parts and path.is_file()
-        ][:8]
+
+        matches = _upstream_path_candidates(tree, old)
         if matches:
             listing = "\n".join(str(path.relative_to(tree)) for path in matches)
             yield f"\n--- upstream candidates for missing {old} ---\n{listing}\n"
@@ -425,6 +479,7 @@ def source_context(tree: Path, evidence: str, limit: int = 12_000) -> str:
     """Select evidence in priority order, sharing one character budget."""
     if "ModuleNotFoundError" in evidence:
         return _missing_import_context(tree, evidence)[:limit]
+
     patches = _patch_names(evidence)
     blocks = chain(
         _file_blocks(tree, _context_paths(evidence, patches)),
@@ -438,4 +493,5 @@ def source_context(tree: Path, evidence: str, limit: int = 12_000) -> str:
         remaining -= len(selected[-1])
         if remaining <= 0:
             break
+
     return "".join(selected)
