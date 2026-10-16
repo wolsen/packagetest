@@ -1,10 +1,1 @@
-{
-  "src/packagetest/nightly_source.py:SourcePreparer.prepare": 21,
-  "src/packagetest/nightly_source.py:_add_control_dependency": 11,
-  "src/packagetest/nightly_source.py:_entry_points_from_text": 17,
-  "src/packagetest/nightly_source.py:_official_commit_delta": 6,
-  "src/packagetest/nightly_source.py:autopkgtest_packaging_adjustments": 21,
-  "src/packagetest/nightly_source.py:source_evolution": 17,
-  "src/packagetest/nightly_source.py:upstream_dependency_adjustments": 19,
-  "src/packagetest/nightly_source.py:write_source_evolution": 8
-}
+{}

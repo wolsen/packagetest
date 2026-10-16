@@ -1101,3 +1101,58 @@ def test_export_prepared_rejects_invalid_bundle_before_creating_output(
         export_prepared(prepared, entry, catalog, output)
 
     assert not output.exists()
+
+
+def test_entry_point_formats_preserve_distinct_targets_and_precedence() -> None:
+    """Merge formats by full identity, giving duplicate declarations TOML provenance."""
+    from packagetest.nightly_source import _entry_points_from_text
+
+    setup_cfg = '''[entry_points]
+console-scripts =
+    # ignored comment
+    incomplete
+    demo = demo.cli:main
+    legacy = demo.cli:old
+'''
+    pyproject = '''[project.scripts]
+demo = "demo.cli:main"
+legacy = "demo.cli:new"
+'''
+    entries = _entry_points_from_text(setup_cfg, pyproject)
+
+    assert entries == [
+        {'group': 'console_scripts', 'name': 'demo', 'target': 'demo.cli:main',
+         'declared_in': 'pyproject.toml'},
+        {'group': 'console_scripts', 'name': 'legacy', 'target': 'demo.cli:new',
+         'declared_in': 'pyproject.toml'},
+        {'group': 'console_scripts', 'name': 'legacy', 'target': 'demo.cli:old',
+         'declared_in': 'setup.cfg'},
+    ]
+
+
+def test_autopkgtest_adaptation_preserves_dangling_config_and_other_tests(tmp_path: Path) -> None:
+    """A generated import must not replace a symlink or relax unrelated tests."""
+    from packagetest.nightly_source import autopkgtest_packaging_adjustments
+
+    tests = tmp_path / 'debian/tests'
+    tests.mkdir(parents=True)
+    (tmp_path / 'debian/control').write_text('Source: python-demo\n')
+    metadata = tmp_path / 'demo.egg-info'
+    metadata.mkdir()
+    (metadata / 'top_level.txt').write_text('actual_import\n')
+    config = tests / 'autopkgtest-pkg-python.conf'
+    config.symlink_to('missing-user-configuration')
+    control = tests / 'control'
+    control.write_text(
+        'Test-Command: python3 -c "import demo; print(demo.__version__)"\n'
+        'Restrictions: superficial\n\n'
+        'Test-Command: python3 -m unittest\nRestrictions: isolation-container\n')
+
+    actions = autopkgtest_packaging_adjustments({'source': 'python-demo'}, tmp_path)
+
+    assert [action['action'] for action in actions] == ['allow-superficial-version-warning']
+    assert config.is_symlink()
+    assert config.readlink() == Path('missing-user-configuration')
+    assert 'Restrictions: superficial, allow-stderr\n' in control.read_text()
+    assert control.read_text().endswith('Restrictions: isolation-container\n')
+    assert autopkgtest_packaging_adjustments({'source': 'python-demo'}, tmp_path) == []

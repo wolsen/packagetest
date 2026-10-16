@@ -39,16 +39,20 @@ relationship replanning after repairs remains a limitation.
 | Advisory release planning | `cli`, `planner.DependencyOrder`, `release_discovery.OpenStackReleaseResolver` | User configuration to advisory plan |
 | Release metadata parsing | `SeriesStatusParser`, `DeliverableReleaseParser` | Ordered metadata fields to series and release identities |
 | Catalog construction | `catalog.ArchiveSelection`, `CatalogBuilder` | Archive priority and release membership to transitive package closure |
+| Packaging selection | `nightly_plan.PackagingResolution` | Ordered repository attempts to a pinned Git or published-source choice |
 | Source discovery | `nightly_plan.SourceDiscovery` | Catalog roots to pinned upstream dependency closure |
 | Requirement mapping | `upstream_dependencies.RequirementMapper` | One consumer’s source/binary provider evidence to candidate dependencies |
 | Nightly scheduling | `nightly_plan.CatalogScheduler`, `final_plan`, `prepared_plan.DependencyPlan` | Selected catalog and prepared metadata to dependency waves |
 | Plan publication | `nightly_plan.PlanPublisher` | Catalog and plan to hashed artifacts and workflow summaries |
+| Prepared dependency resolution | `prepared_plan.ExactDependencyResolver` | Ordered candidate providers and archive evidence to exact dependency choices |
 | Dependency syntax | `relations.BuildContext`, `DependencyRelation` | Target-aware restriction evaluation |
 | JSON identity | `contracts.BuildTarget`, `PreparedSource` | Validated immutable identity records |
 | Source orchestration | `nightly_source.SourcePreparer` | One workspace, command log, and preparation result |
+| Packaging checkout | `nightly_source.PackagingFetcher` | Pinned commit fetch with bounded host-specific retries |
 | Quilt policy | `patches` | Evidence for applied patches and review suggestions |
 | Quilt refresh | `failure_analysis.QuiltSection`, `QuiltPayload`, `QuiltSectionRefresh` | Validated sections, payload evidence, and isolated application probes |
 | Locked execution | `locked.LockedBuild`, `commands.CommandRunner` | Lock to validated source/binary artifacts |
+| Process capture | `commands.CommandCapture` | Process lifetime, deadline, output streams, and bounded log tails |
 | Artifact handoff | `handoff.ProducerBundle`, `ProducerRepository`, `collect_producers` | Same-run producer identity, readiness, and byte verification |
 | Remediation evidence | `remediation_evidence` | Ordered, bounded logs and source excerpts |
 | Package remediation | `ProposalPlanner`, `CandidateExecutor`, `ArtifactPromoter` | Validated decisions, isolated build/test gates, and canonical artifact replacement |
@@ -87,6 +91,13 @@ success alone does not authorize downstream handoff; see the
 Packaging Git commits and source checksums are pinned before execution.
 Generated sdists use pinned build tools and normalized archive headers.
 Fallback packaging sources and their reasons are recorded explicitly.
+
+`SourcePreparer` keeps the preparation stages in one workspace: validate the
+plan, select packaging, materialize upstream, generate the snapshot, preserve
+supplementary archives, adapt packaging, and validate the generated source
+package. Each stage records evidence in the same resolution report, so a later
+failure retains earlier decisions. Entry-point, dependency, and autopkgtest
+adaptations have separate policies and contribute to the reviewable proposal.
 
 Quilt identifier overlap is advisory. It never comments out a patch in `series`.
 A failed active patch continues to fail source validation. Existing reverse-apply

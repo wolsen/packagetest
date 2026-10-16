@@ -93,37 +93,8 @@ def _is_permanent_launchpad_fetch_error(error: Exception) -> bool:
 
 def _entry_points_from_text(setup_cfg: str | None, pyproject: str | None) -> list[dict]:
     """Return statically declared Python entry points in a stable form."""
-    result = []
-    if setup_cfg:
-        parser = configparser.ConfigParser(interpolation=None)
-        try:
-            parser.read_string(setup_cfg)
-        except configparser.Error as exc:
-            raise ValueError(f'Invalid setup.cfg while inspecting entry points: {exc}') from exc
-        if parser.has_section('entry_points'):
-            for group, value in parser.items('entry_points'):
-                for line in value.splitlines():
-                    line = line.strip()
-                    if line and not line.startswith('#') and '=' in line:
-                        name, target = (part.strip() for part in line.split('=', 1))
-                        result.append({'group': group.replace('-', '_'), 'name': name,
-                                       'target': target, 'declared_in': 'setup.cfg'})
-    if pyproject:
-        try:
-            project = tomllib.loads(pyproject).get('project', {})
-        except tomllib.TOMLDecodeError as exc:
-            raise ValueError(f'Invalid pyproject.toml while inspecting entry points: {exc}') from exc
-        groups = {
-            'console_scripts': project.get('scripts', {}),
-            'gui_scripts': project.get('gui-scripts', {}),
-            **project.get('entry-points', {}),
-        }
-        for group, declarations in groups.items():
-            if not isinstance(declarations, dict):
-                continue
-            for name, target in declarations.items():
-                result.append({'group': group.replace('-', '_'), 'name': name,
-                               'target': str(target), 'declared_in': 'pyproject.toml'})
+    result = _setup_entry_points(setup_cfg)
+    result.extend(_project_entry_points(pyproject))
     unique = {(item['group'], item['name'], item['target']): item for item in result}
     return [unique[key] for key in sorted(unique)]
 
@@ -191,16 +162,9 @@ def _official_commit_delta(entry: dict, checkout: Path, selected: dict) -> dict:
             'official_tag_resolution': 'target-archive-package-absent',
             'comparison_archive_pocket': None,
         }
+
     archive_upstream = _archive_upstream_version(comparison_version)
-    from .versioning import upstream_version_to_debian_version
-    tags = subprocess.run(
-        ['git', '-C', str(checkout), 'tag', '--merged', selected['sha']],
-        text=True, capture_output=True, check=True).stdout.splitlines()
-    matches = []
-    for tag in tags:
-        normalized = upstream_version_to_debian_version(tag).rsplit('-', 1)[0]
-        if normalized == archive_upstream:
-            matches.append(tag)
+    matches = _matching_archive_tags(checkout, selected, archive_upstream)
     if len(matches) == 1:
         tag = matches[0]
         tag_sha = subprocess.check_output(
@@ -215,6 +179,7 @@ def _official_commit_delta(entry: dict, checkout: Path, selected: dict) -> dict:
             'comparison_archive_pocket': entry.get('comparison_archive_pocket'),
             'count': len(commits), 'commits': commits,
         }
+
     # Some Ubuntu versions contain repacks or post-release snapshots for which
     # no unique upstream tag exists. Preserve a useful, explicitly qualified
     # delta rather than presenting the nearest tag as the official baseline.
@@ -243,46 +208,12 @@ def source_evolution(entry: dict, checkout: Path, selected: dict, tree: Path) ->
     old_keys = {(item['group'], item['name'], item['target']) for item in baseline}
     introduced = [item for item in candidate
                   if (item['group'], item['name'], item['target']) not in old_keys]
-    executable_groups = {'console_scripts', 'gui_scripts', 'wsgi_scripts'}
-    old_commands = {item['name'] for item in baseline if item['group'] in executable_groups}
     debian = tree / 'debian'
-    existing_owners = {owner for command in old_commands
-                       for owner in _manifest_owners(debian, f'usr/bin/{command}')}
+    existing_owners = _existing_command_owners(baseline, debian)
     actions = []
     findings = []
     for item in introduced:
-        finding = {**item, 'kind': ('command-or-service' if item['group'] in executable_groups
-                                    else 'plugin-entry-point'),
-                   'human_binary_package_review_required': True}
-        if item['group'] in executable_groups:
-            installed_path = f"usr/bin/{item['name']}"
-            owners = _manifest_owners(debian, installed_path)
-            finding['installed_path'] = installed_path
-            if owners:
-                finding.update(packaging='already-covered',
-                               owning_manifests=[path.name for path in owners])
-            elif len(existing_owners) == 1:
-                owner = next(iter(existing_owners))
-                with owner.open('a') as stream:
-                    if owner.stat().st_size and not owner.read_text().endswith('\n'):
-                        stream.write('\n')
-                    stream.write(installed_path + '\n')
-                finding.update(packaging='assigned-to-existing-binary',
-                               owning_manifests=[owner.name])
-                actions.append({
-                    'action': 'install-new-upstream-command',
-                    'name': item['name'], 'entry_point_group': item['group'],
-                    'target': item['target'], 'installed_path': installed_path,
-                    'manifest': owner.name,
-                    'reason': ('A new upstream executable was not covered by packaging; '
-                               'existing commands identify one unambiguous binary owner.'),
-                    'human_binary_package_review_required': True,
-                })
-            else:
-                finding.update(packaging='human-decision-required',
-                               candidate_manifests=sorted(path.name for path in existing_owners))
-        else:
-            finding['packaging'] = 'included-with-python-metadata'
+        finding = _entry_point_finding(item, debian, existing_owners, actions)
         findings.append(finding)
 
     commit_delta = _official_commit_delta(entry, checkout, selected)
@@ -292,97 +223,51 @@ def source_evolution(entry: dict, checkout: Path, selected: dict, tree: Path) ->
 
 
 def write_source_evolution(report: dict, destination: Path) -> None:
+    """Write machine-readable evolution evidence and its human review summary."""
     destination.mkdir(parents=True, exist_ok=True)
     (destination / 'source-evolution.json').write_text(json.dumps(report, indent=2) + '\n')
     delta = report['commit_delta']
     lines = [f"## {report['source']} upstream evolution", '']
-    if delta['basis'] == 'no-target-archive-baseline':
-        lines.append('No official package exists in the target archive, so an official '
-                     'commit delta cannot be calculated yet.')
-    else:
-        lines.append(f"{delta['count']} commits since `{delta['comparison_tag']}` "
-                     f"({delta['basis'].replace('-', ' ')}).")
-    if (delta['basis'] != 'no-target-archive-baseline'
-            and not delta['comparison_tag_matches_archive_version']):
-        lines.extend(['', f"Archive upstream version `{delta['archive_upstream_version']}` did not "
-                      'match that tag; verify the official-package baseline.'])
+    _evolution_baseline_lines(delta, lines)
     if delta['commits']:
         lines.extend(['', '| Commit | Subject |', '|---|---|'])
         lines.extend(f"| `{item['sha'][:12]}` | {item['subject'].replace('|', '&#124;')} |"
                      for item in delta['commits'])
-    introduced = report['introduced_entry_points']
-    if introduced:
-        lines.extend(['', '### New commands, services, and entry points', '',
-                      'Human review is required to decide whether any item needs a new binary package.', '',
-                      '| Group | Name | Packaging |', '|---|---|---|'])
-        lines.extend(f"| `{item['group']}` | `{item['name']}` | {item['packaging']} |"
-                     for item in introduced)
-    else:
-        lines.extend(['', 'No new statically declared entry points were detected.'])
+
+    _evolution_entry_lines(report, lines)
     (destination / 'source-evolution.md').write_text('\n'.join(lines) + '\n')
 
 
 class SourcePreparer:
-    def __init__(self, destination: Path):
+    """Own one isolated source-preparation workspace and its failure evidence."""
+
+    def __init__(self, destination: Path) -> None:
+        """Create a fresh destination and command log for source preparation."""
         self.root = destination.resolve()
         self.root.mkdir(parents=True, exist_ok=False)
         self.work = self.root / 'work'
         self.work.mkdir()
         self.runner = CommandRunner(self.root / 'logs' / 'commands.jsonl', stream=True, timeout=1800)
 
-    def command(self, *args, cwd=None, env=None):
+    def command(self, *args: str, cwd: Path | None = None, env: dict | None = None) -> str:
+        """Run a preparation command and return its complete captured stdout."""
         result = self.runner.run(list(args), cwd or self.work, env_diff=env)
         if result.exit_code:
             raise RuntimeError(f'{args[0]} failed ({result.exit_code}): {result.stderr[-2000:]}')
-        return (self.runner.log_path.parent / f'{self.runner.sequence:04d}.stdout.log').read_text().strip()
 
+        return (self.runner.log_path.parent / f'{self.runner.sequence:04d}.stdout.log').read_text().strip()
 
     def prepare(self, entry: dict, *, cutoff: str | None = None,
                 remediation_patch: Path | None = None, target: dict | None = None) -> dict:
         """Prepare one source, retaining resolution and command evidence on failure."""
-        build = self
         report = {'source': entry['source'], 'status': 'PREPARING', 'catalog_entry': entry}
-        report_path = build.root / 'resolution.json'
+        report_path = self.root / 'resolution.json'
         try:
-            if (entry.get('discovery_error') or entry.get('upstream_resolution_error') or
-                    entry.get('upstream_dependency_resolution_error')):
-                raise ValueError(entry.get('discovery_error') or entry.get('upstream_resolution_error') or
-                                 entry['upstream_dependency_resolution_error'])
-            if not re.fullmatch(r'[a-f0-9]{40}', entry.get('upstream_sha', '')):
-                raise ValueError('Source preparation requires a plan-pinned upstream_sha')
+            self._validate_entry(entry)
             source = entry['source']
-            baseline_dsc = None
-            if entry.get('packaging_source_kind') == 'git':
-                try:
-                    packaging_tree, packaging_source = checkout_packaging_tree(build, entry)
-                except PackagingIdentityMismatch as error:
-                    if not _can_use_published_source_fallback(entry):
-                        raise
-                    rejected = {
-                        'kind': 'git',
-                        'role': entry.get('packaging_source_role'),
-                        'repository': entry.get('packaging_source_repository'),
-                        'branch': entry.get('packaging_branch'),
-                        'sha': entry.get('packaging_sha'),
-                        'reason': str(error),
-                    }
-                    shutil.rmtree(build.work / 'packaging')
-                    packaging_tree, baseline_dsc, packaging_source = extract_archive_packaging(
-                        build, entry)
-                    packaging_source['rejected_git_source'] = rejected
-            else:
-                packaging_tree, baseline_dsc, packaging_source = extract_archive_packaging(build, entry)
+            packaging_tree, baseline_dsc, packaging_source = self._packaging_source(entry)
             report['packaging_source'] = packaging_source
-            checkout = build.work / 'upstream-discovery'
-            build.command('git', 'clone', '--no-checkout', entry['upstream_repository'], str(checkout))
-            # Stable branch is chosen in the catalog from release declarations. A
-            # deleted/missing declared branch is an error, never a master fallback.
-            build.command('git', 'cat-file', '-e', entry['upstream_sha'] + '^{commit}', cwd=checkout)
-            build.command('git', 'update-ref', 'refs/remotes/origin/packagetest-frozen', entry['upstream_sha'], cwd=checkout)
-            selected = select_commit(build, checkout, 'packagetest-frozen', None)
-            selected.update(ref=entry['upstream_ref'], cutoff=cutoff)
-            if selected['sha'] != entry['upstream_sha']:
-                raise ValueError('Source preparation changed the plan-pinned upstream SHA')
+            checkout, selected = self._select_upstream(entry, cutoff)
             upstream = selected['upstream_version']
             target = target or {}
             revision_suffix = target.get('debian_revision_suffix', '-0ubuntu1~hibiscus1')
@@ -390,32 +275,16 @@ class SourcePreparer:
             openstack_series = target.get('openstack_series', '2026.2')
             version = snapshot_debian_version(entry['archive_version'], upstream,
                                               revision_suffix)
-            build.command('dpkg', '--compare-versions', version, 'gt', entry['archive_version'])
-            orig = build.root / f'{source}_{upstream}.orig.tar.gz'
-            if entry.get('snapshot_backend') == 'git-archive':
-                snapshot = git_archive(build, checkout, selected, orig, source)
-            else:
-                snapshot_spec = {**selected, 'repository': entry['upstream_repository'],
-                                 'build_requirements': BUILD_REQUIREMENTS + (SCM_REQUIREMENTS if entry.get('snapshot_version_backend') == 'setuptools-scm' else []),
-                                 'version_backend': entry.get('snapshot_version_backend', 'pbr'), 'archive_format': 'portable-v1'}
-                snapshot = build_snapshot(build, {'source': source, 'input': {'snapshot': snapshot_spec, 'upstream_version': upstream}}, orig)
-            tree = build.root / f'{source}-{upstream}'
+            self.command('dpkg', '--compare-versions', version, 'gt', entry['archive_version'])
+            orig = self.root / f'{source}_{upstream}.orig.tar.gz'
+            snapshot = self._snapshot_archive(entry, checkout, selected, orig, source, upstream)
+            tree = self.root / f'{source}-{upstream}'
             extract_snapshot(orig, tree)
-            if baseline_dsc is not None:
-                report['supplementary_orig_components'] = preserve_orig_components(
-                    baseline_dsc, source, upstream, tree, build.root)
-            else:
-                report['supplementary_orig_components'] = preserve_catalog_orig_components(
-                    build, entry, upstream, tree, build.root)
-            if (tree / 'debian').exists():
-                raise ValueError('Upstream snapshot unexpectedly contains Debian packaging')
-            shutil.copytree(packaging_tree / 'debian', tree / 'debian', symlinks=True)
-            ubuntu_maintainer(tree / 'debian' / 'control')
-            proposal_baseline = build.work / 'packaging-proposal-baseline'
-            shutil.copytree(tree / 'debian', proposal_baseline, symlinks=True)
+            self._preserve_components(entry, baseline_dsc, source, upstream, tree, report)
+            proposal_baseline = self._copy_packaging(packaging_tree, tree)
             evolution, evolution_actions = source_evolution(entry, checkout, selected, tree)
             report['source_evolution'] = evolution
-            write_source_evolution(evolution, build.root / 'packaging-proposal')
+            write_source_evolution(evolution, self.root / 'packaging-proposal')
             report['packaging_adjustments'] = integrated_upstream_patches(
                 tree, checkout, selected['sha'])
             report['packaging_adjustments'].extend(already_applied_patches(tree))
@@ -425,41 +294,14 @@ class SourcePreparer:
             report['packaging_adjustments'].extend(setuptools_discovery_adjustments(tree))
             report['packaging_adjustments'].extend(autopkgtest_packaging_adjustments(entry, tree))
             report['packaging_adjustments'].extend(evolution_actions)
-            if remediation_patch is not None:
-                from .failure_analysis import validate_source_patch
-                patch = remediation_patch.read_text()
-                validation = validate_source_patch(patch, tree, apply=True)
-                if validation['result'] != 'APPLIED':
-                    raise ValueError('Remediation patch rejected: ' + validation['error'])
-                report['remediation'] = {
-                    'patch_file': remediation_patch.name,
-                    'patch_sha256': validation['patch_sha256'],
-                    'paths': validation['paths'],
-                }
-                report['packaging_adjustments'].append({
-                    'action': 'local-ai-remediation',
-                    'patch_file': remediation_patch.name,
-                    'patch_sha256': validation['patch_sha256'],
-                    'paths': validation['paths'],
-                })
+            self._apply_remediation(remediation_patch, tree, report)
             proposal = write_packaging_proposal(
-                entry, proposal_baseline, tree, build.root / 'packaging-proposal',
+                entry, proposal_baseline, tree, self.root / 'packaging-proposal',
                 report['packaging_adjustments'])
             if proposal:
                 report['packaging_proposal'] = proposal
-            build.command('dch', '--newversion', version, '--distribution', distribution,
-                          '--force-distribution',
-                          f'Nightly OpenStack {openstack_series} snapshot from pinned upstream commit '
-                          + selected['sha'] + '.',
-                          cwd=tree, env={'DEBFULLNAME': 'Packaging Build Agent', 'DEBEMAIL': 'packaging-agent@example.invalid'})
-            build.command('dpkg-buildpackage', '-S', '-d', '-nc', '-us', '-uc', cwd=tree,
-                          env={'SOURCE_DATE_EPOCH': selected['commit_timestamp']})
-            dscs = list(build.root.glob('*.dsc'))
-            if len(dscs) != 1:
-                raise ValueError('Expected exactly one generated Debian source package')
-            verify_source(dscs[0], source, version)
-            validation_tree = build.work / 'source-package-validation'
-            build.command('dpkg-source', '-x', str(dscs[0]), str(validation_tree))
+
+            dscs = self._build_source_package(tree, source, version, distribution, openstack_series, selected)
             report.update(status='PREPARED', version=version, snapshot=snapshot,
                           dsc=str(dscs[0]), dsc_sha256=sha256(dscs[0]),
                           prepared_at=datetime.now(timezone.utc).isoformat())
@@ -470,6 +312,129 @@ class SourcePreparer:
             report.update(status='FAILED', error=str(error))
             report_path.write_text(json.dumps(report, indent=2) + '\n')
             raise
+
+    def _validate_entry(self, entry: dict) -> None:
+        """Reject discovery failures and require a full pinned upstream commit."""
+        for field in ('discovery_error', 'upstream_resolution_error',
+                      'upstream_dependency_resolution_error'):
+            if entry.get(field):
+                raise ValueError(entry[field])
+
+        if not re.fullmatch(r'[a-f0-9]{40}', entry.get('upstream_sha', '')):
+            raise ValueError('Source preparation requires a plan-pinned upstream_sha')
+
+    def _packaging_source(self, entry: dict) -> tuple[Path, Path | None, dict]:
+        """Choose pinned Git packaging or an explicitly permitted published fallback."""
+        baseline_dsc = None
+        if entry.get('packaging_source_kind') == 'git':
+            try:
+                packaging_tree, packaging_source = checkout_packaging_tree(self, entry)
+            except PackagingIdentityMismatch as error:
+                if not _can_use_published_source_fallback(entry):
+                    raise
+
+                rejected = {
+                    'kind': 'git',
+                    'role': entry.get('packaging_source_role'),
+                    'repository': entry.get('packaging_source_repository'),
+                    'branch': entry.get('packaging_branch'),
+                    'sha': entry.get('packaging_sha'),
+                    'reason': str(error),
+                }
+                shutil.rmtree(self.work / 'packaging')
+                packaging_tree, baseline_dsc, packaging_source = extract_archive_packaging(
+                    self, entry)
+                packaging_source['rejected_git_source'] = rejected
+        else:
+            packaging_tree, baseline_dsc, packaging_source = extract_archive_packaging(self, entry)
+
+        return packaging_tree, baseline_dsc, packaging_source
+
+    def _select_upstream(self, entry: dict, cutoff: str | None) -> tuple[Path, dict]:
+        """Materialize the pinned upstream commit and verify selection preserves its identity."""
+        checkout = self.work / 'upstream-discovery'
+        self.command('git', 'clone', '--no-checkout', entry['upstream_repository'], str(checkout))
+        # Stable branch is chosen in the catalog from release declarations. A
+        # deleted/missing declared branch is an error, never a master fallback.
+        self.command('git', 'cat-file', '-e', entry['upstream_sha'] + '^{commit}', cwd=checkout)
+        self.command('git', 'update-ref', 'refs/remotes/origin/packagetest-frozen', entry['upstream_sha'], cwd=checkout)
+        selected = select_commit(self, checkout, 'packagetest-frozen', None)
+        selected.update(ref=entry['upstream_ref'], cutoff=cutoff)
+        if selected['sha'] != entry['upstream_sha']:
+            raise ValueError('Source preparation changed the plan-pinned upstream SHA')
+
+        return checkout, selected
+
+    def _snapshot_archive(self, entry: dict, checkout: Path, selected: dict, orig: Path, source: str, upstream: str) -> dict:
+        """Generate the configured snapshot from the verified upstream selection."""
+        if entry.get('snapshot_backend') == 'git-archive':
+            snapshot = git_archive(self, checkout, selected, orig, source)
+        else:
+            snapshot_spec = {**selected, 'repository': entry['upstream_repository'],
+                             'build_requirements': BUILD_REQUIREMENTS + (SCM_REQUIREMENTS if entry.get('snapshot_version_backend') == 'setuptools-scm' else []),
+                             'version_backend': entry.get('snapshot_version_backend', 'pbr'), 'archive_format': 'portable-v1'}
+            snapshot = build_snapshot(self, {'source': source, 'input': {'snapshot': snapshot_spec, 'upstream_version': upstream}}, orig)
+
+        return snapshot
+
+    def _preserve_components(self, entry: dict, baseline_dsc: Path | None, source: str, upstream: str, tree: Path, report: dict) -> None:
+        """Preserve supplementary archives from the selected packaging source."""
+        if baseline_dsc is not None:
+            report['supplementary_orig_components'] = preserve_orig_components(
+                baseline_dsc, source, upstream, tree, self.root)
+        else:
+            report['supplementary_orig_components'] = preserve_catalog_orig_components(
+                self, entry, upstream, tree, self.root)
+
+    def _copy_packaging(self, packaging_tree: Path, tree: Path) -> Path:
+        """Install Debian packaging and retain its pre-adaptation proposal baseline."""
+        if (tree / 'debian').exists():
+            raise ValueError('Upstream snapshot unexpectedly contains Debian packaging')
+
+        shutil.copytree(packaging_tree / 'debian', tree / 'debian', symlinks=True)
+        ubuntu_maintainer(tree / 'debian' / 'control')
+        proposal_baseline = self.work / 'packaging-proposal-baseline'
+        shutil.copytree(tree / 'debian', proposal_baseline, symlinks=True)
+        return proposal_baseline
+
+    def _apply_remediation(self, remediation_patch: Path | None, tree: Path, report: dict) -> None:
+        """Apply only a validated source repair and retain its patch identity."""
+        if remediation_patch is not None:
+            from .failure_analysis import validate_source_patch
+            patch = remediation_patch.read_text()
+            validation = validate_source_patch(patch, tree, apply=True)
+            if validation['result'] != 'APPLIED':
+                raise ValueError('Remediation patch rejected: ' + validation['error'])
+
+            report['remediation'] = {
+                'patch_file': remediation_patch.name,
+                'patch_sha256': validation['patch_sha256'],
+                'paths': validation['paths'],
+            }
+            report['packaging_adjustments'].append({
+                'action': 'local-ai-remediation',
+                'patch_file': remediation_patch.name,
+                'patch_sha256': validation['patch_sha256'],
+                'paths': validation['paths'],
+            })
+
+    def _build_source_package(self, tree: Path, source: str, version: str, distribution: str, openstack_series: str, selected: dict) -> list[Path]:
+        """Build one source package and validate its identity and extractability."""
+        self.command('dch', '--newversion', version, '--distribution', distribution,
+                      '--force-distribution',
+                      f'Nightly OpenStack {openstack_series} snapshot from pinned upstream commit '
+                      + selected['sha'] + '.',
+                      cwd=tree, env={'DEBFULLNAME': 'Packaging Build Agent', 'DEBEMAIL': 'packaging-agent@example.invalid'})
+        self.command('dpkg-buildpackage', '-S', '-d', '-nc', '-us', '-uc', cwd=tree,
+                      env={'SOURCE_DATE_EPOCH': selected['commit_timestamp']})
+        dscs = list(self.root.glob('*.dsc'))
+        if len(dscs) != 1:
+            raise ValueError('Expected exactly one generated Debian source package')
+
+        verify_source(dscs[0], source, version)
+        validation_tree = self.work / 'source-package-validation'
+        self.command('dpkg-source', '-x', str(dscs[0]), str(validation_tree))
+        return dscs
 
 
 def download_verified(url: str, destination: Path, digest: str,
@@ -524,21 +489,12 @@ def ubuntu_maintainer(control: Path) -> None:
 def _add_control_dependency(text: str, field: str, package: str) -> str:
     """Insert one unversioned dependency into a multiline control field."""
     lines = text.splitlines(keepends=True)
-    start = next((index for index, line in enumerate(lines) if line.startswith(field + ':')), None)
-    if start is None:
-        raise ValueError(f'control paragraph has no {field} field')
-    end = start + 1
-    while end < len(lines) and lines[end].startswith((' ', '\t')):
-        end += 1
+    start, end = _control_field_bounds(lines, field)
     current = ''.join(lines[start:end])
     if re.search(rf'(?<![A-Za-z0-9+.-]){re.escape(package)}(?![A-Za-z0-9+.-])', current):
         return text
-    insert = end
-    for index in range(start + 1, end):
-        token = lines[index].strip().split(maxsplit=1)[0].rstrip(',') if lines[index].strip() else ''
-        if token.startswith('${') or token.lower() > package:
-            insert = index
-            break
+
+    insert = _dependency_insert_position(lines, start, end, package)
     lines.insert(insert, f' {package},\n')
     return ''.join(lines)
 
@@ -554,60 +510,26 @@ def upstream_dependency_adjustments(entry: dict, tree: Path) -> list[dict]:
     normal rebuild and autopkgtest gates.
     """
     records = entry.get('upstream_dependency_requirements', [])
-    usable = [record for record in records
-              if record.get('kind') in {'test', 'build-system'}
-              and record.get('archive_binary') and record.get('archive_satisfies') is True]
+    usable = _usable_dependency_records(records)
     if not usable:
         return []
+
     path = tree / 'debian' / 'control'
     before = path.read_text()
     paragraphs = re.split(r'(\n\s*\n)', before)
     source = paragraphs[0]
     build_field = 'Build-Depends-Indep' if 'Build-Depends-Indep:' in source else 'Build-Depends'
-    build_values = []
-    lines = source.splitlines()
-    for index, line in enumerate(lines):
-        if not re.match(r'^Build-Depends(?:-Indep|-Arch)?:', line):
-            continue
-        value = line.split(':', 1)[1]
-        cursor = index + 1
-        while cursor < len(lines) and lines[cursor].startswith((' ', '\t')):
-            value += '\n' + lines[cursor].strip()
-            cursor += 1
-        build_values.append(value)
-    build_names = dependency_names(', '.join(build_values))
+    build_names = _existing_build_dependencies(source)
     actions = []
-    grouped: dict[str, list[dict]] = {}
-    for record in usable:
-        grouped.setdefault(record['archive_binary'], []).append(record)
+    grouped = _group_archive_requirements(usable)
     for package, requirements in sorted(grouped.items()):
-        kinds = {record['kind'] for record in requirements}
-        scopes = []
-        if package not in build_names:
-            field = 'Build-Depends' if 'build-system' in kinds else build_field
-            source = _add_control_dependency(source, field, package)
-            build_names.add(package)
-            scopes.append('build')
-        if scopes:
-            evidence = sorted({
-                f"{record['file']}:{record['line']} {record['requirement']}"
-                for record in requirements
-            })
-            actions.append({
-                'action': 'add-upstream-dependency',
-                'package': package,
-                'source': requirements[0]['archive_source'],
-                'archive_version': requirements[0]['archive_version'],
-                'requirement_kinds': sorted(kinds),
-                'scopes': scopes,
-                'evidence': evidence,
-                'reason': ('Pinned upstream dependency is absent from Debian packaging; '
-                           'the Ubuntu archive version satisfies the declared constraint.'),
-            })
+        source = _add_archive_dependency(source, package, requirements, build_names, build_field, actions)
+
     paragraphs[0] = source
     revised = ''.join(paragraphs)
     if revised != before:
         path.write_text(revised)
+
     return actions
 
 
@@ -862,58 +784,8 @@ def autopkgtest_packaging_adjustments(entry: dict, tree: Path) -> list[dict]:
     actions = []
     tests = tree / 'debian' / 'tests'
     control = tests / 'control'
-    if control.is_file():
-        before = control.read_text()
-        blocks = re.split(r'(\n\s*\n)', before)
-        changed = []
-        for index in range(0, len(blocks), 2):
-            block = blocks[index]
-            if 'Test-Command:' not in block or '.__version__' not in block:
-                continue
-            restrictions = re.search(r'(?m)^Restrictions:\s*(.*)$', block)
-            if restrictions and 'allow-stderr' not in {
-                    item.strip() for item in restrictions.group(1).split(',')}:
-                replacement = restrictions.group(0) + ', allow-stderr'
-                blocks[index] = block[:restrictions.start()] + replacement + block[restrictions.end():]
-                changed.append(index)
-            elif not restrictions:
-                blocks[index] = block.rstrip('\n') + '\nRestrictions: allow-stderr\n'
-                changed.append(index)
-        revised = ''.join(blocks)
-        if changed and revised != before:
-            control.write_text(revised)
-            actions.append({
-                'action': 'allow-superficial-version-warning',
-                'path': 'debian/tests/control',
-                'reason': ('A version-probe autopkgtest accesses a deprecated module attribute; '
-                           'stderr warnings do not invalidate its exit-status check.'),
-            })
-
-    source_control = fields(tree / 'debian' / 'control')
-    source = entry['source']
-    if (source_control.get('Testsuite') != 'autopkgtest-pkg-python'
-            and not re.fullmatch(r'python3?-.+', source)):
-        return actions
-    prefix = 'python3-' if source.startswith('python3-') else 'python-'
-    expected = source.removeprefix(prefix).replace('-', '_')
-    names = set()
-    for top_level in tree.glob('*.egg-info/top_level.txt'):
-        names.update(line.strip() for line in top_level.read_text().splitlines()
-                     if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', line.strip()))
-    if expected in names or len(names) != 1:
-        return actions
-    actual = next(iter(names))
-    tests.mkdir(parents=True, exist_ok=True)
-    config = tests / 'autopkgtest-pkg-python.conf'
-    if config.exists() or config.is_symlink():
-        return actions
-    config.write_text(f'import_name = {actual}\n')
-    actions.append({
-        'action': 'set-autodep8-python-import',
-        'path': 'debian/tests/autopkgtest-pkg-python.conf',
-        'expected_import': expected, 'actual_import': actual,
-        'reason': 'The source-package-derived autodep8 import is absent from upstream metadata.',
-    })
+    actions.extend(_version_probe_adjustments(control))
+    actions.extend(_autodep8_import_adjustments(entry, tree, tests))
     return actions
 
 
@@ -1323,3 +1195,391 @@ def _active_quilt_lines(series: Path) -> list[str]:
               if line.strip() and not line.lstrip().startswith('#')] \
         if series.is_file() else []
     return active
+
+
+def _setup_entry_points(setup_cfg: str | None) -> list[dict]:
+    """Read entry points from setup.cfg without importing upstream code."""
+    result = []
+    if setup_cfg:
+        parser = configparser.ConfigParser(interpolation=None)
+        try:
+            parser.read_string(setup_cfg)
+        except configparser.Error as exc:
+            raise ValueError(f'Invalid setup.cfg while inspecting entry points: {exc}') from exc
+
+        if parser.has_section('entry_points'):
+            for group, value in parser.items('entry_points'):
+                result.extend(_setup_group_entries(group, value))
+
+    return result
+
+
+def _project_entry_points(pyproject: str | None) -> list[dict]:
+    """Read PEP 621 entry points without importing upstream code."""
+    result = []
+    if pyproject:
+        try:
+            project = tomllib.loads(pyproject).get('project', {})
+        except tomllib.TOMLDecodeError as exc:
+            raise ValueError(f'Invalid pyproject.toml while inspecting entry points: {exc}') from exc
+
+        groups = {
+            'console_scripts': project.get('scripts', {}),
+            'gui_scripts': project.get('gui-scripts', {}),
+            **project.get('entry-points', {}),
+        }
+        for group, declarations in groups.items():
+            if not isinstance(declarations, dict):
+                continue
+
+            result.extend(_project_group_entries(group, declarations))
+
+    return result
+
+
+def _setup_group_entries(group: str, value: str) -> list[dict]:
+    """Parse named declarations while ignoring comments and incomplete lines."""
+    result = []
+    for line in value.splitlines():
+        line = line.strip()
+        if line and not line.startswith('#') and '=' in line:
+            name, target = _entry_point_pair(line)
+            result.append({'group': group.replace('-', '_'), 'name': name,
+                           'target': target, 'declared_in': 'setup.cfg'})
+
+    return result
+
+
+def _entry_point_pair(line: str) -> tuple[str, str]:
+    """Split the first assignment and normalize surrounding whitespace."""
+    name, target = line.split('=', 1)
+    return name.strip(), target.strip()
+
+
+def _matching_archive_tags(checkout: Path, selected: dict, archive_upstream: str) -> list[str]:
+    """Find merged tags matching the archive upstream version exactly."""
+    from .versioning import upstream_version_to_debian_version
+    tags = subprocess.run(
+        ['git', '-C', str(checkout), 'tag', '--merged', selected['sha']],
+        text=True, capture_output=True, check=True).stdout.splitlines()
+    matches = []
+    for tag in tags:
+        normalized = upstream_version_to_debian_version(tag).rsplit('-', 1)[0]
+        if normalized == archive_upstream:
+            matches.append(tag)
+
+    return matches
+
+
+def _evolution_baseline_lines(delta: dict, lines: list[str]) -> None:
+    """Describe the comparison baseline and qualify unmatched archive versions."""
+    if delta['basis'] == 'no-target-archive-baseline':
+        lines.append('No official package exists in the target archive, so an official '
+                     'commit delta cannot be calculated yet.')
+    else:
+        lines.append(f"{delta['count']} commits since `{delta['comparison_tag']}` "
+                     f"({delta['basis'].replace('-', ' ')}).")
+
+    if (delta['basis'] != 'no-target-archive-baseline'
+            and not delta['comparison_tag_matches_archive_version']):
+        lines.extend(['', f"Archive upstream version `{delta['archive_upstream_version']}` did not "
+                      'match that tag; verify the official-package baseline.'])
+
+
+def _evolution_entry_lines(report: dict, lines: list[str]) -> None:
+    """Append entry-point review findings or the explicit empty result."""
+    introduced = report['introduced_entry_points']
+    if introduced:
+        lines.extend(['', '### New commands, services, and entry points', '',
+                      'Human review is required to decide whether any item needs a new binary package.', '',
+                      '| Group | Name | Packaging |', '|---|---|---|'])
+        lines.extend(f"| `{item['group']}` | `{item['name']}` | {item['packaging']} |"
+                     for item in introduced)
+    else:
+        lines.extend(['', 'No new statically declared entry points were detected.'])
+
+
+def _control_field_bounds(lines: list[str], field: str) -> tuple[int, int]:
+    """Locate a required control field and its continuation lines."""
+    start = next((index for index, line in enumerate(lines) if line.startswith(field + ':')), None)
+    if start is None:
+        raise ValueError(f'control paragraph has no {field} field')
+
+    end = _control_field_end(lines, start)
+    return start, end
+
+
+def _control_field_end(lines: list[str], start: int) -> int:
+    """Find the first line after a control field and its continuations."""
+    end = start + 1
+    while end < len(lines) and lines[end].startswith((' ', '\t')):
+        end += 1
+
+    return end
+
+
+def _dependency_insert_position(lines: list[str], start: int, end: int, package: str) -> int:
+    """Place concrete dependencies before substitutions in lexical order."""
+    insert = end
+    for index in range(start + 1, end):
+        token = lines[index].strip().split(maxsplit=1)[0].rstrip(',') if lines[index].strip() else ''
+        if token.startswith('${') or token.lower() > package:
+            insert = index
+            break
+
+    return insert
+
+
+def _existing_command_owners(baseline: list[dict], debian: Path) -> set[Path]:
+    """Infer candidate binary owners from previously declared executable entry points."""
+    executable_groups = {'console_scripts', 'gui_scripts', 'wsgi_scripts'}
+    old_commands = {item['name'] for item in baseline if item['group'] in executable_groups}
+    existing_owners = {owner for command in old_commands
+                       for owner in _manifest_owners(debian, f'usr/bin/{command}')}
+    return existing_owners
+
+
+def _entry_point_finding(item: dict, debian: Path, existing_owners: set[Path], actions: list[dict]) -> dict:
+    """Classify a new entry point and record conservative packaging actions."""
+    executable_groups = {'console_scripts', 'gui_scripts', 'wsgi_scripts'}
+    finding = {**item, 'kind': ('command-or-service' if item['group'] in executable_groups
+                                else 'plugin-entry-point'),
+               'human_binary_package_review_required': True}
+    if item['group'] in executable_groups:
+        _assign_command_owner(item, finding, debian, existing_owners, actions)
+    else:
+        finding['packaging'] = 'included-with-python-metadata'
+
+    return finding
+
+
+def _assign_command_owner(item: dict, finding: dict, debian: Path, existing_owners: set[Path], actions: list[dict]) -> None:
+    """Assign new commands only when existing binaries establish one owner."""
+    installed_path = f"usr/bin/{item['name']}"
+    owners = _manifest_owners(debian, installed_path)
+    finding['installed_path'] = installed_path
+    if owners:
+        finding.update(packaging='already-covered',
+                       owning_manifests=[path.name for path in owners])
+    elif len(existing_owners) == 1:
+        _install_new_command(item, finding, existing_owners, installed_path, actions)
+    else:
+        finding.update(packaging='human-decision-required',
+                       candidate_manifests=sorted(path.name for path in existing_owners))
+
+
+def _install_new_command(item: dict, finding: dict, existing_owners: set[Path], installed_path: str, actions: list[dict]) -> None:
+    """Append one unambiguous command to its manifest and retain review evidence."""
+    owner = next(iter(existing_owners))
+    with owner.open('a') as stream:
+        if owner.stat().st_size and not owner.read_text().endswith('\n'):
+            stream.write('\n')
+
+        stream.write(installed_path + '\n')
+
+    finding.update(packaging='assigned-to-existing-binary',
+                   owning_manifests=[owner.name])
+    actions.append({
+        'action': 'install-new-upstream-command',
+        'name': item['name'], 'entry_point_group': item['group'],
+        'target': item['target'], 'installed_path': installed_path,
+        'manifest': owner.name,
+        'reason': ('A new upstream executable was not covered by packaging; '
+                   'existing commands identify one unambiguous binary owner.'),
+        'human_binary_package_review_required': True,
+    })
+
+
+def _project_group_entries(group: str, declarations: dict) -> list[dict]:
+    """Normalize one PEP 621 entry-point group into review records."""
+    result = []
+    for name, target in declarations.items():
+        result.append({'group': group.replace('-', '_'), 'name': name,
+                       'target': str(target), 'declared_in': 'pyproject.toml'})
+
+    return result
+
+
+def _usable_dependency_records(records: list[dict]) -> list[dict]:
+    """Select only archive-proven test and build-system dependencies."""
+    usable = [record for record in records
+              if record.get('kind') in {'test', 'build-system'}
+              and record.get('archive_binary') and record.get('archive_satisfies') is True]
+    return usable
+
+
+def _existing_build_dependencies(source: str) -> set[str]:
+    """Read all source build dependency fields, including continuations."""
+    build_values = []
+    lines = source.splitlines()
+    for index, line in enumerate(lines):
+        if not re.match(r'^Build-Depends(?:-Indep|-Arch)?:', line):
+            continue
+
+        value = _control_field_value(lines, index, line)
+        build_values.append(value)
+
+    build_names = dependency_names(', '.join(build_values))
+    return build_names
+
+
+def _control_field_value(lines: list[str], index: int, line: str) -> str:
+    """Join one dependency field with its indented continuation lines."""
+    value = line.split(':', 1)[1]
+    cursor = index + 1
+    while cursor < len(lines) and lines[cursor].startswith((' ', '\t')):
+        value += '\n' + lines[cursor].strip()
+        cursor += 1
+
+    return value
+
+
+def _add_archive_dependency(source: str, package: str, requirements: list[dict], build_names: set[str], build_field: str, actions: list[dict]) -> str:
+    """Insert one absent archive-proven build dependency and record its evidence."""
+    kinds = {record['kind'] for record in requirements}
+    scopes = []
+    if package not in build_names:
+        field = 'Build-Depends' if 'build-system' in kinds else build_field
+        source = _add_control_dependency(source, field, package)
+        build_names.add(package)
+        scopes.append('build')
+
+    if scopes:
+        evidence = _requirement_evidence(requirements)
+        actions.append({
+            'action': 'add-upstream-dependency',
+            'package': package,
+            'source': requirements[0]['archive_source'],
+            'archive_version': requirements[0]['archive_version'],
+            'requirement_kinds': sorted(kinds),
+            'scopes': scopes,
+            'evidence': evidence,
+            'reason': ('Pinned upstream dependency is absent from Debian packaging; '
+                       'the Ubuntu archive version satisfies the declared constraint.'),
+        })
+
+    return source
+
+
+def _requirement_evidence(requirements: list[dict]) -> list[str]:
+    """Sort and deduplicate the upstream declarations supporting an adaptation."""
+    evidence = sorted({
+        f"{record['file']}:{record['line']} {record['requirement']}"
+        for record in requirements
+    })
+    return evidence
+
+
+def _version_probe_adjustments(control: Path) -> list[dict]:
+    """Allow warnings for existing superficial module-version tests only."""
+    actions = []
+    if control.is_file():
+        before = control.read_text()
+        blocks = re.split(r'(\n\s*\n)', before)
+        for index in range(0, len(blocks), 2):
+            revised_block = _version_probe_block(blocks[index])
+            if revised_block != blocks[index]:
+                blocks[index] = revised_block
+
+        revised = ''.join(blocks)
+        if revised != before:
+            control.write_text(revised)
+            actions.append({
+                'action': 'allow-superficial-version-warning',
+                'path': 'debian/tests/control',
+                'reason': ('A version-probe autopkgtest accesses a deprecated module attribute; '
+                           'stderr warnings do not invalidate its exit-status check.'),
+            })
+
+    return actions
+
+
+def _version_probe_block(block: str) -> str:
+    """Add allow-stderr to a module-version probe without altering other tests."""
+    if 'Test-Command:' not in block or '.__version__' not in block:
+        return block
+
+    block = _version_probe_restrictions(block)
+    return block
+
+
+def _version_probe_restrictions(block: str) -> str:
+    """Preserve restrictions while adding the missing warning allowance."""
+    restrictions = re.search(r'(?m)^Restrictions:\s*(.*)$', block)
+    if restrictions and 'allow-stderr' not in {
+            item.strip() for item in restrictions.group(1).split(',')}:
+        replacement = restrictions.group(0) + ', allow-stderr'
+        block = block[:restrictions.start()] + replacement + block[restrictions.end():]
+    elif not restrictions:
+        block = block.rstrip('\n') + '\nRestrictions: allow-stderr\n'
+
+    return block
+
+
+def _uses_python_autopkgtest(entry: dict, tree: Path) -> bool:
+    """Recognize explicit Python autopkgtests and conventional Python source names."""
+    source_control = fields(tree / 'debian' / 'control')
+    source = entry['source']
+    if (source_control.get('Testsuite') != 'autopkgtest-pkg-python'
+            and not re.fullmatch(r'python3?-.+', source)):
+        return False
+
+    return True
+
+
+def _top_level_imports(tree: Path) -> set[str]:
+    """Collect valid import names declared by generated egg metadata."""
+    names = set()
+    for top_level in tree.glob('*.egg-info/top_level.txt'):
+        names.update(line.strip() for line in top_level.read_text().splitlines()
+                     if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', line.strip()))
+
+    return names
+
+
+def _autodep8_import_adjustments(entry: dict, tree: Path, tests: Path) -> list[dict]:
+    """Configure autodep8 only for one unambiguous import and no existing config."""
+    actions = []
+    if not _uses_python_autopkgtest(entry, tree):
+        return actions
+
+    source = entry['source']
+    expected = _source_import_name(source)
+    names = _top_level_imports(tree)
+    if expected in names or len(names) != 1:
+        return actions
+
+    actual = next(iter(names))
+    tests.mkdir(parents=True, exist_ok=True)
+    config = tests / 'autopkgtest-pkg-python.conf'
+    if _path_occupied(config):
+        return actions
+
+    config.write_text(f'import_name = {actual}\n')
+    actions.append({
+        'action': 'set-autodep8-python-import',
+        'path': 'debian/tests/autopkgtest-pkg-python.conf',
+        'expected_import': expected, 'actual_import': actual,
+        'reason': 'The source-package-derived autodep8 import is absent from upstream metadata.',
+    })
+    return actions
+
+
+def _source_import_name(source: str) -> str:
+    """Derive the import name assumed by Debian's Python autopkgtest generator."""
+    prefix = 'python3-' if source.startswith('python3-') else 'python-'
+    return source.removeprefix(prefix).replace('-', '_')
+
+
+def _path_occupied(path: Path) -> bool:
+    """Treat dangling symlinks as occupied paths when preserving user configuration."""
+    return path.exists() or path.is_symlink()
+
+
+def _group_archive_requirements(usable: list[dict]) -> dict[str, list[dict]]:
+    """Group proven requirements by their selected binary package."""
+    grouped: dict[str, list[dict]] = {}
+    for record in usable:
+        grouped.setdefault(record['archive_binary'], []).append(record)
+
+    return grouped
