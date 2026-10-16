@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from collections import Counter
 import difflib
 import hashlib
@@ -241,40 +242,72 @@ def _replace_file_patch(path: str, before: str, after: str) -> str:
 
 
 def _normalized_context(value: str) -> str:
+    """Ignore horizontal whitespace differences when matching existing source lines."""
     return re.sub(r"[ \t]+", " ", value.strip())
 
 
-def _apply_hunks_with_normalized_context(path: Path, section: str) -> bool:
-    """Apply hunks only when their old side has one whitespace-normalized match."""
+def _hunk_payloads(section: str) -> list[list[str]]:
+    """Split unified hunks into payload lines without interpreting their declared offsets."""
     headers = list(re.finditer(r"^@@\s+[^\n]+@@[^\n]*(?:\n|$)", section, re.M))
-    if not headers:
+    ends = [header.start() for header in headers[1:]] + [len(section)]
+    return [section[header.end():end].splitlines(keepends=True) for header, end in zip(headers, ends)]
+
+
+def _hunk_operations(payload: list[str]) -> list[tuple[str, str]]:
+    """Keep context and change lines, excluding unified-diff metadata markers."""
+    return [(line[0], line[1:]) for line in payload if line and line[0] in {" ", "+", "-"}]
+
+
+def _normalized_positions(lines: list[str], old: list[str]) -> list[int]:
+    """Locate all complete whitespace-normalized matches of a nonempty old payload."""
+    if not old:
+        return []
+
+    needle = list(map(_normalized_context, old))
+    content = list(map(_normalized_context, lines))
+    width = len(needle)
+    return [start for start in range(len(content) - width + 1) if content[start:start + width] == needle]
+
+
+def _replace_hunk(lines: list[str], start: int, operations: list[tuple[str, str]]) -> None:
+    """Replay a matched hunk while retaining the source's unchanged context formatting."""
+    cursor = start
+    replacement = []
+    for operation, value in operations:
+        if operation == " ":
+            replacement.append(lines[cursor])
+            cursor += 1
+        elif operation == "-":
+            cursor += 1
+        else:
+            replacement.append(value)
+
+    lines[start:cursor] = replacement
+
+
+def _apply_normalized_hunk(lines: list[str], payload: list[str]) -> bool:
+    """Apply one hunk only when its complete old side has a unique normalized match."""
+    operations = _hunk_operations(payload)
+    old = [value for operation, value in operations if operation in {" ", "-"}]
+    positions = _normalized_positions(lines, old)
+    if len(positions) != 1:
         return False
+
+    _replace_hunk(lines, positions[0], operations)
+    return True
+
+
+def _apply_hunks_with_normalized_context(path: Path, section: str) -> bool:
+    """Write refreshed content only after every hunk matches uniquely in sequence."""
+    payloads = _hunk_payloads(section)
+    if not payloads:
+        return False
+
     lines = path.read_text(errors="replace").splitlines(keepends=True)
-    for index, header in enumerate(headers):
-        end = headers[index + 1].start() if index + 1 < len(headers) else len(section)
-        payload = section[header.end():end].splitlines(keepends=True)
-        operations = [(line[0], line[1:]) for line in payload
-                      if line and line[0] in {" ", "+", "-"}]
-        old = [value for operation, value in operations if operation in {" ", "-"}]
-        if not old:
+    for payload in payloads:
+        if not _apply_normalized_hunk(lines, payload):
             return False
-        needle = [_normalized_context(value) for value in old]
-        width = len(needle)
-        positions = [start for start in range(len(lines) - width + 1)
-                     if [_normalized_context(value) for value in lines[start:start + width]] == needle]
-        if len(positions) != 1:
-            return False
-        cursor = positions[0]
-        replacement = []
-        for operation, value in operations:
-            if operation == " ":
-                replacement.append(lines[cursor])
-                cursor += 1
-            elif operation == "-":
-                cursor += 1
-            else:
-                replacement.append(value)
-        lines[positions[0]:cursor] = replacement
+
     path.write_text("".join(lines))
     return True
 
@@ -338,47 +371,99 @@ def _remove_python_assignment(lines: list[str], removed: list[str]) -> bool:
     return True
 
 
+def _independent_groups(payload: list[str]) -> list[list[tuple[str, str]]]:
+    """Split consecutive changed lines at context boundaries, ignoring file headers."""
+    groups, current = [], []
+    for value in payload:
+        if _is_change_line(value):
+            current.append((value[0], value[1:]))
+        elif current:
+            groups.append(current)
+            current = []
+
+    if current:
+        groups.append(current)
+
+    return groups
+
+
+def _is_change_line(value: str) -> bool:
+    """Recognize added or removed payload lines without mistaking headers for edits."""
+    return bool(value) and value[0] in {"+", "-"} and not value.startswith(("+++", "---"))
+
+
+def _normalized_counts(lines: list[str]) -> Counter[str]:
+    """Count nonblank normalized payload lines for existing-addition evidence."""
+    return Counter(_normalized_context(value) for value in lines if value.strip())
+
+
+class ChangeResult(Enum):
+    """Distinguish a resolved edit from an already-present or unresolved change group."""
+
+    APPLIED = "applied"
+    ALREADY_PRESENT = "already-present"
+    UNRESOLVED = "unresolved"
+
+
+@dataclass(frozen=True)
+class QuiltChangeGroup:
+    """One contiguous set of removed and added lines within a drifted hunk."""
+
+    removed: list[str]
+    added: list[str]
+
+    @classmethod
+    def from_operations(cls, group: list[tuple[str, str]]) -> QuiltChangeGroup:
+        """Separate old and new payloads while preserving their original line endings."""
+        return cls([value for operation, value in group if operation == "-"],
+                   [value for operation, value in group if operation == "+"])
+
+    def already_present(self, lines: list[str]) -> bool:
+        """Retain the existing policy requiring every normalized addition occurrence."""
+        return _contains_payload(_normalized_counts(lines), _normalized_counts(self.added))
+
+    def remove_python_construct(self, lines: list[str]) -> bool:
+        """Permit declaration or assignment fallback only for a pure deletion group."""
+        return not self.added and (_remove_python_declaration(lines, self.removed)
+                                   or _remove_python_assignment(lines, self.removed))
+
+    def apply(self, lines: list[str]) -> ChangeResult:
+        """Prefer existing additions, then unique payload replacement, then deletion fallback."""
+        if self.already_present(lines):
+            return ChangeResult.ALREADY_PRESENT
+
+        positions = _normalized_positions(lines, self.removed)
+        if len(positions) == 1:
+            start = positions[0]
+            lines[start:start + len(self.removed)] = self.added
+            return ChangeResult.APPLIED
+
+        if self.remove_python_construct(lines):
+            return ChangeResult.APPLIED
+
+        return ChangeResult.UNRESOLVED
+
+
+def _section_change_groups(section: str) -> list[QuiltChangeGroup]:
+    """Collect independent edits in hunk order without using context as an anchor."""
+    return [QuiltChangeGroup.from_operations(group)
+            for payload in _hunk_payloads(section) for group in _independent_groups(payload)]
+
+
 def _apply_independent_change_groups(path: Path, section: str) -> bool:
-    """Apply separated hunk edits when unchanged context has moved."""
+    """Commit separated edits only when every group is resolved and at least one changes."""
     lines = path.read_text(errors="replace").splitlines(keepends=True)
     changed = False
-    headers = list(re.finditer(r"^@@\s+[^\n]+@@[^\n]*(?:\n|$)", section, re.M))
-    for index, header in enumerate(headers):
-        end = headers[index + 1].start() if index + 1 < len(headers) else len(section)
-        payload = section[header.end():end].splitlines(keepends=True)
-        groups, current = [], []
-        for value in payload:
-            if value and value[0] in {"+", "-"} and not value.startswith(("+++", "---")):
-                current.append((value[0], value[1:]))
-            elif current:
-                groups.append(current)
-                current = []
-        if current:
-            groups.append(current)
-        for group in groups:
-            removed = [value for operation, value in group if operation == "-"]
-            added = [value for operation, value in group if operation == "+"]
-            normalized_added = Counter(_normalized_context(value) for value in added if value.strip())
-            normalized_content = Counter(_normalized_context(value) for value in lines if value.strip())
-            if normalized_added and all(
-                    normalized_content[value] >= count
-                    for value, count in normalized_added.items()):
-                continue
-            needle = [_normalized_context(value) for value in removed]
-            positions = [start for start in range(len(lines) - len(needle) + 1)
-                         if needle and [_normalized_context(value)
-                                        for value in lines[start:start + len(needle)]] == needle]
-            if len(positions) == 1:
-                lines[positions[0]:positions[0] + len(removed)] = added
-                changed = True
-                continue
-            if not added and (_remove_python_declaration(lines, removed)
-                              or _remove_python_assignment(lines, removed)):
-                changed = True
-                continue
+    for group in _section_change_groups(section):
+        result = group.apply(lines)
+        if result is ChangeResult.UNRESOLVED:
             return False
+
+        changed = changed or result is ChangeResult.APPLIED
+
     if changed:
         path.write_text("".join(lines))
+
     return changed
 
 

@@ -716,3 +716,30 @@ def test_quilt_refresh_rejects_duplicate_target_sections(tmp_path):
         render_source_repair({'action': 'refresh_quilt_patch', 'subject': 'scope.patch'}, tmp_path)
 
     assert (tmp_path / 'sample').read_text() == 'old\n'
+
+
+@pytest.mark.parametrize('strategy', ['_apply_hunks_with_normalized_context', '_apply_independent_change_groups'])
+@pytest.mark.parametrize('tail', ['missing\n', 'second\nsecond\n'])
+def test_context_repair_does_not_write_partial_edits(tmp_path, strategy, tail):
+    """An absent or ambiguous later match must discard the earlier successful edit."""
+    from packagetest import failure_analysis
+
+    path = tmp_path / 'source.py'
+    before = 'first\n' + tail
+    path.write_text(before)
+    section = '@@ -1 +1 @@\n-first\n+changed-first\n@@ -3 +3 @@\n-second\n+changed-second\n'
+
+    assert getattr(failure_analysis, strategy)(path, section) is False
+    assert path.read_text() == before
+
+
+def test_normalized_repair_preserves_original_context_whitespace(tmp_path):
+    """Only changed payload lines should adopt the patch's formatting."""
+    from packagetest.failure_analysis import _apply_hunks_with_normalized_context
+
+    path = tmp_path / 'source.py'
+    path.write_text('\tcontext  value\n\told\n')
+    section = '@@ -1,2 +1,2 @@\n context value\n- old\n+    new\n'
+
+    assert _apply_hunks_with_normalized_context(path, section) is True
+    assert path.read_text() == '\tcontext  value\n    new\n'

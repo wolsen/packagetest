@@ -12,8 +12,6 @@
   "src/packagetest/contracts.py:BuildTarget.from_mapping": 7,
   "src/packagetest/contracts.py:PreparedSource.from_mapping": 8,
   "src/packagetest/failure_analysis.py:_add_control_dependency": 15,
-  "src/packagetest/failure_analysis.py:_apply_hunks_with_normalized_context": 18,
-  "src/packagetest/failure_analysis.py:_apply_independent_change_groups": 31,
   "src/packagetest/failure_analysis.py:_priority": 8,
   "src/packagetest/failure_analysis.py:_remove_python_assignment": 10,
   "src/packagetest/failure_analysis.py:_remove_python_declaration": 13,
