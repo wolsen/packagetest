@@ -1447,34 +1447,60 @@ def _tail(text: str, limit: int) -> str:
     return text if len(text) <= limit else "[earlier output omitted]\n" + text[-limit:]
 
 
-def repository_context(repository: Path, source: str, evidence: str = "", *, limit: int = 10_000) -> str:
-    """Include frozen catalog metadata for the failed source and implicated producers."""
+def _catalog_import_name(name: str) -> str:
+    """Normalize distribution punctuation to the import spelling used for catalog matching."""
+    return name.replace("-", "_").replace(".", "_")
+
+
+def _package_import_names(package: dict) -> set[str]:
+    """Collect import-like names from a catalog source and its binary packages."""
+    names = [package["source"], *package.get("binaries", [])]
+    return {_catalog_import_name(re.sub(r"^python3?-", "", name)) for name in names}
+
+
+def _implicated_sources(packages: list[dict], missing_modules: set[str]) -> list[str]:
+    """Select possible missing-module producers in frozen catalog order."""
+    implicated = []
+    missing = set(map(_catalog_import_name, missing_modules))
+    for package in packages:
+        if missing.intersection(_package_import_names(package)):
+            implicated.append(package["source"])
+
+    return implicated
+
+
+def _context_sources(catalog_path: Path, source: str, evidence: str) -> list[str]:
+    """Include implicated producers when readable evidence supports catalog matching."""
     sources = [source]
-    missing_modules = {item.split(".")[0] for item in re.findall(r"No module named ['\"]([^'\"]+)", evidence)}
-    catalog_path = repository / "nightly-plan" / "catalog.json"
-    if missing_modules and catalog_path.is_file():
+    missing = {item.split(".")[0] for item in re.findall(r"No module named ['\"]([^'\"]+)", evidence)}
+    if missing and catalog_path.is_file():
         try:
             packages = json.loads(catalog_path.read_text())["packages"]
-            implicated = []
-            for package in packages:
-                names = [package["source"], *package.get("binaries", [])]
-                normalized = {re.sub(r"^python3?-", "", name).replace("-", "_").replace(".", "_") for name in names}
-                if any(module.replace("-", "_").replace(".", "_") in normalized for module in missing_modules):
-                    implicated.append(package["source"])
-            sources = list(dict.fromkeys([*implicated, source]))
+            sources = list(dict.fromkeys([*_implicated_sources(packages, missing), source]))
         except (KeyError, TypeError, ValueError):
             pass
+
+    return sources
+
+
+def repository_context(repository: Path, source: str, evidence: str = "", *, limit: int = 10_000) -> str:
+    """Include frozen catalog metadata for the failed source and implicated producers."""
+    catalog_path = repository / "nightly-plan" / "catalog.json"
+    sources = _context_sources(catalog_path, source, evidence)
     if not catalog_path.is_file():
         return "\nNo frozen catalog metadata is available for this source.\n"
+
     try:
         packages = json.loads(catalog_path.read_text())["packages"]
         selected = [package for package in packages if package.get("source") in sources]
     except (KeyError, TypeError, ValueError):
         return "\nFrozen catalog metadata could not be read.\n"
+
     text = json.dumps(selected, indent=2, sort_keys=True)
     return text[:limit]
 
 
 def write_json(path: Path, value: object) -> None:
+    """Create parent directories and persist sorted, readable analysis evidence."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")

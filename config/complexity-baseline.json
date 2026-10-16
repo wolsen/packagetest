@@ -11,7 +11,6 @@
   "src/packagetest/commands.py:CommandRunner.run": 17,
   "src/packagetest/contracts.py:BuildTarget.from_mapping": 7,
   "src/packagetest/contracts.py:PreparedSource.from_mapping": 8,
-  "src/packagetest/failure_analysis.py:repository_context": 13,
   "src/packagetest/failure_summary.py:_print_command_trace": 13,
   "src/packagetest/failure_summary.py:summarize": 16,
   "src/packagetest/final_plan.py:exact_summary": 7,
