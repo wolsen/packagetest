@@ -34,6 +34,7 @@ def debian_upstream_version(version: str) -> str:
     value = version.split(':', 1)[-1]
     if '-' in value:
         value = value.rsplit('-', 1)[0]
+
     # Debian sorts '~' before the empty string; Python expresses the common
     # OpenStack prereleases without that separator (1.0.0rc1).
     return value.replace('~', '')
@@ -52,15 +53,24 @@ def archive_requirement_decision(requirement: str, archive_version: str) -> tupl
         parsed = Requirement(value)
     except InvalidRequirement as exc:
         return None, f'requirement is not valid PEP 508: {exc}'
+
     if parsed.url:
         return None, 'direct URL requirements cannot be satisfied from an Ubuntu version'
+
     if not parsed.specifier:
         return True, 'Ubuntu provides the mapped distribution; no version constraint was declared'
+
+    return _version_decision(parsed, archive_version)
+
+
+def _version_decision(parsed: Requirement, archive_version: str) -> tuple[bool | None, str]:
+    """Compare a parsed requirement with the archive's upstream version."""
     upstream = debian_upstream_version(archive_version)
     try:
         satisfied = parsed.specifier.contains(Version(upstream), prereleases=True)
     except InvalidVersion as exc:
         return None, f'Ubuntu upstream version {upstream!r} is not valid PEP 440: {exc}'
+
     relation = 'satisfies' if satisfied else 'does not satisfy'
     return satisfied, f'Ubuntu {archive_version} ({upstream}) {relation} {parsed.specifier}'
 
@@ -76,6 +86,7 @@ def requirement_name(requirement: str) -> str | None:
     value = requirement.strip()
     if not value or value.startswith(('#', '-')):
         return None
+
     value = re.split(r'\s+#', value, maxsplit=1)[0].strip()
     match = re.match(r'^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[|[<>=!~;@\s]|$)', value)
     return normalize_distribution(match.group(1)) if match else None
@@ -87,9 +98,11 @@ def parse_requirement_file(text: str, *, filename: str, kind: str) -> list[dict]
         value = line.strip()
         if not value or value.startswith('#'):
             continue
+
         name = requirement_name(value)
         records.append({'distribution': name, 'requirement': value, 'kind': kind,
                         'file': filename, 'line': line_number})
+
     return records
 
 
@@ -98,11 +111,14 @@ def _string_requirements(values, *, filename: str, kind: str, group: str | None 
     for index, value in enumerate(values or [], 1):
         if not isinstance(value, str):
             continue
+
         record = {'distribution': requirement_name(value), 'requirement': value,
                   'kind': kind, 'file': filename, 'line': index}
         if group:
             record['group'] = group
+
         records.append(record)
+
     return records
 
 
@@ -118,10 +134,12 @@ def parse_pyproject(text: str) -> list[dict]:
         if normalize_distribution(group) in TEST_GROUP_NAMES:
             records.extend(_string_requirements(values, filename='pyproject.toml',
                                                 kind='test', group=group))
+
     for group, values in data.get('dependency-groups', {}).items():
         if normalize_distribution(group) in TEST_GROUP_NAMES:
             records.extend(_string_requirements(values, filename='pyproject.toml',
                                                 kind='test', group=group))
+
     return records
 
 
@@ -130,31 +148,45 @@ def raw_url(repository: str, sha: str, filename: str) -> str:
     path = parsed.path.strip('/').removesuffix('.git')
     if parsed.hostname == 'opendev.org':
         return f'{parsed.scheme}://{parsed.netloc}/{path}/raw/commit/{sha}/{filename}'
+
     if parsed.hostname in {'github.com', 'www.github.com'}:
         return f'https://raw.githubusercontent.com/{path}/{sha}/{filename}'
+
     raise MetadataFetchError(f'Unsupported upstream source host for dependency metadata: {repository}')
 
 
 def fetch_optional(url: str, *, attempts: int = 3, timeout: int = 30) -> str | None:
+    """Retry transient fetch failures while treating absent files as optional."""
     request = Request(url, headers={'User-Agent': 'packagetest-dependency-planner/1'})
     for attempt in range(attempts):
         try:
-            with urlopen(request, timeout=timeout) as response:
-                return response.read().decode()
-        except HTTPError as exc:
-            if exc.code == 404:
-                return None
-            error = exc
+            return _fetch_dependency_file(request, timeout)
         except (URLError, TimeoutError, UnicodeDecodeError) as exc:
             error = exc
+
         if attempt + 1 < attempts:
             time.sleep(1 << attempt)
+
     raise MetadataFetchError(f'Failed to fetch {url}: {error}')
 
 
+def _fetch_dependency_file(request: Request, timeout: int) -> str | None:
+    """Read one metadata file, distinguishing absence from retrieval failure."""
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return response.read().decode()
+    except HTTPError as exc:
+        if exc.code == 404:
+            return None
+
+        raise
+
+
 def inspect_revision(entry: dict, *, fetch=fetch_optional) -> tuple[list[dict], list[str]]:
+    """Read available dependency metadata from the immutable upstream SHA."""
     if not entry.get('upstream_sha'):
         raise MetadataFetchError(f'{entry["source"]} has no immutable upstream SHA')
+
     records = []
     present = []
     for filename in DEPENDENCY_FILES:
@@ -162,14 +194,45 @@ def inspect_revision(entry: dict, *, fetch=fetch_optional) -> tuple[list[dict], 
         text = fetch(url)
         if text is None:
             continue
+
         present.append(filename)
-        if filename == 'requirements.txt':
-            records.extend(parse_requirement_file(text, filename=filename, kind='runtime'))
-        elif filename == 'test-requirements.txt':
-            records.extend(parse_requirement_file(text, filename=filename, kind='test'))
-        else:
-            records.extend(parse_pyproject(text))
+        records.extend(_parse_dependency_file(filename, text))
+
     return records, present
+
+
+def _parse_dependency_file(filename: str, text: str) -> list[dict]:
+    """Choose the metadata parser and requirement kind for a known file."""
+    if filename == 'requirements.txt':
+        return parse_requirement_file(text, filename=filename, kind='runtime')
+
+    if filename == 'test-requirements.txt':
+        return parse_requirement_file(text, filename=filename, kind='test')
+
+    return parse_pyproject(text)
+
+
+def _distribution_names(entry: dict) -> set[str]:
+    """Collect source, deliverable, and binary spellings for one producer."""
+    source = entry['source']
+    names = {source, entry.get('deliverable', '')}
+    for prefix in ('python-', 'python3-'):
+        if source.startswith(prefix):
+            names.add(source[len(prefix):])
+
+    for binary in entry.get('binaries', []):
+        names.update((binary, binary.removeprefix('python3-')))
+
+    return names - {''}
+
+
+def _add_source_aliases(candidates: dict[str, set[str]], packages: list[dict]) -> None:
+    """Resolve known import/distribution differences through binary providers."""
+    aliases = {'pyyaml': 'python3-yaml', 'python-dateutil': 'python3-dateutil'}
+    binary_sources = {binary: entry['source'] for entry in packages for binary in entry.get('binaries', [])}
+    for distribution, binary in aliases.items():
+        if binary in binary_sources:
+            candidates.setdefault(distribution, set()).add(binary_sources[binary])
 
 
 def distribution_source_index(packages: list[dict]) -> dict[str, str]:
@@ -177,23 +240,10 @@ def distribution_source_index(packages: list[dict]) -> dict[str, str]:
     candidates: dict[str, set[str]] = {}
     for entry in packages:
         source = entry['source']
-        names = {source, entry.get('deliverable', '')}
-        for prefix in ('python-', 'python3-'):
-            if source.startswith(prefix):
-                names.add(source[len(prefix):])
-        for binary in entry.get('binaries', []):
-            names.add(binary)
-            if binary.startswith('python3-'):
-                names.add(binary[len('python3-'):])
-        for name in names - {''}:
+        for name in _distribution_names(entry):
             candidates.setdefault(normalize_distribution(name), set()).add(source)
-    # Common Python import/distribution name differences not represented by
-    # Ubuntu's binary package spelling.
-    aliases = {'pyyaml': 'python3-yaml', 'python-dateutil': 'python3-dateutil'}
-    binary_sources = {binary: entry['source'] for entry in packages for binary in entry.get('binaries', [])}
-    for distribution, binary in aliases.items():
-        if binary in binary_sources:
-            candidates.setdefault(distribution, set()).add(binary_sources[binary])
+
+    _add_source_aliases(candidates, packages)
     return {name: next(iter(sources)) for name, sources in candidates.items() if len(sources) == 1}
 
 
@@ -204,54 +254,90 @@ def distribution_archive_index(records: list[dict]) -> dict[str, dict]:
         record = dict(original)
         distribution = normalize_distribution(record['distribution'])
         candidates.setdefault(distribution, []).append(record)
+
+    _add_archive_aliases(candidates)
+    return {name: values[0] for name, values in candidates.items()
+            if _single_archive_provider(values)}
+
+
+def _add_archive_aliases(candidates: dict[str, list[dict]]) -> None:
+    """Make known distribution aliases refer to the same archive candidates."""
     for alias, distribution in ARCHIVE_DISTRIBUTION_ALIASES.items():
         if distribution in candidates:
             candidates.setdefault(alias, []).extend(candidates[distribution])
-    return {name: values[0] for name, values in candidates.items()
-            if len({(value['binary'], value['source']) for value in values}) == 1}
+
+
+def _single_archive_provider(values: list[dict]) -> bool:
+    """Accept repeated observations only when the binary and source agree."""
+    return len({(value['binary'], value['source']) for value in values}) == 1
+
+
+class RequirementMapper:
+    """Apply one consumer's provider policy while collecting candidate sources."""
+
+    def __init__(self, index: dict[str, str], consumer: str,
+                 packages: dict[str, dict], archive_index: dict[str, dict]) -> None:
+        """Capture the frozen source and binary indexes for this consumer."""
+        self.index = index
+        self.consumer = consumer
+        self.packages = packages
+        self.archive_index = archive_index
+        self.dependencies: set[str] = set()
+
+    def map(self, original: dict) -> dict:
+        """Copy evidence and select its source, archive, or unresolved provider."""
+        record = dict(original)
+        source = self.index.get(record['distribution']) if record.get('distribution') else None
+        if source and source != self.consumer:
+            self._candidate(record, source)
+        elif source == self.consumer:
+            record['source'] = source
+            record['archive_decision_reason'] = 'Requirement is provided by the source being built'
+        else:
+            self._archive(record)
+
+        return record
+
+    def _candidate(self, record: dict, source: str) -> None:
+        """Require a candidate unless archive version evidence proves sufficiency."""
+        record['source'] = source
+        version = self.packages.get(source, {}).get('archive_version')
+        record['archive_version'] = version
+        if version:
+            satisfied, reason = archive_requirement_decision(record['requirement'], version)
+        else:
+            satisfied, reason = None, 'mapped Ubuntu source has no archive version evidence'
+
+        _record_archive_decision(record, satisfied, reason)
+        if not satisfied:
+            self.dependencies.add(source)
+
+    def _archive(self, record: dict) -> None:
+        """Record binary evidence or explain why no unambiguous provider exists."""
+        if record.get('distribution') in self.archive_index:
+            provider = self.archive_index[record['distribution']]
+            record.update(archive_binary=provider['binary'],
+                          archive_source=provider['source'], archive_version=provider['version'])
+            satisfied, reason = archive_requirement_decision(record['requirement'], provider['version'])
+            _record_archive_decision(record, satisfied, reason)
+        elif record.get('distribution'):
+            record['archive_decision'] = 'unmapped'
+            record['archive_decision_reason'] = (
+                'No unambiguous Ubuntu python3 binary provider was found')
+
+
+def _record_archive_decision(record: dict, satisfied: bool | None, reason: str) -> None:
+    """Preserve the three-state distinction between disproven and unknown."""
+    record['archive_satisfies'] = satisfied
+    record['archive_decision'] = ('satisfied' if satisfied is True else
+                                  'insufficient' if satisfied is False else 'unknown')
+    record['archive_decision_reason'] = reason
 
 
 def map_requirements(records: list[dict], index: dict[str, str], consumer: str,
                      packages: dict[str, dict] | None = None,
                      archive_index: dict[str, dict] | None = None) -> tuple[list[dict], list[str]]:
-    mapped = []
-    dependencies = set()
-    packages = packages or {}
-    archive_index = archive_index or {}
-    for original in records:
-        record = dict(original)
-        source = index.get(record['distribution']) if record.get('distribution') else None
-        if source and source != consumer:
-            record['source'] = source
-            archive_version = packages.get(source, {}).get('archive_version')
-            record['archive_version'] = archive_version
-            if archive_version:
-                satisfied, reason = archive_requirement_decision(record['requirement'], archive_version)
-            else:
-                satisfied, reason = None, 'mapped Ubuntu source has no archive version evidence'
-            record['archive_satisfies'] = satisfied
-            record['archive_decision'] = ('satisfied' if satisfied is True else
-                                          'insufficient' if satisfied is False else 'unknown')
-            record['archive_decision_reason'] = reason
-            if not satisfied:
-                dependencies.add(source)
-        elif source == consumer:
-            record['source'] = source
-            record['archive_decision_reason'] = 'Requirement is provided by the source being built'
-        elif record.get('distribution') in archive_index:
-            provider = archive_index[record['distribution']]
-            record.update(archive_binary=provider['binary'],
-                          archive_source=provider['source'],
-                          archive_version=provider['version'])
-            satisfied, reason = archive_requirement_decision(
-                record['requirement'], provider['version'])
-            record['archive_satisfies'] = satisfied
-            record['archive_decision'] = ('satisfied' if satisfied is True else
-                                          'insufficient' if satisfied is False else 'unknown')
-            record['archive_decision_reason'] = reason
-        elif record.get('distribution'):
-            record['archive_decision'] = 'unmapped'
-            record['archive_decision_reason'] = (
-                'No unambiguous Ubuntu python3 binary provider was found')
-        mapped.append(record)
-    return mapped, sorted(dependencies)
+    """Map requirement evidence and return the sorted candidate dependency set."""
+    mapper = RequirementMapper(index, consumer, packages or {}, archive_index or {})
+    mapped = [mapper.map(record) for record in records]
+    return mapped, sorted(mapper.dependencies)

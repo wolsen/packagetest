@@ -128,3 +128,56 @@ def test_raw_urls_are_bound_to_the_frozen_commit():
         f'https://opendev.org/openstack/ironic/raw/commit/{sha}/requirements.txt')
     assert raw_url('https://github.com/example/project.git', sha, 'pyproject.toml') == (
         f'https://raw.githubusercontent.com/example/project/{sha}/pyproject.toml')
+
+
+def test_optional_metadata_retries_transient_failure_before_absence(monkeypatch):
+    """A later 404 is definitive absence even after a retryable HTTP failure."""
+    from unittest.mock import Mock
+    from urllib.error import HTTPError
+    from packagetest import upstream_dependencies as metadata
+
+    url = 'https://example.invalid/requirements.txt'
+    request = Mock(side_effect=[HTTPError(url, 503, 'Unavailable', {}, None),
+                                HTTPError(url, 404, 'Absent', {}, None)])
+    sleep = Mock()
+    monkeypatch.setattr(metadata, 'urlopen', request)
+    monkeypatch.setattr(metadata.time, 'sleep', sleep)
+
+    assert metadata.fetch_optional(url) is None
+    assert request.call_count == 2
+    sleep.assert_called_once_with(1)
+
+
+def test_optional_metadata_exhaustion_preserves_last_failure(monkeypatch):
+    """Exhausted retries retain the last diagnostic and exponential backoff."""
+    from unittest.mock import Mock
+    from urllib.error import URLError
+    import pytest
+    from packagetest import upstream_dependencies as metadata
+
+    request = Mock(side_effect=[TimeoutError('first'), URLError('second'),
+                                UnicodeDecodeError('utf8', b'\xff', 0, 1, 'last')])
+    sleep = Mock()
+    monkeypatch.setattr(metadata, 'urlopen', request)
+    monkeypatch.setattr(metadata.time, 'sleep', sleep)
+
+    with pytest.raises(metadata.MetadataFetchError, match='last'):
+        metadata.fetch_optional('https://example.invalid/requirements.txt')
+
+    assert request.call_count == 3
+    assert [call.args[0] for call in sleep.call_args_list] == [1, 2]
+
+
+def test_provider_ambiguity_is_not_hidden_by_distribution_aliases():
+    """Conflicting providers stay unresolved through both source and binary indexes."""
+    packages = [
+        {'source': 'python-yaml', 'binaries': ['python3-yaml']},
+        {'source': 'other', 'deliverable': 'pyyaml', 'binaries': []},
+    ]
+    assert 'pyyaml' not in distribution_source_index(packages)
+    archive = distribution_archive_index([
+        {'distribution': 'yaml', 'binary': 'python3-yaml',
+         'source': 'python-yaml', 'version': '1'},
+        {'distribution': 'pyyaml', 'binary': 'other', 'source': 'other', 'version': '1'},
+    ])
+    assert 'pyyaml' not in archive

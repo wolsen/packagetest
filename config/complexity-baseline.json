@@ -87,11 +87,5 @@
   "src/packagetest/remediation.py:render_cumulative_repair": 7,
   "src/packagetest/snapshot.py:build_snapshot": 23,
   "src/packagetest/snapshot.py:canonical_sdist": 18,
-  "src/packagetest/snapshot_lock.py:select_commit": 9,
-  "src/packagetest/upstream_dependencies.py:archive_requirement_decision": 6,
-  "src/packagetest/upstream_dependencies.py:distribution_archive_index": 7,
-  "src/packagetest/upstream_dependencies.py:distribution_source_index": 13,
-  "src/packagetest/upstream_dependencies.py:fetch_optional": 6,
-  "src/packagetest/upstream_dependencies.py:inspect_revision": 6,
-  "src/packagetest/upstream_dependencies.py:map_requirements": 16
+  "src/packagetest/snapshot_lock.py:select_commit": 9
 }
