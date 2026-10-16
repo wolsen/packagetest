@@ -39,6 +39,7 @@ relationship replanning after repairs remains a limitation.
 | Advisory release planning | `cli`, `planner`, `release_discovery` | User configuration to advisory plan |
 | Catalog construction | `catalog.ArchiveSelection`, `CatalogBuilder` | Archive priority and release membership to transitive package closure |
 | Source discovery | `nightly_plan.SourceDiscovery` | Catalog roots to pinned upstream dependency closure |
+| Requirement mapping | `upstream_dependencies.RequirementMapper` | One consumer’s source/binary provider evidence to candidate dependencies |
 | Nightly scheduling | `nightly_plan.CatalogScheduler`, `final_plan`, `prepared_plan.DependencyPlan` | Selected catalog and prepared metadata to dependency waves |
 | Plan publication | `nightly_plan.PlanPublisher` | Catalog and plan to hashed artifacts and workflow summaries |
 | Dependency syntax | `relations.BuildContext`, `DependencyRelation` | Target-aware restriction evaluation |

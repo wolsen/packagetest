@@ -2,6 +2,7 @@ import io
 import hashlib
 import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import tarfile
@@ -1016,3 +1017,87 @@ def test_setuptools_discovery_leaves_nonactionable_configuration_unchanged(tmp_p
     assert setuptools_discovery_adjustments(tmp_path) == []
     assert project.read_text() == configuration
     assert not (tmp_path / 'debian/patches/complete-setuptools-packaging.patch').exists()
+
+
+@pytest.fixture
+def prepared_export_inputs(tmp_path: Path) -> tuple[dict, dict, dict]:
+    """Create a checksummed source bundle with matching prepared control metadata."""
+    from packagetest.artifacts import sha256
+
+    tree = tmp_path / 'tree'
+    (tree / 'debian').mkdir(parents=True)
+    (tree / 'debian/control').write_text(
+        'Source: demo\n\nPackage: python3-demo\nArchitecture: all\n')
+    artifact = tmp_path / 'demo_1.0.orig.tar.gz'
+    artifact.write_bytes(b'pinned source content')
+    dsc = tmp_path / 'demo_1.0-1.dsc'
+    dsc.write_text(
+        'Source: demo\nVersion: 1.0-1\nBinary: python3-demo\nChecksums-Sha256:\n'
+        f' {sha256(artifact)} {artifact.stat().st_size} {artifact.name}\n')
+    lock = tmp_path / 'lock.json'
+    lock.write_text('{"frozen": true}\n')
+    prepared = {'dsc': str(dsc), 'tree': str(tree), 'lock': str(lock),
+                'metadata': {'packaging_source': 'archive'}}
+    entry = {'source': 'demo', 'upstream_sha': 'a' * 40}
+    catalog = {'ci': {'run_id': '1', 'run_attempt': '2'}}
+    return prepared, entry, catalog
+
+
+@pytest.mark.parametrize('with_proposal', [False, True])
+def test_export_prepared_preserves_verified_bundle(
+        tmp_path: Path, prepared_export_inputs: tuple[dict, dict, dict],
+        with_proposal: bool) -> None:
+    """Export keeps exact artifact bytes, checksums, provenance, and optional proposals."""
+    from packagetest.artifacts import sha256
+    from packagetest.prepared_source import digest, export_prepared
+
+    prepared, entry, catalog = prepared_export_inputs
+    if with_proposal:
+        proposal = tmp_path / 'packaging-proposal'
+        proposal.mkdir()
+        (proposal / 'repair.patch').write_text('reviewable repair\n')
+
+    output = tmp_path / 'export'
+    manifest = export_prepared(prepared, entry, catalog, output)
+
+    assert json.loads((output / 'prepared-source.json').read_text()) == manifest
+    assert manifest['catalog_entry_sha256'] == digest(entry)
+    assert manifest['ci'] == catalog['ci']
+    assert manifest['binaries'] == ['python3-demo']
+    assert manifest['autopkgtests'] == []
+    assert (output / 'resolution.json').read_bytes() == Path(prepared['lock']).read_bytes()
+    for artifact in manifest['source_artifacts']:
+        copied = output / 'source' / artifact['file']
+        assert copied.read_bytes() == (tmp_path / artifact['file']).read_bytes()
+        assert sha256(copied) == artifact['sha256']
+
+    assert (output / 'packaging-proposal').exists() == with_proposal
+    if with_proposal:
+        assert (output / 'packaging-proposal/repair.patch').read_text() == 'reviewable repair\n'
+
+    with pytest.raises(FileExistsError):
+        export_prepared(prepared, entry, catalog, output)
+
+
+@pytest.mark.parametrize('invalid', ['corrupt', 'mismatched', 'empty'])
+def test_export_prepared_rejects_invalid_bundle_before_creating_output(
+        tmp_path: Path, prepared_export_inputs: tuple[dict, dict, dict], invalid: str) -> None:
+    """Neither invalid checksums nor inconsistent declarations create a published bundle."""
+    from packagetest.prepared_source import export_prepared
+
+    prepared, entry, catalog = prepared_export_inputs
+    if invalid == 'corrupt':
+        (tmp_path / 'demo_1.0.orig.tar.gz').write_bytes(b'corrupted source')
+    elif invalid == 'mismatched':
+        (Path(prepared['tree']) / 'debian/control').write_text(
+            'Source: demo\n\nPackage: another-binary\n')
+    else:
+        dsc = Path(prepared['dsc'])
+        dsc.write_text(dsc.read_text().replace('Binary: python3-demo', 'Binary:'))
+        (Path(prepared['tree']) / 'debian/control').write_text('Source: demo\n')
+
+    output = tmp_path / 'export'
+    with pytest.raises(ValueError):
+        export_prepared(prepared, entry, catalog, output)
+
+    assert not output.exists()
