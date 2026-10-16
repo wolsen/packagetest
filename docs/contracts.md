@@ -121,3 +121,29 @@ flowchart LR
     F -->|discovery only| P
     P --> A[Catalog, plan, summary, workflow outputs]
 ```
+
+## Build lock validation
+
+`load_lock` validates the JSON envelope, target, ordered package identities,
+Debian versions, and acquisition pins before applying target-profile policy.
+It returns the original decoded record without normalizing or dropping fields.
+The envelope requires an object, schema version 1, a target object, and a
+nonempty list of package objects. Malformed envelopes raise `ValueError`.
+
+Package sources must be unique, and every `depends_on` producer must precede
+its consumer. Debian versions are checked by `dpkg --validate-version`; Git
+branch and tag names are checked by `git check-ref-format --branch`.
+
+Acquisition checks follow the declared input kind:
+
+| Input | Required evidence |
+| --- | --- |
+| Archive | HTTPS source URL and SHA256 |
+| Prepared snapshot | Source `.dsc` SHA256 and full upstream commit SHA |
+| Git release | HTTPS tarball and SHA256, explicit import mode, Git pins and refs |
+| Git snapshot | New import without a release tarball, HTTPS upstream repository, commit and base-tag pins, sdist checksum, supported archive format, and checksum-pinned build tools |
+
+Git reuse additionally requires the upstream tag commit pin. Profile policy
+runs after package validation so cross-field UCA constraints remain enforced.
+These checks validate declared evidence; artifact bytes and build-environment
+availability are verified during execution.

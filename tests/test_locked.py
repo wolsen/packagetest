@@ -155,3 +155,105 @@ def test_injected_command_failure_retains_stage_evidence(tmp_path):
     assert failure['command_exit_code'] == 127
     assert failure['command']['stderr'] == 'tool unavailable'
     assert build.manifest['result'] == 'FAILED'
+
+
+@pytest.mark.parametrize('value, message', [
+    ([], 'JSON object'),
+    ({'schema_version': 2}, 'schema_version'),
+    ({'schema_version': 1, 'target': []}, 'target must be an object'),
+    ({'schema_version': 1, 'target': {}, 'packages': {}}, 'packages must be a list'),
+    ({'schema_version': 1, 'target': {}, 'packages': []}, 'Empty build lock'),
+    ({'schema_version': 1, 'target': {}, 'packages': ['package']}, 'contain objects'),
+])
+def test_lock_rejects_malformed_envelope(tmp_path, value, message):
+    path = tmp_path / 'lock.json'
+    path.write_text(json.dumps(value))
+    with pytest.raises(ValueError, match=message):
+        load_lock(path)
+
+
+@pytest.mark.parametrize('filename', sorted(path.name for path in LOCK.parent.glob('*.json')))
+def test_checked_in_locks_round_trip_unchanged(filename):
+    path = LOCK.parent / filename
+    assert load_lock(path) == json.loads(path.read_text())
+
+
+@pytest.mark.parametrize('field, value, message', [
+    ('source', 'bad/source', 'Invalid or duplicate source'),
+    ('depends_on', ['missing'], 'must precede'),
+    ('depends_on', ['python-oslo.i18n'], 'must precede'),
+    ('required_build_versions', {'bad/name': '1.0'}, 'dependency name'),
+    ('required_build_versions', {'python3-example': 'invalid version'}, 'dependency version'),
+    ('expected_binaries', [], 'expected_binaries'),
+    ('version', 'invalid version', 'invalid Debian version'),
+    ('input', {'kind': 'unknown'}, 'inputs are supported'),
+    ('input', {'kind': 'prepared-snapshot', 'dsc_sha256': 'latest', 'upstream_sha': 'a' * 40}, 'source checksum'),
+    ('input', {'kind': 'prepared-snapshot', 'dsc_sha256': 'a' * 64, 'upstream_sha': 'master'}, 'upstream SHA'),
+    ('input', {'kind': 'archive', 'dsc': {'url': 'http://example.test/source.dsc', 'sha256': 'a' * 64}}, 'HTTPS'),
+])
+def test_lock_rejects_invalid_package_evidence(tmp_path, field, value, message):
+    data = json.loads(LOCK.read_text())
+    data['packages'][0][field] = value
+    path = tmp_path / 'lock.json'
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match=message):
+        load_lock(path)
+
+
+def test_lock_requires_unique_sources_and_dependency_order(tmp_path):
+    import copy
+
+    data = json.loads(LOCK.read_text())
+    producer = data['packages'][0]
+    consumer = copy.deepcopy(producer)
+    consumer.update(source='consumer', depends_on=[producer['source']])
+    path = tmp_path / 'lock.json'
+    for packages, message in [
+        ([producer, producer], 'duplicate source'),
+        ([consumer, producer], 'must precede'),
+    ]:
+        data['packages'] = packages
+        path.write_text(json.dumps(data))
+        with pytest.raises(ValueError, match=message):
+            load_lock(path)
+    data['packages'] = [producer, consumer]
+    path.write_text(json.dumps(data))
+    assert load_lock(path) == data
+
+
+@pytest.mark.parametrize('section, field, value, message', [
+    ('input', 'import_mode', 'reuse', 'new gbp import'),
+    ('input', 'tarball', {}, 'no release tarball'),
+    ('input', 'packaging_sha', 'master', 'full Git SHA'),
+    ('input', 'upstream_version', '../escape', 'upstream version'),
+    ('input', 'packaging_branch', 'bad..branch', 'Invalid Git ref'),
+    ('snapshot', 'repository', 'http://example.test/project', 'HTTPS'),
+    ('snapshot', 'sha', 'master', 'full Git sha'),
+    ('snapshot', 'base_tag_sha', 'tag', 'full Git base_tag_sha'),
+    ('snapshot', 'base_tag', '../escape', 'base tag'),
+    ('snapshot', 'sdist_sha256', 'latest', 'sdist checksum'),
+    ('snapshot', 'archive_format', 'unknown', 'archive format'),
+    ('snapshot', 'build_requirements', [], 'checksum-pinned build tools'),
+    ('snapshot', 'build_requirements', [{'name': 'bad/name', 'version': '1', 'sha256': 'a' * 64}], 'build-tool pin'),
+    ('snapshot', 'build_requirements', [{'name': 'tool', 'version': 'bad version', 'sha256': 'a' * 64}], 'build-tool pin'),
+    ('snapshot', 'build_requirements', [{'name': 'tool', 'version': '1', 'sha256': 'latest'}], 'build-tool pin'),
+])
+def test_lock_rejects_inconsistent_snapshot_pins(tmp_path, section, field, value, message):
+    data = json.loads((LOCK.parent / 'oslo-i18n-stonking-snapshot.json').read_text())
+    acquisition = data['packages'][0]['input']
+    target = acquisition if section == 'input' else acquisition['snapshot']
+    target[field] = value
+    path = tmp_path / 'lock.json'
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match=message):
+        load_lock(path)
+
+
+def test_lock_accepts_prepared_snapshot_without_download_or_git_metadata(tmp_path):
+    data = json.loads(LOCK.read_text())
+    data['packages'][0]['input'] = {
+        'kind': 'prepared-snapshot', 'dsc_sha256': 'a' * 64, 'upstream_sha': 'b' * 40,
+    }
+    path = tmp_path / 'lock.json'
+    path.write_text(json.dumps(data))
+    assert load_lock(path) == data

@@ -18,7 +18,6 @@
   "src/packagetest/handoff.py:collect_producers": 40,
   "src/packagetest/locked.py:LockedBuild.git_source": 25,
   "src/packagetest/locked.py:LockedBuild.run": 21,
-  "src/packagetest/locked.py:load_lock": 48,
   "src/packagetest/nightly_build.py:main": 29,
   "src/packagetest/nightly_plan.py:freeze_packaging": 17,
   "src/packagetest/nightly_plan.py:freeze_packaging.resolve": 17,
