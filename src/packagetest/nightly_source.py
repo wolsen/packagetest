@@ -33,6 +33,7 @@ from urllib.request import urlopen
 from .artifacts import checksum_entries, fields, sha256, verify_source
 from .catalog import dependency_names
 from .commands import CommandRunner
+from .patches import already_applied_patches, integrated_upstream_patches, superseded_upstream_patches
 from .snapshot import build_snapshot
 from .snapshot_lock import select_commit
 
@@ -320,7 +321,7 @@ def write_source_evolution(report: dict, destination: Path) -> None:
     (destination / 'source-evolution.md').write_text('\n'.join(lines) + '\n')
 
 
-class Preparation:
+class SourcePreparer:
     def __init__(self, destination: Path):
         self.root = destination.resolve()
         self.root.mkdir(parents=True, exist_ok=False)
@@ -333,6 +334,141 @@ class Preparation:
         if result.exit_code:
             raise RuntimeError(f'{args[0]} failed ({result.exit_code}): {result.stderr[-2000:]}')
         return (self.runner.log_path.parent / f'{self.runner.sequence:04d}.stdout.log').read_text().strip()
+
+
+    def prepare(self, entry: dict, *, cutoff: str | None = None,
+                remediation_patch: Path | None = None, target: dict | None = None) -> dict:
+        """Prepare one source, retaining resolution and command evidence on failure."""
+        build = self
+        report = {'source': entry['source'], 'status': 'PREPARING', 'catalog_entry': entry}
+        report_path = build.root / 'resolution.json'
+        try:
+            if (entry.get('discovery_error') or entry.get('upstream_resolution_error') or
+                    entry.get('upstream_dependency_resolution_error')):
+                raise ValueError(entry.get('discovery_error') or entry.get('upstream_resolution_error') or
+                                 entry['upstream_dependency_resolution_error'])
+            if not re.fullmatch(r'[a-f0-9]{40}', entry.get('upstream_sha', '')):
+                raise ValueError('Source preparation requires a plan-pinned upstream_sha')
+            source = entry['source']
+            baseline_dsc = None
+            if entry.get('packaging_source_kind') == 'git':
+                try:
+                    packaging_tree, packaging_source = checkout_packaging_tree(build, entry)
+                except PackagingIdentityMismatch as error:
+                    if not _can_use_published_source_fallback(entry):
+                        raise
+                    rejected = {
+                        'kind': 'git',
+                        'role': entry.get('packaging_source_role'),
+                        'repository': entry.get('packaging_source_repository'),
+                        'branch': entry.get('packaging_branch'),
+                        'sha': entry.get('packaging_sha'),
+                        'reason': str(error),
+                    }
+                    shutil.rmtree(build.work / 'packaging')
+                    packaging_tree, baseline_dsc, packaging_source = extract_archive_packaging(
+                        build, entry)
+                    packaging_source['rejected_git_source'] = rejected
+            else:
+                packaging_tree, baseline_dsc, packaging_source = extract_archive_packaging(build, entry)
+            report['packaging_source'] = packaging_source
+            checkout = build.work / 'upstream-discovery'
+            build.command('git', 'clone', '--no-checkout', entry['upstream_repository'], str(checkout))
+            # Stable branch is chosen in the catalog from release declarations. A
+            # deleted/missing declared branch is an error, never a master fallback.
+            build.command('git', 'cat-file', '-e', entry['upstream_sha'] + '^{commit}', cwd=checkout)
+            build.command('git', 'update-ref', 'refs/remotes/origin/packagetest-frozen', entry['upstream_sha'], cwd=checkout)
+            selected = select_commit(build, checkout, 'packagetest-frozen', None)
+            selected.update(ref=entry['upstream_ref'], cutoff=cutoff)
+            if selected['sha'] != entry['upstream_sha']:
+                raise ValueError('Source preparation changed the plan-pinned upstream SHA')
+            upstream = selected['upstream_version']
+            target = target or {}
+            revision_suffix = target.get('debian_revision_suffix', '-0ubuntu1~hibiscus1')
+            distribution = target.get('distribution', 'resolute')
+            openstack_series = target.get('openstack_series', '2026.2')
+            version = snapshot_debian_version(entry['archive_version'], upstream,
+                                              revision_suffix)
+            build.command('dpkg', '--compare-versions', version, 'gt', entry['archive_version'])
+            orig = build.root / f'{source}_{upstream}.orig.tar.gz'
+            if entry.get('snapshot_backend') == 'git-archive':
+                snapshot = git_archive(build, checkout, selected, orig, source)
+            else:
+                snapshot_spec = {**selected, 'repository': entry['upstream_repository'],
+                                 'build_requirements': BUILD_REQUIREMENTS + (SCM_REQUIREMENTS if entry.get('snapshot_version_backend') == 'setuptools-scm' else []),
+                                 'version_backend': entry.get('snapshot_version_backend', 'pbr'), 'archive_format': 'portable-v1'}
+                snapshot = build_snapshot(build, {'source': source, 'input': {'snapshot': snapshot_spec, 'upstream_version': upstream}}, orig)
+            tree = build.root / f'{source}-{upstream}'
+            extract_snapshot(orig, tree)
+            if baseline_dsc is not None:
+                report['supplementary_orig_components'] = preserve_orig_components(
+                    baseline_dsc, source, upstream, tree, build.root)
+            else:
+                report['supplementary_orig_components'] = preserve_catalog_orig_components(
+                    build, entry, upstream, tree, build.root)
+            if (tree / 'debian').exists():
+                raise ValueError('Upstream snapshot unexpectedly contains Debian packaging')
+            shutil.copytree(packaging_tree / 'debian', tree / 'debian', symlinks=True)
+            ubuntu_maintainer(tree / 'debian' / 'control')
+            proposal_baseline = build.work / 'packaging-proposal-baseline'
+            shutil.copytree(tree / 'debian', proposal_baseline, symlinks=True)
+            evolution, evolution_actions = source_evolution(entry, checkout, selected, tree)
+            report['source_evolution'] = evolution
+            write_source_evolution(evolution, build.root / 'packaging-proposal')
+            report['packaging_adjustments'] = integrated_upstream_patches(
+                tree, checkout, selected['sha'])
+            report['packaging_adjustments'].extend(already_applied_patches(tree))
+            report['packaging_adjustments'].extend(superseded_upstream_patches(
+                tree, checkout, evolution.get('commit_delta', {})))
+            report['packaging_adjustments'].extend(upstream_dependency_adjustments(entry, tree))
+            report['packaging_adjustments'].extend(setuptools_discovery_adjustments(tree))
+            report['packaging_adjustments'].extend(autopkgtest_packaging_adjustments(entry, tree))
+            report['packaging_adjustments'].extend(evolution_actions)
+            if remediation_patch is not None:
+                from .failure_analysis import validate_source_patch
+                patch = remediation_patch.read_text()
+                validation = validate_source_patch(patch, tree, apply=True)
+                if validation['result'] != 'APPLIED':
+                    raise ValueError('Remediation patch rejected: ' + validation['error'])
+                report['remediation'] = {
+                    'patch_file': remediation_patch.name,
+                    'patch_sha256': validation['patch_sha256'],
+                    'paths': validation['paths'],
+                }
+                report['packaging_adjustments'].append({
+                    'action': 'local-ai-remediation',
+                    'patch_file': remediation_patch.name,
+                    'patch_sha256': validation['patch_sha256'],
+                    'paths': validation['paths'],
+                })
+            proposal = write_packaging_proposal(
+                entry, proposal_baseline, tree, build.root / 'packaging-proposal',
+                report['packaging_adjustments'])
+            if proposal:
+                report['packaging_proposal'] = proposal
+            build.command('dch', '--newversion', version, '--distribution', distribution,
+                          '--force-distribution',
+                          f'Nightly OpenStack {openstack_series} snapshot from pinned upstream commit '
+                          + selected['sha'] + '.',
+                          cwd=tree, env={'DEBFULLNAME': 'Packaging Build Agent', 'DEBEMAIL': 'packaging-agent@example.invalid'})
+            build.command('dpkg-buildpackage', '-S', '-d', '-nc', '-us', '-uc', cwd=tree,
+                          env={'SOURCE_DATE_EPOCH': selected['commit_timestamp']})
+            dscs = list(build.root.glob('*.dsc'))
+            if len(dscs) != 1:
+                raise ValueError('Expected exactly one generated Debian source package')
+            verify_source(dscs[0], source, version)
+            validation_tree = build.work / 'source-package-validation'
+            build.command('dpkg-source', '-x', str(dscs[0]), str(validation_tree))
+            report.update(status='PREPARED', version=version, snapshot=snapshot,
+                          dsc=str(dscs[0]), dsc_sha256=sha256(dscs[0]),
+                          prepared_at=datetime.now(timezone.utc).isoformat())
+            report_path.write_text(json.dumps(report, indent=2) + '\n')
+            return {'dsc': str(dscs[0]), 'tree': str(tree),
+                    'metadata': report, 'lock': str(report_path)}
+        except Exception as error:
+            report.update(status='FAILED', error=str(error))
+            report_path.write_text(json.dumps(report, indent=2) + '\n')
+            raise
 
 
 def download_verified(url: str, destination: Path, digest: str,
@@ -763,203 +899,6 @@ def write_packaging_proposal(entry: dict, baseline: Path, tree: Path, output: Pa
     return proposal
 
 
-def already_applied_patches(tree: Path) -> list[dict]:
-    """Omit a quilt patch only if its complete inverse applies without fuzz.
-
-    Also require that the forward patch does not apply, so ambiguous repeated
-    contexts do not qualify. Both probes are dry runs; upstream is unchanged.
-    """
-    series = tree / 'debian/patches/series'
-    if not series.exists():
-        return []
-    lines = series.read_text().splitlines()
-    omitted = []
-    for index, line in enumerate(lines):
-        words = line.split()
-        if not words or words[0].startswith('#') or len(words) != 1:
-            continue
-        name = Path(words[0])
-        if name.is_absolute() or '..' in name.parts:
-            raise ValueError('Unsafe quilt patch path')
-        patch = tree / 'debian/patches' / name
-        data = patch.read_bytes()
-        args = ['patch', '--dry-run', '--force', '--fuzz=0', '-p1']
-        reverse = subprocess.run(args + ['--reverse'], input=data, cwd=tree, capture_output=True)
-        if reverse.returncode:
-            continue
-        forward = subprocess.run(args, input=data, cwd=tree, capture_output=True)
-        if forward.returncode:
-            lines[index] = '# Fully present upstream (verified reverse dry run): ' + str(name)
-            omitted.append({'action': 'omit-already-applied-patch', 'name': str(name),
-                            'sha256': sha256(patch), 'reverse_probe': reverse.stdout.decode(errors='replace')})
-    if omitted:
-        series.write_text('\n'.join(lines) + '\n')
-    return omitted
-
-
-def integrated_upstream_patches(tree: Path, checkout: Path,
-                                upstream_sha: str) -> list[dict]:
-    """Omit forwarded patches whose Gerrit change is in frozen upstream.
-
-    Textual patch probes become ambiguous after upstream evolves the merged
-    implementation. A Gerrit Change-Id in both the Debian patch header and an
-    ancestor commit identifies the forwarded change independently of later
-    edits to the same files.
-    """
-    if not re.fullmatch(r'[0-9a-f]{40}', upstream_sha):
-        raise ValueError('Integrated-patch check requires a frozen upstream SHA')
-    series = tree / 'debian/patches/series'
-    if not series.is_file():
-        return []
-    lines = series.read_text().splitlines()
-    omitted = []
-    for index, line in enumerate(lines):
-        words = line.split()
-        if not words or words[0].startswith('#'):
-            continue
-        name = Path(words[0])
-        if name.is_absolute() or '..' in name.parts:
-            raise ValueError('Unsafe quilt patch path')
-        patch = tree / 'debian/patches' / name
-        if not patch.is_file() or patch.is_symlink():
-            continue
-        text = patch.read_text(errors='replace')
-        first_section = re.search(r'(?m)^(?:diff --git |---\s)', text)
-        header = text[:first_section.start()] if first_section else text
-        change_ids = set(re.findall(
-            r'(?m)^Change-Id:\s*(I[0-9a-fA-F]{40})\s*$', header))
-        if len(change_ids) != 1:
-            continue
-        change_id = next(iter(change_ids))
-        result = subprocess.run(
-            ['git', 'log', upstream_sha, '-n', '1', '--format=%H',
-             '--fixed-strings', '--grep=' + f'Change-Id: {change_id}'],
-            cwd=checkout, text=True, capture_output=True, timeout=30, check=True)
-        commit = result.stdout.strip()
-        if not re.fullmatch(r'[0-9a-f]{40}', commit):
-            continue
-        lines[index] = (f'# Integrated upstream as {commit[:12]} '
-                        f'({change_id}): {line}')
-        omitted.append({
-            'action': 'omit-integrated-upstream-patch',
-            'name': str(name),
-            'sha256': sha256(patch),
-            'change_id': change_id,
-            'upstream_commit': commit,
-            'human_review_required': True,
-        })
-    if omitted:
-        series.write_text('\n'.join(lines) + '\n')
-    return omitted
-
-
-SEMANTIC_PATCH_STOPWORDS = {
-    'false', 'from', 'import', 'none', 'return', 'self', 'test', 'true',
-    'value', 'with',
-}
-
-
-def _semantic_patch_tokens(value: str) -> set[str]:
-    result = set()
-    for token in re.findall(r'[A-Za-z][A-Za-z0-9_]{3,}', value):
-        token = token.lower()
-        if token not in SEMANTIC_PATCH_STOPWORDS:
-            result.add(token)
-        result.update(part.lower() for part in token.split('_')
-                      if len(part) >= 4 and part.lower() not in SEMANTIC_PATCH_STOPWORDS)
-    return result
-
-
-def superseded_upstream_patches(tree: Path, checkout: Path, selected: dict) -> list[dict]:
-    """Omit a failed patch when a post-release upstream commit proves equivalence.
-
-    This deliberately requires both the selected source and one recorded commit
-    since the base tag to contain at least 70% of the patch's distinctive added
-    identifiers. A named Python definition must also survive in current source.
-    Borderline cases remain active and are handed to model-assisted review.
-    """
-    series = tree / 'debian/patches/series'
-    if not series.is_file():
-        return []
-    lines = series.read_text().splitlines()
-    adjustments = []
-    commits = [item for item in selected.get('commits', [])
-               if re.fullmatch(r'[0-9a-f]{40}', item.get('sha', ''))]
-    if not commits:
-        return []
-    for index, line in enumerate(lines):
-        words = line.split()
-        if len(words) != 1 or words[0].startswith('#'):
-            continue
-        name = Path(words[0])
-        if name.is_absolute() or '..' in name.parts:
-            raise ValueError('Unsafe quilt patch path')
-        patch = tree / 'debian/patches' / name
-        if not patch.is_file() or patch.is_symlink():
-            continue
-        data = patch.read_bytes()
-        probe = ['patch', '--dry-run', '--batch', '--force', '--fuzz=0', '-p1']
-        if subprocess.run(probe, input=data, cwd=tree, capture_output=True).returncode == 0:
-            continue
-        if subprocess.run(probe + ['--reverse'], input=data, cwd=tree,
-                          capture_output=True).returncode == 0:
-            continue
-        text = data.decode(errors='replace')
-        targets = []
-        for target in re.findall(r'^\+\+\+\s+(?:b/)?([^\t\n ]+)', text, re.M):
-            path = Path(target)
-            if path.is_absolute() or '..' in path.parts or path.parts[:1] == ('debian',):
-                targets = []
-                break
-            if target not in targets:
-                targets.append(target)
-        added = '\n'.join(item[1:] for item in text.splitlines()
-                          if item.startswith('+') and not item.startswith('+++'))
-        tokens = _semantic_patch_tokens(added)
-        definitions = set(re.findall(
-            r'\b(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)', added))
-        if not targets or len(tokens) < 8 or not definitions:
-            continue
-        current_parts = []
-        for target in targets:
-            path = tree / target
-            if not path.is_file() or path.is_symlink():
-                current_parts = []
-                break
-            current_parts.append(path.read_text(errors='replace'))
-        if not current_parts or not all(any(definition in part for part in current_parts)
-                                        for definition in definitions):
-            continue
-        current_tokens = _semantic_patch_tokens('\n'.join(current_parts))
-        current_overlap = len(tokens & current_tokens) / len(tokens)
-        if current_overlap < 0.70:
-            continue
-        best = None
-        for commit in commits:
-            result = subprocess.run(
-                ['git', 'show', '--format=%B', commit['sha'], '--', *targets],
-                cwd=checkout, text=True, capture_output=True, timeout=30)
-            if result.returncode or not result.stdout.strip():
-                continue
-            commit_tokens = _semantic_patch_tokens(result.stdout)
-            overlap = len(tokens & commit_tokens) / len(tokens)
-            if overlap >= 0.70 and (best is None or overlap > best['commit_overlap']):
-                best = {'sha': commit['sha'], 'subject': commit.get('subject', ''),
-                        'commit_overlap': round(overlap, 3)}
-        if best is None:
-            continue
-        lines[index] = '# Superseded by verified upstream commit ' + best['sha'][:12] + ': ' + str(name)
-        adjustments.append({
-            'action': 'omit-upstream-superseded-patch', 'name': str(name),
-            'sha256': sha256(patch), 'upstream_commit': best,
-            'current_overlap': round(current_overlap, 3),
-            'token_count': len(tokens), 'targets': targets,
-            'human_review_required': True,
-        })
-    if adjustments:
-        series.write_text('\n'.join(lines) + '\n')
-    return adjustments
-
 def extract_snapshot(archive: Path, destination: Path) -> None:
     destination.mkdir()
     with tarfile.open(archive) as source:
@@ -1011,7 +950,7 @@ def preserve_orig_components(baseline_dsc: Path, source: str, upstream: str,
     return components
 
 
-def preserve_catalog_orig_components(build: Preparation, entry: dict, upstream: str,
+def preserve_catalog_orig_components(build: SourcePreparer, entry: dict, upstream: str,
                                      tree: Path, output: Path) -> list[dict]:
     """Restore supplementary orig components while packaging comes from Git."""
     source = entry['source']
@@ -1043,7 +982,7 @@ def preserve_catalog_orig_components(build: Preparation, entry: dict, upstream: 
     return components
 
 
-def checkout_packaging_tree(build: Preparation, entry: dict) -> tuple[Path, dict]:
+def checkout_packaging_tree(build: SourcePreparer, entry: dict) -> tuple[Path, dict]:
     """Checkout the exact source-package Git commit pinned by the run plan."""
     if entry.get('packaging_source_kind') != 'git':
         raise ValueError('Catalog entry does not select Git packaging')
@@ -1121,7 +1060,7 @@ def checkout_packaging_tree(build: Preparation, entry: dict) -> tuple[Path, dict
     }
 
 
-def extract_archive_packaging(build: Preparation, entry: dict) -> tuple[Path, Path, dict]:
+def extract_archive_packaging(build: SourcePreparer, entry: dict) -> tuple[Path, Path, dict]:
     """Extract published packaging only when the run lock records a Git fallback."""
     source = entry['source']
     baseline_dir = build.work / 'baseline'
@@ -1143,7 +1082,7 @@ def extract_archive_packaging(build: Preparation, entry: dict) -> tuple[Path, Pa
     }
 
 
-def git_archive(build: Preparation, checkout: Path, selected: dict, destination: Path, package: str) -> dict:
+def git_archive(build: SourcePreparer, checkout: Path, selected: dict, destination: Path, package: str) -> dict:
     raw = build.work / 'git-source.tar'
     build.command('git', 'archive', '--format=tar', f'--prefix={package}-{selected["upstream_version"]}/',
                   f'--output={raw}', selected['sha'], cwd=checkout)
@@ -1161,141 +1100,11 @@ def git_archive(build: Preparation, checkout: Path, selected: dict, destination:
     return {**selected, 'sdist_sha256': sha256(destination), 'sdist_file': destination.name, 'backend': 'git-archive'}
 
 
+
+
 def prepare_source(entry: dict, destination: Path, *, cutoff: str | None = None,
                    remediation_patch: Path | None = None,
                    target: dict | None = None) -> dict:
-    """Resolve and prepare one source; never overwrite an earlier generation.
-
-    Return absolute ``dsc`` and ``lock`` paths plus metadata. Failure leaves
-    resolution.json with FAILED and all command logs for artifact upload.
-    """
-    build = Preparation(destination)
-    report = {'source': entry['source'], 'status': 'PREPARING', 'catalog_entry': entry}
-    report_path = build.root / 'resolution.json'
-    try:
-        if (entry.get('discovery_error') or entry.get('upstream_resolution_error') or
-                entry.get('upstream_dependency_resolution_error')):
-            raise ValueError(entry.get('discovery_error') or entry.get('upstream_resolution_error') or
-                             entry['upstream_dependency_resolution_error'])
-        if not re.fullmatch(r'[a-f0-9]{40}', entry.get('upstream_sha', '')):
-            raise ValueError('Source preparation requires a plan-pinned upstream_sha')
-        source = entry['source']
-        baseline_dsc = None
-        if entry.get('packaging_source_kind') == 'git':
-            try:
-                packaging_tree, packaging_source = checkout_packaging_tree(build, entry)
-            except PackagingIdentityMismatch as error:
-                if not _can_use_published_source_fallback(entry):
-                    raise
-                rejected = {
-                    'kind': 'git',
-                    'role': entry.get('packaging_source_role'),
-                    'repository': entry.get('packaging_source_repository'),
-                    'branch': entry.get('packaging_branch'),
-                    'sha': entry.get('packaging_sha'),
-                    'reason': str(error),
-                }
-                shutil.rmtree(build.work / 'packaging')
-                packaging_tree, baseline_dsc, packaging_source = extract_archive_packaging(
-                    build, entry)
-                packaging_source['rejected_git_source'] = rejected
-        else:
-            packaging_tree, baseline_dsc, packaging_source = extract_archive_packaging(build, entry)
-        report['packaging_source'] = packaging_source
-        checkout = build.work / 'upstream-discovery'
-        build.command('git', 'clone', '--no-checkout', entry['upstream_repository'], str(checkout))
-        # Stable branch is chosen in the catalog from release declarations. A
-        # deleted/missing declared branch is an error, never a master fallback.
-        build.command('git', 'cat-file', '-e', entry['upstream_sha'] + '^{commit}', cwd=checkout)
-        build.command('git', 'update-ref', 'refs/remotes/origin/packagetest-frozen', entry['upstream_sha'], cwd=checkout)
-        selected = select_commit(build, checkout, 'packagetest-frozen', None)
-        selected.update(ref=entry['upstream_ref'], cutoff=cutoff)
-        if selected['sha'] != entry['upstream_sha']:
-            raise ValueError('Source preparation changed the plan-pinned upstream SHA')
-        upstream = selected['upstream_version']
-        target = target or {}
-        revision_suffix = target.get('debian_revision_suffix', '-0ubuntu1~hibiscus1')
-        distribution = target.get('distribution', 'resolute')
-        openstack_series = target.get('openstack_series', '2026.2')
-        version = snapshot_debian_version(entry['archive_version'], upstream,
-                                          revision_suffix)
-        build.command('dpkg', '--compare-versions', version, 'gt', entry['archive_version'])
-        orig = build.root / f'{source}_{upstream}.orig.tar.gz'
-        if entry.get('snapshot_backend') == 'git-archive':
-            snapshot = git_archive(build, checkout, selected, orig, source)
-        else:
-            snapshot_spec = {**selected, 'repository': entry['upstream_repository'],
-                             'build_requirements': BUILD_REQUIREMENTS + (SCM_REQUIREMENTS if entry.get('snapshot_version_backend') == 'setuptools-scm' else []),
-                             'version_backend': entry.get('snapshot_version_backend', 'pbr'), 'archive_format': 'portable-v1'}
-            snapshot = build_snapshot(build, {'source': source, 'input': {'snapshot': snapshot_spec, 'upstream_version': upstream}}, orig)
-        tree = build.root / f'{source}-{upstream}'
-        extract_snapshot(orig, tree)
-        if baseline_dsc is not None:
-            report['supplementary_orig_components'] = preserve_orig_components(
-                baseline_dsc, source, upstream, tree, build.root)
-        else:
-            report['supplementary_orig_components'] = preserve_catalog_orig_components(
-                build, entry, upstream, tree, build.root)
-        if (tree / 'debian').exists():
-            raise ValueError('Upstream snapshot unexpectedly contains Debian packaging')
-        shutil.copytree(packaging_tree / 'debian', tree / 'debian', symlinks=True)
-        ubuntu_maintainer(tree / 'debian' / 'control')
-        proposal_baseline = build.work / 'packaging-proposal-baseline'
-        shutil.copytree(tree / 'debian', proposal_baseline, symlinks=True)
-        evolution, evolution_actions = source_evolution(entry, checkout, selected, tree)
-        report['source_evolution'] = evolution
-        write_source_evolution(evolution, build.root / 'packaging-proposal')
-        report['packaging_adjustments'] = integrated_upstream_patches(
-            tree, checkout, selected['sha'])
-        report['packaging_adjustments'].extend(already_applied_patches(tree))
-        report['packaging_adjustments'].extend(superseded_upstream_patches(
-            tree, checkout, evolution.get('commit_delta', {})))
-        report['packaging_adjustments'].extend(upstream_dependency_adjustments(entry, tree))
-        report['packaging_adjustments'].extend(setuptools_discovery_adjustments(tree))
-        report['packaging_adjustments'].extend(autopkgtest_packaging_adjustments(entry, tree))
-        report['packaging_adjustments'].extend(evolution_actions)
-        if remediation_patch is not None:
-            from .failure_analysis import validate_source_patch
-            patch = remediation_patch.read_text()
-            validation = validate_source_patch(patch, tree, apply=True)
-            if validation['result'] != 'APPLIED':
-                raise ValueError('Remediation patch rejected: ' + validation['error'])
-            report['remediation'] = {
-                'patch_file': remediation_patch.name,
-                'patch_sha256': validation['patch_sha256'],
-                'paths': validation['paths'],
-            }
-            report['packaging_adjustments'].append({
-                'action': 'local-ai-remediation',
-                'patch_file': remediation_patch.name,
-                'patch_sha256': validation['patch_sha256'],
-                'paths': validation['paths'],
-            })
-        proposal = write_packaging_proposal(
-            entry, proposal_baseline, tree, build.root / 'packaging-proposal',
-            report['packaging_adjustments'])
-        if proposal:
-            report['packaging_proposal'] = proposal
-        build.command('dch', '--newversion', version, '--distribution', distribution,
-                      '--force-distribution',
-                      f'Nightly OpenStack {openstack_series} snapshot from pinned upstream commit '
-                      + selected['sha'] + '.',
-                      cwd=tree, env={'DEBFULLNAME': 'Packaging Build Agent', 'DEBEMAIL': 'packaging-agent@example.invalid'})
-        build.command('dpkg-buildpackage', '-S', '-d', '-nc', '-us', '-uc', cwd=tree,
-                      env={'SOURCE_DATE_EPOCH': selected['commit_timestamp']})
-        dscs = list(build.root.glob('*.dsc'))
-        if len(dscs) != 1:
-            raise ValueError('Expected exactly one generated Debian source package')
-        verify_source(dscs[0], source, version)
-        validation_tree = build.work / 'source-package-validation'
-        build.command('dpkg-source', '-x', str(dscs[0]), str(validation_tree))
-        report.update(status='PREPARED', version=version, snapshot=snapshot,
-                      dsc=str(dscs[0]), dsc_sha256=sha256(dscs[0]),
-                      prepared_at=datetime.now(timezone.utc).isoformat())
-        report_path.write_text(json.dumps(report, indent=2) + '\n')
-        return {'dsc': str(dscs[0]), 'tree': str(tree),
-                'metadata': report, 'lock': str(report_path)}
-    except Exception as error:
-        report.update(status='FAILED', error=str(error))
-        report_path.write_text(json.dumps(report, indent=2) + '\n')
-        raise
+    """Prepare a source in a new workspace; existing generations are never overwritten."""
+    return SourcePreparer(destination).prepare(entry, cutoff=cutoff,
+                                               remediation_patch=remediation_patch, target=target)

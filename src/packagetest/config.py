@@ -22,3 +22,10 @@ def load_package_definitions(path: Path) -> dict[str, PackageDefinition]:
         )
         definitions[pkg.source_package] = pkg
     return definitions
+
+
+def default_config_path(name: str) -> Path:
+    """Locate shipped defaults in both an editable checkout and an installed wheel."""
+    if name not in {'vertical_slice.json', 'hibiscus-candidate-dependencies.json'}:
+        raise ValueError(f'Unknown bundled configuration: {name}')
+    return Path(__file__).with_name('data') / name

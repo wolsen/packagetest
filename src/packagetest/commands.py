@@ -10,10 +10,18 @@ import signal
 import sys
 import time
 from pathlib import Path
+from typing import Protocol
 
 from .models import CommandResult
 
 logger = logging.getLogger(__name__)
+
+
+class CommandExecutor(Protocol):
+    """The process boundary required by the locked executor."""
+
+    def run(self, command: list[str], cwd: Path,
+            env_diff: dict[str, str] | None = None) -> CommandResult: ...
 
 
 class CommandRunner:
@@ -47,9 +55,14 @@ class CommandRunner:
                     selector.register(process.stdout, selectors.EVENT_READ, "stdout")
                     selector.register(process.stderr, selectors.EVENT_READ, "stderr")
                     timed_out = False
-                    while selector.get_map():
+                    # EOF is independent of process exit: keep enforcing the deadline
+                    # even when a child closes both streams before it finishes.
+                    while selector.get_map() or process.poll() is None:
                         if not timed_out and time.monotonic() - start > self.timeout:
-                            os.killpg(process.pid, signal.SIGKILL)
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass  # The process group exited at the deadline.
                             timed_out = True
                         for key, _ in selector.select(timeout=0.1):
                             chunk = os.read(key.fileobj.fileno(), 65536)

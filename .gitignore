@@ -4,3 +4,8 @@ __pycache__/
 *.egg-info/
 artifacts/
 nightly-plan/
+build/
+dist/
+.venv/
+.mypy_cache/
+.ruff_cache/

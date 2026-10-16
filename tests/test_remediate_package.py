@@ -1,18 +1,12 @@
 import hashlib
-import importlib.util
 import json
-from pathlib import Path
 import subprocess
 import sys
 
 
 def load_script():
-    path = Path("scripts/remediate-package.py").resolve()
-    spec = importlib.util.spec_from_file_location("remediate_package", path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader
-    spec.loader.exec_module(module)
-    return module
+    from packagetest import remediation
+    return remediation
 
 
 def test_source_context_exposes_failed_patch_target_and_moved_path(tmp_path):

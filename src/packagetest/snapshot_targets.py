@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import re
 
+from .contracts import BuildTarget
+
 
 def ubuntu_release_for_openstack(series: str) -> str:
     """Map YYYY.1/.2 to that year's April/October Ubuntu release."""
@@ -144,6 +146,8 @@ def build_target(target: dict) -> dict:
         "distribution": target["distribution"],
         "openstack_series": target["openstack_series"],
     }
+    if target.get("build_profiles"):
+        result["build_profiles"] = target["build_profiles"]
     if target.get("cloud_archive"):
         result["cloud_archive"] = target["cloud_archive"]
     return result
@@ -157,4 +161,5 @@ def catalog_target(catalog: dict) -> dict:
                 "openstack_series", "openstack_codename", "debian_revision_suffix"}
     if required - target.keys():
         raise ValueError("Frozen catalog snapshot target is incomplete")
+    BuildTarget.from_mapping(target)
     return target

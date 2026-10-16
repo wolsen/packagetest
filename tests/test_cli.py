@@ -26,7 +26,7 @@ def test_plan_cmd_outputs_release_resolution(capsys, monkeypatch):
 
     monkeypatch.setattr("packagetest.cli._resolve_package_releases", fake_resolve)
     args = Namespace(
-        config=str(repo_root / "config" / "vertical_slice.json"),
+        config=str(repo_root / "src" / "packagetest" / "data" / "vertical_slice.json"),
         openstack_target="2027.1",
         ubuntu_release="noble",
         snapshot_at="2026-09-18T05:32:15+00:00",
@@ -49,7 +49,7 @@ def test_plan_cmd_surfaces_release_resolution_error(capsys, monkeypatch):
 
     monkeypatch.setattr("packagetest.cli._resolve_package_releases", fake_resolve)
     args = Namespace(
-        config=str(repo_root / "config" / "vertical_slice.json"),
+        config=str(repo_root / "src" / "packagetest" / "data" / "vertical_slice.json"),
         openstack_target="2027.1",
         ubuntu_release="noble",
         snapshot_at=None,

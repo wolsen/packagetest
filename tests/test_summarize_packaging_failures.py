@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 
 
 def _load_module():
-    module_path = Path(__file__).resolve().parents[1] / "scripts" / "summarize_packaging_failures.py"
-    spec = importlib.util.spec_from_file_location("summarize_packaging_failures", module_path)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    from packagetest import failure_summary
+    return failure_summary
 
 
 def _write_failure(path: Path, payload: dict) -> None:

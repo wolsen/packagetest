@@ -1,46 +1,102 @@
-# Packaging executor design
+# Packaging executor architecture
 
-The packaging tools determine how a Debian package is built. The agent selects reviewed inputs, enforces stage checks, and records enough evidence to explain a failed run.
+Packaging tools build Debian packages. This application chooses pinned inputs,
+checks the resulting artifacts, and preserves evidence at each boundary.
 
-## Execution boundary
+## Two entry paths
 
-`packaging plan` discovers OpenStack release candidates and a small configured dependency graph. It is advisory. `packaging build --plan LOCK` consumes a separate schema-v1 lock and does no release discovery during execution. This prevents retries from silently changing their source inputs.
+`packaging build --plan LOCK` executes a reviewed schema-v1 lock. It performs no
+release discovery. `packaging plan` remains an advisory discovery interface.
 
-`locked.py` implements the stage sequence:
+The nightly path discovers a catalog, pins upstream and packaging commits,
+prepares immutable sources, and derives a dependency graph from their metadata.
+The GitHub workflows orchestrate this path through compatibility scripts that
+call importable package modules.
 
-1. Verify tools and the explicitly named schroot.
-2. Download a checksum-pinned archive source, or prepare a checksum/commit-pinned upstream update in an isolated Git checkout.
-3. Verify source identity and every file referenced by its `.dsc`.
-4. Run sbuild in a fresh tarball-backed schroot, with package tests enabled.
-5. Validate actual binary metadata, checksummed `.changes` contents, required binaries, and `.buildinfo` dependency versions.
-6. Run Lintian, failing on errors.
+```mermaid
+flowchart LR
+    A[Discover catalog and pin Git inputs] --> B[Prepare immutable sources]
+    B --> C[Finalize dependency graph]
+    C --> D[Build candidates by dependency level]
+    D --> E[Autopkgtest in fresh guests]
+    E --> F[Readiness and verified handoff]
+    D --> G[Bounded remediation]
+    E --> G
+    G --> H[Fresh source and dependency checks]
+    H --> D
+    F --> I[Pipeline report and proposals]
+```
 
-The workflow additionally calls `smoke-install.py`. This creates another fresh schroot, installs the built packages, checks the installed version, and exercises Oslo translation. The build manifest's `SUCCEEDED` result covers building and artifact validation; `smoke-install.json` records installation separately. The wrapper and workflow require both to pass.
+Source-preparation failures have a separate remediation path before graph
+finalization. During package remediation, a newly introduced selected build
+producer outside the frozen graph requires replanning. Broader runtime/test
+relationship replanning after repairs remains a limitation.
 
-## Source preparation
+## Ownership
 
-For archive rebuilds, the reviewed `.dsc` digest anchors component checksums. This executor does not independently authenticate `.dsc` signatures.
+| Area | Owner | Boundary |
+| --- | --- | --- |
+| Advisory release planning | `cli`, `planner`, `release_discovery` | User configuration to advisory plan |
+| Nightly planning | `nightly_plan`, `final_plan`, `prepared_plan.DependencyPlan` | Pinned catalog and prepared metadata to graph |
+| Dependency syntax | `relations.BuildContext`, `DependencyRelation` | Target-aware restriction evaluation |
+| JSON identity | `contracts.BuildTarget`, `PreparedSource` | Validated immutable identity records |
+| Source orchestration | `nightly_source.SourcePreparer` | One workspace, command log, and preparation result |
+| Quilt policy | `patches` | Evidence for applied patches and review suggestions |
+| Locked execution | `locked.LockedBuild`, `commands.CommandRunner` | Lock to validated source/binary artifacts |
+| Artifact handoff | `handoff` | Same-run producer identity, readiness, and byte verification |
+| Remediation | `remediation`, `source_remediation`, `RemediationSession` | Bounded proposals, fresh rebuilds, and promotion |
+| Reporting | `pipeline_report`, `packaging_proposal`, `failure_summary` | Evidence to human-readable reports |
 
-For upstream updates, the lock separates the upstream project from the Debian source and binary names. It pins packaging, upstream, and pristine-tar commits and an official release sdist. Reusing an existing import requires the pinned peeled tag commit and identical pristine-tar bytes. Creating an import requires the tag to be absent. Neither mode overwrites published tags.
+Objects own state and invariants. `LockedBuild` accepts an injected
+`CommandExecutor` protocol for process-boundary tests. Parsing, hashing, graph transformations, and
+version calculations remain functions. No generic plugin framework or class
+hierarchy is needed. JSON remains the interchange format; typed records are
+used at identity and policy boundaries while preserving artifact schema
+compatibility. The handoff module constructs repositories for verified candidate
+packages.
 
-The executor checks source identity, branch configuration, upstream version, and epoch preservation. It merges upstream, validates the patch queue, returns to the packaging branch, updates and commits the changelog, and requires a clean checkout. gbp exports a fresh source tree and runs unsigned source generation. The deliberate `-nc` source-build policy applies to that fresh export; sbuild performs the normal binary build and tests with resolved build dependencies.
+## Execution and evidence
 
-## State and evidence
+The locked executor preflights the named schroot and tools, obtains pinned
+source inputs, verifies the `.dsc` and its components, runs sbuild, checks actual
+binary metadata and checksummed `.changes`/`.buildinfo`, then runs Lintian.
+A successful command without the required artifacts is a failed build.
 
-Each invocation creates a unique generation directory tied to the canonical lock hash. JSON manifest updates use atomic replacement. Per-command logs retain complete stdout/stderr on disk, bounded diagnostic tails in JSON, exit codes, durations, and process-group timeouts. Failure bundles capture the failing stage, packaging files, patches, Git state, and command diagnostics.
+Command logs retain full stdout/stderr on disk and bounded tails in JSON.
+Deadlines cover the entire subprocess lifetime, including time after its pipes
+close. Build manifests use atomic replacement. Failures retain the stage,
+packaging files, command details, and relevant Git evidence.
 
-Source and binary artifacts are stored separately. A zero exit code with missing, corrupt, or incorrectly versioned binaries fails validation. Source hashes, binary hashes, tool versions, builder identity, and installed build dependency versions are retained.
+The standalone regression wrapper runs a fresh installation check after the
+build. Nightly jobs use autopkgtest and a producer-readiness record. Build
+success alone does not authorize downstream handoff; see the
+[result contract](docs/contracts.md).
 
-For ordered multi-package locks, only validated successful producer binaries are passed to consumers using sbuild `--extra-package`. A declared required dependency version is enforced by an sbuild `--add-depends` constraint and must match `.buildinfo`; failed producers block consumers. The pbr → oslo.i18n Stonking case validates this handoff and failure blocking with real runs.
+## Packaging changes and trust
 
-## Scope
+Packaging Git commits and source checksums are pinned before execution.
+Generated sdists use pinned build tools and normalized archive headers.
+Fallback packaging sources and their reasons are recorded explicitly.
 
-Builder profiles cover Noble amd64 (main/universe with updates/security) and Stonking amd64 (main/universe). The archive dependency set is current at build time and recorded, not snapshot pinned. Equal locks therefore do not promise byte-identical packages.
+Quilt identifier overlap is advisory. It never comments out a patch in `series`.
+A failed active patch continues to fail source validation. Existing reverse-apply
+and matching upstream Change-Id policies are separate mechanisms, with their
+own recorded evidence; their assumptions are not semantic equivalence proofs.
 
-The current GitHub workflow is one job calling the same provisioning/build scripts used locally. It has not yet been validated remotely. Gump workflow integration is deferred; direct runs in an Ubuntu VM establish tool behavior independently.
+Model output is untrusted. Deterministic validation restricts repair paths and
+rejects known test-bypass patterns, but text checks are not a security sandbox.
+Run source generation, packaging rules, builds, and tests in disposable builders
+without publication credentials. A proposed repair is promoted only after its
+fresh build and accepted autopkgtest outcome; all attempts retain evidence.
+Human-review flags describe proposal review, not a guarantee that review has
+already happened.
 
-The earlier planner/scheduler/repository abstractions remain for future work. Repository publication, UCA version policy, service package validation, automatic lock generation, signing, and archive uploads are not connected to this executor. Models may eventually propose fixes from captured evidence; automatic patch application is outside the current design.
+## Reproducibility and scope
 
-## Snapshot inputs
-
-Snapshot acquisition clones full Git history at the locked SHA and verifies the base-tag commit, ancestry, commit count, and timestamp. A separate venv installs checksum-pinned PBR/setuptools/wheel and generates an sdist with the exact snapshot PBR_VERSION. Archive-header normalization makes this generated source repeatable; a lock can require its expected SHA256. The resulting orig is imported using pristine-tar and follows the same source/binary verification path as a release. Installation additionally checks Python distribution metadata retains the complete snapshot version.
+Equal locks do not promise byte-identical binaries. Archive dependencies are
+current at build time and recorded, rather than served from immutable snapshots.
+The locked executor does not independently authenticate archive `.dsc`
+signatures. Same-run handoff verifies identity and bytes but is not a signed
+public archive. No automatic signing, Launchpad upload, or regress-stack gate is
+connected. Current operational targets and schedules belong in the
+[nightly reference](HIBISCUS-PIPELINE.md), not duplicated here.

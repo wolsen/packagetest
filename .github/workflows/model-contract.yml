@@ -11,6 +11,9 @@ on:
       - "scripts/remediate-package.py"
       - "src/packagetest/failure_analysis.py"
       - "src/packagetest/remediation_evidence.py"
+      - "src/packagetest/remediation.py"
+      - "src/packagetest/source_remediation.py"
+      - "src/packagetest/contracts.py"
   workflow_dispatch:
 
 permissions:

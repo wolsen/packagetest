@@ -1,15 +1,31 @@
 """Build an exact candidate dependency graph from prepared Debian sources."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
-import re
 import subprocess
 from urllib.parse import urlparse
 
-from .artifacts import checksum_entries, fields, sha256, verify_source
-from .catalog import dependency_names
+from .artifacts import checksum_entries, sha256, verify_source
+from .contracts import BuildTarget, PreparedSource
+from .relations import BuildContext, is_deferred_relation, parse_relation
+
+
+@dataclass
+class DependencyPlan:
+    """Candidate graph and the evidence explaining its selected edges."""
+
+    dependencies: dict[str, list[str]]
+    external_decisions: list[dict]
+    errors: list[dict]
+    reasons: dict[tuple[str, str], list[dict]]
+
+    def __post_init__(self) -> None:
+        for source, producers in self.dependencies.items():
+            if source in producers or set(producers) - self.dependencies.keys():
+                raise ValueError(f'Invalid candidate dependency edges for {source}')
 
 
 def stable_digest(value: object) -> str:
@@ -23,7 +39,8 @@ def load_prepared(root: Path, catalog: dict) -> dict[str, dict]:
     manifests = {}
     for path in sorted(root.rglob('prepared-source.json')):
         manifest = json.loads(path.read_text())
-        source = manifest.get('source')
+        identity = PreparedSource.from_mapping(manifest)
+        source = identity.source
         if source not in entries:
             raise ValueError(f'Prepared manifest names unknown source: {source!r}')
         if source in manifests:
@@ -37,7 +54,7 @@ def load_prepared(root: Path, catalog: dict) -> dict[str, dict]:
                                     'packaging_sha': entry.get('packaging_sha')}:
             raise ValueError(f'Prepared source Git pins changed: {source}')
         source_dir = path.parent / 'source'
-        dsc = source_dir / manifest['dsc']
+        dsc = identity.verified_path(source_dir)
         if not dsc.is_file() or sha256(dsc) != manifest['dsc_sha256']:
             raise ValueError(f'Prepared source .dsc checksum mismatch: {source}')
         dsc_fields = verify_source(dsc, source, manifest['version'])
@@ -80,22 +97,20 @@ def _split_relations(value: str, separator: str) -> list[str]:
     return result
 
 
-RELATION = re.compile(
-    r'^([a-z0-9][a-z0-9+.-]*)(?::(?:any|native|[a-z0-9-]+))?'
-    r'(?:\s*\((<<|<=|=|>=|>>)\s*([^()\s]+)\))?', re.I)
-
-
-def relation_groups(value: str) -> list[list[dict]]:
+def relation_groups(value: str, context: BuildContext | None = None) -> list[list[dict]]:
+    context = context or BuildContext()
     groups = []
     for expression in _split_relations(value, ','):
         alternatives = []
         for alternative in _split_relations(expression, '|'):
-            match = RELATION.match(alternative.strip())
-            if not match:
+            if is_deferred_relation(alternative):
                 continue
-            alternatives.append({'package': match.group(1).lower(),
-                                 'operator': match.group(2), 'version': match.group(3),
-                                 'expression': alternative.strip(), 'group': expression})
+            relation = parse_relation(alternative)
+            if not relation.applies(context):
+                continue
+            alternatives.append({'package': relation.package,
+                                 'operator': relation.operator, 'version': relation.version,
+                                 'expression': relation.expression, 'group': expression})
         if alternatives:
             groups.append(alternatives)
     return groups
@@ -146,7 +161,11 @@ def dependency_inputs(manifest: dict) -> list[tuple[str, str, str]]:
     return result
 
 
-def exact_dependencies(catalog: dict, manifests: dict[str, dict]) -> tuple[dict, list[dict], list[dict], dict]:
+def exact_dependencies(catalog: dict, manifests: dict[str, dict], *,
+                       context: BuildContext | None = None) -> DependencyPlan:
+    if context is None:
+        target = catalog.get('target')
+        context = BuildTarget.from_mapping(target).context if target else BuildContext()
     providers = {}
     for source, manifest in manifests.items():
         for binary in manifest['binaries']:
@@ -159,7 +178,7 @@ def exact_dependencies(catalog: dict, manifests: dict[str, dict]) -> tuple[dict,
     reasons: dict[tuple[str, str], list[dict]] = {}
     for source, manifest in sorted(manifests.items()):
         for phase, location, value in dependency_inputs(manifest):
-            for alternatives in relation_groups(value):
+            for alternatives in relation_groups(value, context):
                 candidate_options = []
                 for relation in alternatives:
                     provider = providers.get(relation['package'])
@@ -191,14 +210,12 @@ def exact_dependencies(catalog: dict, manifests: dict[str, dict]) -> tuple[dict,
                                    'candidate_sources': candidate_names,
                                    'error': 'Prepared candidate and known Ubuntu versions do not satisfy the relation'})
                 else:
-                    names = sorted(dependency_names(alternatives[0]['group']))
+                    names = sorted({relation['package'] for relation in alternatives})
                     external.append({'consumer': source, 'phase': phase, 'location': location,
                                      'decision': 'system-archive-resolution',
                                      'relation': alternatives[0]['group'], 'binaries': names})
-    return ({source: sorted(values) for source, values in dependencies.items()},
-            external,
-            [{**error} for error in errors],
-            reasons)
+    return DependencyPlan({source: sorted(values) for source, values in dependencies.items()},
+                          external, errors, reasons)
 
 
 def apply_prepared_metadata(catalog: dict, manifests: dict[str, dict]) -> dict:

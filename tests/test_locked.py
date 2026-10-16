@@ -140,3 +140,18 @@ def test_consumer_cannot_succeed_using_archive_version(tmp_path, monkeypatch):
     record = build.manifest['packages'][1]
     assert record['result'] == 'FAILED'
     assert 'did not use required dependency' in record['error']
+
+
+def test_injected_command_failure_retains_stage_evidence(tmp_path):
+    from packagetest.models import CommandResult
+
+    class FailingExecutor:
+        def run(self, command, cwd, env_diff=None):
+            return CommandResult(command, str(cwd), env_diff or {}, '', 'tool unavailable', 127, 0.0)
+
+    build = LockedBuild(load_lock(LOCK), tmp_path, runner=FailingExecutor())
+    assert build.run() == 1
+    failure = json.loads((build.root / 'failures/environment/failure.json').read_text())
+    assert failure['command_exit_code'] == 127
+    assert failure['command']['stderr'] == 'tool unavailable'
+    assert build.manifest['result'] == 'FAILED'

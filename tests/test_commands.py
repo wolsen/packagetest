@@ -53,3 +53,13 @@ def test_missing_executable_is_logged(tmp_path):
     runner = CommandRunner(tmp_path / 'commands.jsonl')
     assert runner.run(['/nonexistent/packaging-tool'], tmp_path).exit_code == 127
     assert (tmp_path / '0001.stderr.log').read_text()
+
+
+def test_timeout_remains_active_after_output_streams_close(tmp_path):
+    import sys
+
+    runner = CommandRunner(tmp_path / 'commands.jsonl', timeout=0.1)
+    result = runner.run([sys.executable, '-c',
+                         'import os,time; os.close(1); os.close(2); time.sleep(5)'], tmp_path)
+    assert result.exit_code == 124
+    assert result.duration_seconds < 3

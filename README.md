@@ -1,119 +1,75 @@
-# OpenStack packaging agent
+# OpenStack packaging executor
 
-A small, deterministic executor for Ubuntu Debian package builds. The tool runs directly in a prepared Ubuntu 24.04 builder. The GitHub workflow calls the same scripts. Each sbuild invocation extracts a fresh target schroot.
+Build and test pinned OpenStack Debian source packages in disposable Ubuntu
+builders. The executor verifies source and binary checksums, Debian metadata,
+Lintian results, and installed build dependencies. Nightly workflows prepare
+snapshot sources, schedule candidate dependencies, run autopkgtest, and retain
+bounded remediation attempts and reviewable packaging proposals.
 
-The first integration cases are deliberately small:
+## Start with a pinned build
 
-- `baseline`: rebuild Ubuntu's published `python-oslo.i18n` 6.3.0-0ubuntu1 source package.
-- `update`: prepare 6.4.0 from a pinned Launchpad packaging commit and official release tarball, then build 6.4.0-0ubuntu1~packagetest1.
-- `dependency`: build a uniquely versioned python-pbr and require it in the oslo.i18n snapshot build. See `DEPENDENCY-VALIDATION.md`.
-- `uca`: build the pinned Epoxy library backport for Noble; see `UCA.md`.
-- `glance`: rebuild Glance from UCA, install it, and test its API image round trip.
-- `snapshot`: generate a PBR sdist from pinned oslo.i18n Git commit `7045af07a065`, then build it for Stonking. See `SNAPSHOTS.md`.
-
-The executor validates checksums, actual `.deb` metadata, `.changes`, and `.buildinfo`; runs Lintian; and records installed build dependency versions. The workflow installs the resulting packages in another fresh schroot and exercises Oslo translation or the Glance API. A successful subprocess without the expected artifacts is a failed build.
-
-## Run locally
-
-Use a disposable Ubuntu 24.04 VM with passwordless sudo, at least 4 CPUs, 8 GiB RAM, and 40 GiB disk. Copy this repository into it, then run:
+Use a disposable Ubuntu 24.04 VM with passwordless sudo, at least 4 CPUs,
+8 GiB RAM, and 40 GiB disk. Provisioning changes the builder's package and
+schroot configuration.
 
 ```bash
 bash scripts/prepare-builder.sh
 bash scripts/run-library.sh baseline
-bash scripts/run-library.sh update
-
-# Latest upstream snapshot pinned on 2026-09-20, using current Ubuntu packaging
-bash scripts/prepare-builder.sh stonking
-bash scripts/run-library.sh snapshot
 ```
 
-The provisioning script installs packaging prerequisites and creates the target schroot. Run it in the VM, not on a workstation you want to keep unchanged. The build script installs the agent, runs its unit tests, builds the selected package, and verifies installation in a fresh schroot.
+This rebuilds the pinned Noble oslo.i18n package and checks installation in a
+fresh schroot. See the [validation guide](docs/validation.md) for other cases.
 
-Gump was tried but its workflow context handling prevented validation of uncommitted changes. We switched to running these commands directly in an existing Ubuntu VM. Gump integration remains deferred; see `GUMP-INTEGRATION.md` for the small fixes already made and the remaining issue. The GitHub Actions validation matrix runs the same entry points; see `MILESTONES.md` for results.
-
-Snapshot discovery is available through `packaging lock-snapshot --template ... --ref master [--at TIMESTAMP] --output ...`; see `SNAPSHOTS.md`. It creates a new checksum-pinned lock and never changes an existing reviewed lock.
-
-The 2026.2 nightly planner treats `--sources` as build roots. It freezes each
-root to a commit, reads `requirements.txt`, `test-requirements.txt`, and the
-runtime, build-system, and test groups in `pyproject.toml`, maps Python
-distribution names to Ubuntu source packages, and repeats this process until
-the candidate dependency closure is complete. Before expanding the closure it
-compares each PEP 508 version constraint with the Ubuntu source's Debian
-version. Satisfied requirements continue to use the archive; insufficient or
-unrepresentable versions request a same-run candidate. The dependency levels
-use those candidate edges together with the effective Debian `Build-Depends` metadata.
-The generated `nightly-plan/summary.md` records the requested roots, every
-automatically added source, and the packages in each dependency level.
-
-The plan job generates its catalog from the current Resolute, updates, and
-security `Sources` indexes and the current OpenStack releases metadata. It
-preflights every selected Ubuntu source file, then freezes the resolved catalog
-and upstream commits into the `nightly-plan` artifact consumed by all parallel
-jobs. Generated catalogs are run artifacts and are not committed to this
-repository.
-
-For Debian packaging, planning first resolves and pins the corresponding
-`~ubuntu-openstack-dev/ubuntu/+source/<source>` Launchpad Git tree. When that
-team has no tree for a package, the archive's `Vcs-Git` repository is pinned
-instead. Package jobs fetch the exact recorded commit and copy its `debian/`
-tree onto the upstream snapshot. Published `.dsc` packaging is retained only as
-an explicit, reported compatibility fallback; supplementary orig components
-are still downloaded by their archive checksums when a source requires them.
-
-One daily preparation job updates the target schroot and resolves the Ubuntu
-24.04 host tools needed to operate it. The resulting cache contains the updated
-schroot tarball and checksum-pinned host-tool `.deb` files. Package jobs install
-those host tools with APT `--no-download`, register the cached schroot, and do
-not refresh package indexes during builder preparation.
-
-At the end of the workflow, the `pipeline-summary` artifact contains a
-self-contained `index.html`, its machine-readable `report.json`, and every
-checksum-verified proposed patch under `patches/`. The page filters packages by
-build result, autopkgtest result, dependency level, and whether packaging was
-changed. Each package expands to show its candidate dependencies, failure
-detail, patch rationale, validation state, and an inline diff. Extract the
-artifact before opening the page so its patch download links work.
-
-The report identifies its build target as either an Ubuntu development release
-or an Ubuntu Cloud Archive target, including the Ubuntu base, archive suite,
-OpenStack series, and architecture. The current workflow emits the Resolute
-development target. This target record is the boundary for adding the LTS/UCA
-build axis later. The report also reserves a structured functional-test result
-for the final `regress-stack` gate; it is explicitly `NOT_RUN` until that phase
-is connected.
-
-## Run the executor in a prepared builder
+In an already prepared builder:
 
 ```bash
 python3 -m venv --system-site-packages .venv
 .venv/bin/pip install --no-build-isolation -e .
 .venv/bin/packaging build --plan config/locks/oslo-i18n-noble-baseline.json --dry-run
 sg sbuild -c '.venv/bin/packaging build --plan config/locks/oslo-i18n-noble-baseline.json'
-.venv/bin/python scripts/smoke-install.py artifacts
 ```
 
-`--dry-run` validates the lock and reports `PLANNED`; it never reports a successful build. The CLI intentionally requires a reviewed schema-v1 lock. The separate `packaging plan` command discovers candidate releases and dependencies; its output is **not** yet an executable lock. The old `build --openstack-target ...` interface has been removed.
+A dry run reports `PLANNED`, never successful execution. `packaging plan` is a
+separate advisory release-discovery command; its output is not an executable lock.
 
-A generation directory contains:
+## Documentation
 
-- `build-lock.json` and `generation-manifest.json`, with exact input identity and results.
-- `artifacts/<source>/source/` and `binary/`, including tarballs, `.dsc`, `.deb`, `.changes`, `.buildinfo`, and sbuild logs.
-- Full numbered stdout/stderr logs, a command JSONL index, and stage transitions.
-- Failure bundles containing actual packaging files, patches, Git state, and command diagnostics.
-- `smoke-install.json` after the separate installation check. Overall workflow success requires this check as well as build success.
-
-## Scope and reproducibility
-
-Release tarballs and archive source inputs are checksum pinned; Git inputs are commit pinned. The build records dependency versions but uses the current Noble, Noble updates, and Noble security archives. This is not yet a snapshot-pinned dependency environment or a claim of bit-for-bit reproducibility. Source integrity relies on reviewed SHA256 locks obtained over HTTPS; archive `.dsc` signatures are not independently authenticated by this executor.
-
-The update path honors the selected packaging and upstream branches, requires explicit `reuse` or `new` import policy, verifies reused pristine-tar content, validates patch application, commits the changelog, and builds unsigned source artifacts. It fails on conflicts instead of asking a model to improvise packaging policy.
-
-Dependency handoff is validated by the pbr → oslo.i18n integration case, using sbuild `--extra-package`, exact solver constraints, and `.buildinfo` checks. A corrupt producer source also demonstrably blocks its consumer. Discovery/scheduler/repository modules from the earlier prototype remain available for development; repository publication is not wired into the locked executor. Noble/UCA Epoxy and a Glance service case are implemented. Automatic remediation, signing, and Launchpad uploads remain future work.
+- [Architecture](DESIGN.md): ownership, pipeline flow, trust boundaries, and limitations.
+- [Pipeline contracts](docs/contracts.md): JSON identities, dependency rules, and result semantics.
+- [Nightly operations](HIBISCUS-PIPELINE.md): target workflows, artifacts, and remediation.
+- [Snapshot locks](SNAPSHOTS.md) and [Noble/UCA Epoxy](UCA.md): task-specific instructions.
+- [Validation](docs/validation.md): test layers and integration acceptance criteria.
+- [Roadmap](ROADMAP.md): remaining work.
 
 ## Development
 
 ```bash
-PYTHONPATH=src python3 -m pytest -q
+python3 -m venv --system-site-packages .venv
+.venv/bin/pip install -e '.[dev]'
+.venv/bin/python -m pytest -q
+.venv/bin/ruff check src scripts tests
+.venv/bin/ruff format --check src/packagetest/contracts.py src/packagetest/relations.py
+.venv/bin/python -m mypy
+.venv/bin/python scripts/check-complexity.py
+.venv/bin/bandit -r src scripts -lll -q
+.venv/bin/pip-audit .
+PATH="$PWD/.venv/bin:$PATH" bash scripts/check-installed-package.sh
 ```
 
-`ASSESSMENT.md` records the original diagnosis; `NEXT-STEPS.md` records the broader implementation sequence. They are historical planning documents, not evidence that every milestone is complete.
+Some component tests require Debian tools such as quilt; CI installs them in a
+separate job. The dependency audit needs network access. Complexity checks cap
+new functions at 15 and reject increases above recorded legacy exceptions.
+When reducing complexity, lower the corresponding baseline entry. Baseline
+changes require review; CI never refreshes them automatically. Formatting and
+strict type checks initially cover the new typed boundaries, while correctness
+linting covers the whole Python tree. Bandit currently gates high-severity
+findings; it is not a claim that lower-severity findings have all been resolved.
+
+Python application logic belongs in `src/packagetest`. Existing Python scripts
+are compatibility adapters where migrated; shell scripts retain builder/CI
+integration. Installed wheels include default planner configuration. Building
+packages still requires the documented external tools and prepared environment.
+
+Source pins establish input integrity, not bit-for-bit reproducibility: archive
+dependencies are recorded but not snapshot-pinned. Signing, archive uploads,
+and regress-stack are not implemented.

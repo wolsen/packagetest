@@ -1,13 +1,9 @@
-import importlib.util
 import json
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-spec = importlib.util.spec_from_file_location('nightly_plan', Path(__file__).parents[1] / 'scripts/nightly-plan.py')
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
+from packagetest import nightly_plan as module
 
 
 def catalog():

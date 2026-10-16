@@ -7,7 +7,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from .config import load_package_definitions
+from .config import default_config_path, load_package_definitions
 from .models import BuildPlan
 from .planner import build_plan
 from .release_discovery import OpenStackReleaseResolver, ReleaseDiscoveryError, ResolvedRelease
@@ -16,7 +16,7 @@ from .locked import LockedBuild, load_lock
 logger = logging.getLogger(__name__)
 
 def _default_config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "config" / "vertical_slice.json"
+    return default_config_path("vertical_slice.json")
 
 def plan_cmd(args: argparse.Namespace) -> int:
     logger.debug("Starting plan command with args: %s", vars(args))

@@ -17,6 +17,26 @@ on:
 permissions:
   contents: read
 jobs:
+  quality:
+    name: Python quality and installed wheel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -e '.[dev]'
+      - run: ruff check src scripts tests
+      - run: ruff format --check src/packagetest/contracts.py src/packagetest/relations.py
+      - run: python -m mypy
+      - run: python scripts/check-complexity.py
+      - run: bandit -r src scripts -lll -q
+      - run: pip-audit .
+      - run: bash scripts/check-installed-package.sh
+
   unit:
     name: Pure Python unit tests
     runs-on: ubuntu-24.04
@@ -44,7 +64,7 @@ jobs:
           done
           sudo timeout --signal=TERM --kill-after=30s 10m \
             env DEBIAN_FRONTEND=noninteractive apt-get "${apt_options[@]}" \
-            install -y python3-packaging python3-pytest python3-tomlkit
+            install -y python3-packaging python3-pytest python3-tomlkit python3-yaml dpkg-dev
           PYTHONPATH=src python3 -m pytest -q -m "not packaging_component"
 
   packaging-component:
@@ -75,13 +95,13 @@ jobs:
           done
           sudo timeout --signal=TERM --kill-after=30s 10m \
             env DEBIAN_FRONTEND=noninteractive apt-get "${apt_options[@]}" \
-            install -y python3-packaging python3-pytest python3-tomlkit quilt
+            install -y python3-packaging python3-pytest python3-tomlkit quilt python3-yaml dpkg-dev
       - name: Run Debian packaging component tests
         run: PYTHONPATH=src python3 -m pytest -q -m packaging_component
 
   build:
     name: Packaging regression ${{ matrix.build_case }}
-    needs: [unit, packaging-component]
+    needs: [quality, unit, packaging-component]
     strategy:
       fail-fast: false
       max-parallel: 3

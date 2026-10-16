@@ -1,12 +1,7 @@
-import importlib.util
 import json
-from pathlib import Path
 
 
-path = Path(__file__).parents[1] / 'scripts/remediate-source-preparation.py'
-spec = importlib.util.spec_from_file_location('source_preparation_remediation', path)
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
+from packagetest import source_remediation as module
 
 
 def test_failed_tree_and_quilt_evidence_are_selected(tmp_path):
@@ -58,7 +53,7 @@ def test_failed_quilt_patch_prefers_final_dpkg_source_error(tmp_path):
 
 
 def test_cumulative_refresh_uses_upstream_tree_and_normalized_context(tmp_path):
-    helper = module.remediation_module()
+    from packagetest import remediation as helper
     patches = tmp_path / 'debian/patches'
     patches.mkdir(parents=True)
     (patches / 'series').write_text('entry-point.patch\n')

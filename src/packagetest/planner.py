@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from collections import deque
 
-from .models import BuildPlan, BuildState, PackageDefinition, PlannedBuild
+from .models import BuildPlan, PackageDefinition, PlannedBuild
 
 
 def build_plan(
@@ -72,7 +72,3 @@ def _topological_order(definitions: dict[str, PackageDefinition], selected: set[
     if len(out) != len(selected):
         raise ValueError("Dependency graph contains a cycle")
     return out
-
-
-def initial_states(plan: BuildPlan) -> dict[str, BuildState]:
-    return {p.source_package: BuildState.WAITING_FOR_DEPENDENCY for p in plan.planned_builds}

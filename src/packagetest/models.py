@@ -1,35 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from enum import Enum
 from typing import Any
-
-
-class BuildState(str, Enum):
-    WAITING_FOR_DEPENDENCY = "WAITING_FOR_DEPENDENCY"
-    BUILDING = "BUILDING"
-    BUILD_FAILED = "BUILD_FAILED"
-    BUILD_SUCCEEDED = "BUILD_SUCCEEDED"
-    PUBLISHING = "PUBLISHING"
-    PUBLISHED = "PUBLISHED"
-    PUBLISH_FAILED = "PUBLISH_FAILED"
-    BLOCKED_BY_FAILED_DEPENDENCY = "BLOCKED_BY_FAILED_DEPENDENCY"
-
-
-TERMINAL_FAILURE_STATES = frozenset(
-    {
-        BuildState.BUILD_FAILED,
-        BuildState.PUBLISH_FAILED,
-        BuildState.BLOCKED_BY_FAILED_DEPENDENCY,
-    }
-)
-
-COMPLETED_SUCCESS_STATES = frozenset(
-    {
-        BuildState.BUILD_SUCCEEDED,
-        BuildState.PUBLISHED,
-    }
-)
 
 
 @dataclass(frozen=True)
@@ -91,61 +63,3 @@ class BuildPlan:
                 for p in self.planned_builds
             ],
         }
-
-
-@dataclass
-class PackageManifest:
-    source_package: str
-    upstream_repo: str
-    upstream_tag_or_sha: str
-    upstream_version: str
-    packaging_repo: str
-    packaging_branch: str
-    packaging_base_sha: str
-    generated_debian_version: str
-    source_hashes: list[str]
-    build_dependency_versions: dict[str, str]
-    generated_binary_packages: list[str]
-    generated_binary_hashes: list[str]
-    runner_environment: dict[str, str]
-    build_started_at: str
-    build_finished_at: str
-    build_result: BuildState
-
-
-@dataclass
-class GenerationManifest:
-    generation_id: str
-    openstack_release_target: str
-    ubuntu_release: str
-    package_manifests: list[PackageManifest]
-    snapshot_at: str | None = None
-
-    def as_dict(self) -> dict[str, Any]:
-        package_manifests = []
-        for package_manifest in self.package_manifests:
-            row = asdict(package_manifest)
-            row["build_result"] = package_manifest.build_result.value
-            package_manifests.append(row)
-        return {
-            "generation_id": self.generation_id,
-            "openstack_release_target": self.openstack_release_target,
-            "ubuntu_release": self.ubuntu_release,
-            "snapshot_at": self.snapshot_at,
-            "package_manifests": package_manifests,
-        }
-
-
-@dataclass
-class PackageExecutionMetadata:
-    upstream_tag_or_sha: str
-    upstream_version: str
-    packaging_branch: str
-    build_output_dir: str = "unknown"
-    packaging_base_sha: str = "unknown"
-    generated_debian_version: str = "unknown"
-    source_hashes: list[str] = field(default_factory=list)
-    build_dependency_versions: dict[str, str] = field(default_factory=dict)
-    generated_binary_hashes: list[str] = field(default_factory=list)
-    build_started_at: str = "unknown"
-    build_finished_at: str = "unknown"

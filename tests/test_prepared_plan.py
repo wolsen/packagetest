@@ -1,5 +1,4 @@
 import hashlib
-import importlib.util
 import json
 from pathlib import Path
 import sys
@@ -57,7 +56,9 @@ def test_exact_graph_uses_build_test_and_runtime_candidate_providers():
         'c': manifest('c', '2.0-1', ['python3-c'], binary_depends='python3-a'),
     }
 
-    dependencies, external, errors, reasons = exact_dependencies(catalog, manifests)
+    graph = exact_dependencies(catalog, manifests)
+    dependencies, external = graph.dependencies, graph.external_decisions
+    errors, reasons = graph.errors, graph.reasons
 
     assert dependencies == {'a': [], 'b': ['a', 'c'], 'c': ['a']}
     assert errors == []
@@ -81,7 +82,8 @@ def test_incompatible_selected_candidate_is_a_planning_error_without_archive_fal
         'a': manifest('a', '2.0-1', ['python3-a']),
         'b': manifest('b', '2.0-1', ['python3-b'], build='python3-a (>= 3.0)'),
     }
-    dependencies, external, errors, _ = exact_dependencies(catalog, manifests)
+    graph = exact_dependencies(catalog, manifests)
+    dependencies, external, errors = graph.dependencies, graph.external_decisions, graph.errors
     assert dependencies['b'] == []
     assert external == []
     assert errors[0]['candidate_sources'] == ['a']
@@ -172,10 +174,8 @@ def test_final_planner_builds_levels_from_prepared_sources(tmp_path, monkeypatch
     constraints = tmp_path / 'constraints.json'
     constraints.write_text('[]')
     output = tmp_path / 'final'
-    path = Path(__file__).parents[1] / 'scripts/finalize-nightly-plan.py'
-    spec = importlib.util.spec_from_file_location('finalize_nightly_plan', path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    from packagetest import final_plan as module
+    path = Path('scripts/finalize-nightly-plan.py')
     monkeypatch.setattr(sys, 'argv', [str(path), '--catalog', str(catalog_path),
                         '--prepared-inputs', str(prepared), '--output', str(output),
                         '--candidate-dependencies', str(constraints)])
@@ -188,3 +188,39 @@ def test_final_planner_builds_levels_from_prepared_sources(tmp_path, monkeypatch
     assert plan['dependency_edges'][0]['reasons'][0]['binary'] == 'python3-a'
     assert final_entries['a']['archive_binaries'] == ['python3-old-a']
     assert final_entries['a']['binaries'] == ['python3-a']
+
+
+@pytest.mark.parametrize(('expression', 'profiles', 'expected'), [
+    ('python3-a [arm64]', (), False),
+    ('python3-a [amd64]', (), True),
+    ('python3-a [linux-any]', (), True),
+    ('python3-a [!amd64]', (), False),
+    ('python3-a <cross>', (), False),
+    ('python3-a <cross>', ('cross',), True),
+    ('python3-a <!nocheck>', ('nocheck',), False),
+    ('python3-a <cross nocheck>', ('cross',), False),
+    ('python3-a <cross> <nocheck>', ('nocheck',), True),
+])
+def test_exact_graph_respects_target_restrictions(expression, profiles, expected):
+    from packagetest.relations import BuildContext
+    manifests = {'a': manifest('a', '1', ['python3-a']),
+                 'b': manifest('b', '1', ['python3-b'], build=expression)}
+    graph = exact_dependencies(
+        {'packages': []}, manifests, context=BuildContext('amd64', frozenset(profiles)))
+    assert graph.dependencies['b'] == (['a'] if expected else [])
+    assert not graph.errors
+
+
+def test_restricted_alternative_is_removed_before_selecting_provider():
+    assert relation_groups('python3-a [arm64] | python3-b')[0][0]['package'] == 'python3-b'
+
+
+@pytest.mark.parametrize('expression', ['python3-a garbage', 'python3-a [amd64 !arm64]',
+                                        'python3-a < >', 'python3-a (invalid)'])
+def test_unknown_relation_syntax_is_rejected(expression):
+    with pytest.raises(ValueError):
+        relation_groups(expression)
+
+
+def test_deferred_substitutions_are_not_mistaken_for_packages():
+    assert relation_groups('@, @builddeps@, ${misc:Depends}') == []

@@ -1,13 +1,7 @@
-import importlib.util
 import json
-from pathlib import Path
 
 
-spec = importlib.util.spec_from_file_location(
-    'finalize_packaging_proposal',
-    Path(__file__).parents[1] / 'scripts/finalize-packaging-proposal.py')
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
+from packagetest import packaging_proposal as module
 
 
 def test_successful_build_marks_human_review_proposal_validated(tmp_path):

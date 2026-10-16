@@ -68,7 +68,7 @@ def test_local_ai_repairs_inside_each_package_job_before_publication():
 def test_main_push_exercises_heat_candidate_closure():
     stonking = Path('.github/workflows/hibiscus-snapshots.yml').read_text()
     uca = Path('.github/workflows/hibiscus-resolute-uca.yml').read_text()
-    policy = json.loads(Path('config/hibiscus-candidate-dependencies.json').read_text())
+    policy = json.loads(Path('src/packagetest/data/hibiscus-candidate-dependencies.json').read_text())
     for workflow in (stonking, uca):
         assert 'branches: [main]' in workflow
         assert ("github.event_name == 'push' && "
@@ -191,7 +191,7 @@ def test_packaging_engine_ci_splits_unit_and_packaging_component_tests():
     assert '-m "not packaging_component"' in workflow
     assert '-m packaging_component' in workflow
     assert 'install -y python3-packaging python3-pytest python3-tomlkit quilt' in workflow
-    assert 'needs: [unit, packaging-component]' in workflow
+    assert 'needs: [quality, unit, packaging-component]' in workflow
     assert 'for attempt in 1 2 3' in workflow
     assert 'Acquire::Retries=3' in workflow
     assert 'timeout --signal=TERM --kill-after=30s 5m' in workflow

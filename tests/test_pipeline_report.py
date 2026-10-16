@@ -1,14 +1,9 @@
 import hashlib
-import importlib.util
 import json
-from pathlib import Path
 import sys
 
 
-spec = importlib.util.spec_from_file_location(
-    'pipeline_report', Path(__file__).parents[1] / 'scripts/render-pipeline-report.py')
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
+from packagetest import pipeline_report as module
 
 
 def write_inputs(tmp_path, *, valid_checksum=True):

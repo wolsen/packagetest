@@ -2,7 +2,6 @@ import io
 import hashlib
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import tarfile
@@ -118,9 +117,9 @@ def importer_packaging_repository(tmp_path, *, version='1.0-1', binary='python3-
 
 
 def test_ubuntu_importer_checkout_matches_archive_identity(tmp_path):
-    from packagetest.nightly_source import Preparation, checkout_packaging_tree
+    from packagetest.nightly_source import SourcePreparer, checkout_packaging_tree
     repository, revision = importer_packaging_repository(tmp_path)
-    build = Preparation(tmp_path / 'result')
+    build = SourcePreparer(tmp_path / 'result')
     checkout, metadata = checkout_packaging_tree(build, {
         'source': 'demo', 'archive_version': '1.0-1', 'binaries': ['python3-demo'],
         'packaging_source_kind': 'git', 'packaging_source_role': 'ubuntu-importer',
@@ -134,7 +133,7 @@ def test_ubuntu_importer_checkout_matches_archive_identity(tmp_path):
 def test_packaging_checkout_retries_transient_git_fetch(tmp_path, monkeypatch):
     import packagetest.nightly_source as nightly_source
     repository, revision = importer_packaging_repository(tmp_path)
-    build = nightly_source.Preparation(tmp_path / 'result')
+    build = nightly_source.SourcePreparer(tmp_path / 'result')
     command = build.command
     attempts = []
 
@@ -164,7 +163,7 @@ def test_launchpad_packaging_checkout_uses_long_backoff_for_transient_failures(
     repository, revision = importer_packaging_repository(tmp_path)
     launchpad = ('https://git.launchpad.net/~ubuntu-openstack-dev/ubuntu/'
                  '+source/demo/+git/demo')
-    build = nightly_source.Preparation(tmp_path / 'result')
+    build = nightly_source.SourcePreparer(tmp_path / 'result')
     command = build.command
     attempts = []
     sleeps = []
@@ -202,7 +201,7 @@ def test_launchpad_packaging_checkout_uses_long_backoff_for_transient_failures(
 def test_launchpad_packaging_checkout_does_not_retry_permanent_failure(
         tmp_path, monkeypatch):
     import packagetest.nightly_source as nightly_source
-    build = nightly_source.Preparation(tmp_path / 'result')
+    build = nightly_source.SourcePreparer(tmp_path / 'result')
     attempts = []
 
     def missing_repository(*args, **_kwargs):
@@ -226,10 +225,10 @@ def test_launchpad_packaging_checkout_does_not_retry_permanent_failure(
 
 
 def test_ubuntu_importer_checkout_rejects_archive_version_mismatch(tmp_path):
-    from packagetest.nightly_source import (PackagingIdentityMismatch, Preparation,
+    from packagetest.nightly_source import (PackagingIdentityMismatch, SourcePreparer,
                                             checkout_packaging_tree)
     repository, revision = importer_packaging_repository(tmp_path, version='0.9-1')
-    build = Preparation(tmp_path / 'result')
+    build = SourcePreparer(tmp_path / 'result')
     with pytest.raises(PackagingIdentityMismatch, match='differs from archive'):
         checkout_packaging_tree(build, {
             'source': 'demo', 'archive_version': '1.0-1', 'binaries': ['python3-demo'],
@@ -256,10 +255,10 @@ def test_stale_importer_can_fall_back_only_to_exact_uca_ppa_source():
 
 
 def test_generic_archive_vcs_checkout_rejects_stale_binary_set(tmp_path):
-    from packagetest.nightly_source import (PackagingIdentityMismatch, Preparation,
+    from packagetest.nightly_source import (PackagingIdentityMismatch, SourcePreparer,
                                             checkout_packaging_tree)
     repository, revision = importer_packaging_repository(tmp_path)
-    build = Preparation(tmp_path / 'result')
+    build = SourcePreparer(tmp_path / 'result')
     with pytest.raises(PackagingIdentityMismatch, match='binary set differs'):
         checkout_packaging_tree(build, {
             'source': 'demo', 'archive_version': '1.0-1',
@@ -315,7 +314,7 @@ def test_existing_ubuntu_maintainer_is_byte_stable(tmp_path):
 
 
 def test_packaging_tree_is_cloned_at_plan_pinned_launchpad_commit(tmp_path):
-    from packagetest.nightly_source import Preparation, checkout_packaging_tree
+    from packagetest.nightly_source import SourcePreparer, checkout_packaging_tree
 
     repository = tmp_path / 'packaging-repository'
     (repository / 'debian').mkdir(parents=True)
@@ -331,7 +330,7 @@ def test_packaging_tree_is_cloned_at_plan_pinned_launchpad_commit(tmp_path):
                     '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'packaging'], check=True)
     revision = subprocess.check_output(
         ['git', '-C', str(repository), 'rev-parse', 'HEAD'], text=True).strip()
-    build = Preparation(tmp_path / 'result')
+    build = SourcePreparer(tmp_path / 'result')
 
     checkout, metadata = checkout_packaging_tree(build, {
         'source': 'demo', 'packaging_source_kind': 'git',
@@ -564,11 +563,7 @@ def test_commit_delta_does_not_use_packaging_seed_when_target_archive_is_absent(
 
 
 def test_prepared_control_metadata_captures_binary_and_autopkgtest_relationships(tmp_path):
-    import importlib.util
-    path = Path(__file__).parents[1] / 'scripts/prepare-nightly-source.py'
-    spec = importlib.util.spec_from_file_location('prepare_nightly_source', path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    from packagetest import prepared_source as module
     tree = tmp_path / 'source'
     (tree / 'debian/tests').mkdir(parents=True)
     (tree / 'debian/control').write_text('''Source: demo
@@ -818,7 +813,7 @@ include = ["demo"]
 
 
 def test_only_complete_already_applied_patch_is_omitted(tmp_path):
-    from packagetest.nightly_source import already_applied_patches
+    from packagetest.patches import already_applied_patches
     patches = tmp_path / 'debian/patches'
     patches.mkdir(parents=True)
     (patches / 'series').write_text('fix.patch\n')
@@ -832,8 +827,9 @@ def test_only_complete_already_applied_patch_is_omitted(tmp_path):
     assert (patches / 'series').read_text().startswith('# Fully present upstream')
 
 
-def test_semantically_equivalent_post_release_commit_supersedes_patch(tmp_path):
-    from packagetest.nightly_source import superseded_upstream_patches
+@pytest.mark.parametrize("address", ["192.0.2.1", "203.0.113.99"])
+def test_identifier_overlap_only_proposes_review(tmp_path, address):
+    from packagetest.patches import superseded_upstream_patches
     checkout = tmp_path / 'checkout'
     checkout.mkdir()
     subprocess.run(['git', 'init', '-q', '-b', 'master'], cwd=checkout, check=True)
@@ -867,17 +863,19 @@ def test_semantically_equivalent_post_release_commit_supersedes_patch(tmp_path):
          create_image()
 ''')
 
+    target_in_tree = tree / 'sample/test_store.py'
+    target_in_tree.write_text(target_in_tree.read_text().replace('192.0.2.1', address))
     result = superseded_upstream_patches(
         tree, checkout, {'commits': [{'sha': commit, 'subject': 'Do not rely on DNS resolution'}]})
 
-    assert result[0]['action'] == 'omit-upstream-superseded-patch'
+    assert result[0]['action'] == 'review-upstream-patch-overlap'
     assert result[0]['upstream_commit']['sha'] == commit
     assert result[0]['current_overlap'] >= 0.7
-    assert (patches / 'series').read_text().startswith('# Superseded by verified upstream commit')
+    assert (patches / 'series').read_text() == 'offline.patch\n'
 
 
 def test_unrelated_upstream_change_does_not_supersede_failed_patch(tmp_path):
-    from packagetest.nightly_source import superseded_upstream_patches
+    from packagetest.patches import superseded_upstream_patches
     checkout = tmp_path / 'checkout'
     checkout.mkdir()
     subprocess.run(['git', 'init', '-q', '-b', 'master'], cwd=checkout, check=True)

@@ -4,7 +4,6 @@ from __future__ import annotations
 import configparser
 import hashlib
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -16,7 +15,8 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
 
 from .artifacts import checksum_entries, fields, sha256, verify_binaries, verify_source
-from .commands import CommandRunner
+from .commands import CommandExecutor, CommandRunner
+from .contracts import BuildTarget
 
 
 def _now() -> str:
@@ -40,6 +40,7 @@ def load_lock(path: Path) -> dict:
     if lock.get('schema_version') != 1:
         raise ValueError('Unsupported lock schema_version (expected 1)')
     target = lock['target']
+    BuildTarget.from_mapping(target)
     for name in ('suite', 'architecture', 'chroot'):
         if not re.fullmatch(r'[a-z0-9][a-z0-9+.-]*', target[name]):
             raise ValueError(f'Invalid target {name}')
@@ -126,7 +127,8 @@ class StageFailure(RuntimeError):
 
 class LockedBuild:
     def __init__(self, lock: dict, root: Path, *, timeout: float = 3600,
-                 prepared_sources: dict | None = None, external_artifacts: dict | None = None):
+                 prepared_sources: dict | None = None, external_artifacts: dict | None = None,
+                 runner: CommandExecutor | None = None):
         self.lock = lock
         self.prepared_sources = prepared_sources or {}
         self.external_artifacts = external_artifacts or {}
@@ -135,7 +137,9 @@ class LockedBuild:
         self.root.mkdir(parents=True)
         self.work = self.root / 'work'
         self.work.mkdir()
-        self.runner = CommandRunner(self.root / 'logs' / 'commands.jsonl', stream=True, timeout=timeout)
+        (self.root / 'logs').mkdir()
+        self.runner: CommandExecutor = runner if runner is not None else CommandRunner(
+            self.root / 'logs' / 'commands.jsonl', stream=True, timeout=timeout)
         self.stage = 'preflight'
         self.checkout: Path | None = None
         self.last_result = None
@@ -400,6 +404,8 @@ class LockedBuild:
                 for binary, version in package.get('required_build_versions', {}).items():
                     argv.append(f'--add-depends={binary} (= {version})')
                 self.save()
+                if target.get("build_profiles"):
+                    argv.append("--profiles=" + ",".join(target["build_profiles"]))
                 self.command(*argv, str(dsc), cwd=binary_dir)
                 self.enter('artifact-validation')
                 validation = verify_binaries(binary_dir, source=source, version=package['version'],
