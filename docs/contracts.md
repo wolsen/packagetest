@@ -63,3 +63,29 @@ the flag does not serve as an execution approval mechanism.
 Scripts are command-line adapters. Import reusable Python APIs from
 `packagetest`. The advisory `packaging plan` CLI and the candidate handoff
 repository builder serve separate planning and execution responsibilities.
+
+## Package remediation responsibilities
+
+Evidence selection preserves priority: missing-import build dependencies, failed
+quilt patches and focused upstream hunks, implicated functional tests, then
+packaging files and moved-path candidates. Source context shares one character
+budget; model prompts also retain bounded feedback from the preceding attempt.
+
+`ProposalPlanner` normalizes, validates, and batches model decisions, then renders
+a cumulative patch against the original prepared tree. Decision identities are
+counted before rendering, and accepted changes are retained when a failed build
+or test exposes a different failure. Duplicate decisions and unchanged failures
+retain their existing stop conditions.
+
+`CandidateExecutor` runs a fresh build followed by autopkgtest only when the build
+returns zero and records `SUCCEEDED`. Test acceptance uses the classified result;
+the raw test exit code is recorded separately. It never replaces canonical output
+directories. `ArtifactPromoter` accepts only a candidate with successful build
+and accepted test outcomes and performs the canonical directory replacement.
+Replacement is sequential, not a transaction across both directories.
+
+`RepairProgress` records attempts and unchanged-evidence retries;
+`RemediationSession` supplies wall-clock and attempt budgets. Model timeouts keep
+partial output and stop immediately, subprocess timeouts stop the session, and
+other errors use the unchanged-evidence retry budget. Report rendering does not
+make execution or promotion decisions.

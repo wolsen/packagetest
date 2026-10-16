@@ -40,8 +40,6 @@
   "src/packagetest/prepared_plan.py:exact_dependencies": 26,
   "src/packagetest/prepared_plan.py:load_prepared": 18,
   "src/packagetest/release_discovery.py:resolve_release_from_deliverable_yaml": 28,
-  "src/packagetest/remediation.py:main": 50,
-  "src/packagetest/remediation.py:source_context": 56,
   "src/packagetest/snapshot.py:build_snapshot": 23,
   "src/packagetest/snapshot.py:canonical_sdist": 18,
   "src/packagetest/source_remediation.py:failed_quilt_patches": 17,

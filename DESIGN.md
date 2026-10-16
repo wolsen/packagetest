@@ -44,7 +44,10 @@ relationship replanning after repairs remains a limitation.
 | Quilt policy | `patches` | Evidence for applied patches and review suggestions |
 | Locked execution | `locked.LockedBuild`, `commands.CommandRunner` | Lock to validated source/binary artifacts |
 | Artifact handoff | `handoff` | Same-run producer identity, readiness, and byte verification |
-| Remediation | `remediation`, `source_remediation`, `RemediationSession` | Bounded proposals, fresh rebuilds, and promotion |
+| Remediation evidence | `remediation_evidence` | Ordered, bounded logs and source excerpts |
+| Package remediation | `ProposalPlanner`, `CandidateExecutor`, `ArtifactPromoter` | Validated decisions, isolated build/test gates, and canonical artifact replacement |
+| Retry coordination | `RepairProgress`, `RemediationSession` | Attempt records, unchanged-evidence retries, and budgets |
+| Source remediation | `source_remediation` | Repairs before immutable source preparation |
 | Reporting | `pipeline_report`, `packaging_proposal`, `failure_summary` | Evidence to human-readable reports |
 
 Objects own state and invariants. `LockedBuild` accepts an injected
