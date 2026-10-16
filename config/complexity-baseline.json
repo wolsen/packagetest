@@ -26,7 +26,6 @@
   "src/packagetest/failure_analysis.py:repository_context": 13,
   "src/packagetest/failure_analysis.py:safe_evidence_text": 11,
   "src/packagetest/failure_analysis.py:source_patch_paths": 10,
-  "src/packagetest/failure_analysis.py:validate_repair_decision": 27,
   "src/packagetest/failure_analysis.py:validate_source_patch": 28,
   "src/packagetest/failure_summary.py:_print_command_trace": 13,
   "src/packagetest/failure_summary.py:summarize": 16,

@@ -37,6 +37,7 @@ def select_direct_failures(rows: Iterable[dict]) -> list[dict]:
             selected.append({"source": source, "phase": "build", "result": build})
         elif test in TEST_FAILURES:
             selected.append({"source": source, "phase": "autopkgtest", "result": test})
+
     return selected
 
 
@@ -69,68 +70,124 @@ def parse_repair_decision(text: str) -> dict:
     for offset, character in enumerate(text):
         if character != "{":
             continue
+
         try:
             value, _ = decoder.raw_decode(text[offset:])
         except json.JSONDecodeError:
             continue
+
         if isinstance(value, dict) and set(REPAIR_DECISION_SCHEMA["required"]) <= value.keys():
             matches.append(value)
+
     if not matches:
         raise ValueError("model output contains no repair decision JSON")
+
     decision = matches[-1]
     if decision["action"] not in REPAIR_DECISION_SCHEMA["properties"]["action"]["enum"]:
         raise ValueError(f"unsupported repair action: {decision['action']}")
+
     if not all(isinstance(decision[key], str) for key in REPAIR_DECISION_SCHEMA["required"]):
         raise ValueError("repair decision values must be strings")
+
     return decision
 
 
-def validate_repair_decision(decision: dict, evidence: str) -> dict:
-    """Require the selected action and value to be directly supported by evidence."""
+def _validate_no_fix(decision: dict, evidence: str) -> dict:
+    """Validate the evidence and fields required for the no_fix action."""
+    if decision["subject"].strip() or decision["replacement"].strip():
+        return {"result": "REJECTED", "error": "no_fix requires empty subject and replacement"}
+
+    return {"result": "ACCEPTED", "error": ""}
+
+
+def _validate_dependency_decision(decision: dict, evidence: str) -> dict:
+    """Validate the evidence and fields required for the add_dependency action."""
+    modules = re.findall(r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)", evidence)
+    package = decision["subject"].removeprefix("python3-").replace("-", "_").lower()
+    supported = {module.split(".")[0].replace("-", "_").lower() for module in modules}
+    if not supported or package not in supported:
+        return {"result": "REJECTED", "error":
+                f"add_dependency requires a matching ModuleNotFoundError; imports={sorted(supported)}"}
+
+    if decision["replacement"].strip():
+        return {"result": "REJECTED", "error": "add_dependency requires an empty replacement"}
+
+    return {"result": "ACCEPTED", "error": ""}
+
+
+def _argument_rejected(argument: str, rejected: list[str]) -> bool:
+    """Require a nonempty argument occurring in an unrecognized-argument diagnostic."""
+    return bool(argument) and any(argument in value for value in rejected)
+
+
+def _validate_argument_decision(decision: dict, evidence: str) -> dict:
+    """Validate the evidence and fields required for the remove_rule_argument action."""
+    argument = decision["subject"].strip()
+    rejected = re.findall(r"error:\s+unrecognized arguments?:\s*([^\\\n\"]+)", evidence)
+    if not _argument_rejected(argument, rejected):
+        return {"result": "REJECTED", "error":
+                f"remove_rule_argument requires an exact unrecognized argument; errors={rejected[-3:]}"}
+
+    if decision["replacement"].strip():
+        return {"result": "REJECTED", "error": "remove_rule_argument requires an empty replacement"}
+
+    return {"result": "ACCEPTED", "error": ""}
+
+
+def _validate_quilt_decision(decision: dict, evidence: str) -> dict:
+    """Require a safe patch name and evidence of its application failure."""
     action = decision["action"]
-    if action == "no_fix":
-        if decision["subject"].strip() or decision["replacement"].strip():
-            return {"result": "REJECTED", "error": "no_fix requires empty subject and replacement"}
-        return {"result": "ACCEPTED", "error": ""}
-    if action == "add_dependency":
-        modules = re.findall(r"ModuleNotFoundError:\s+No module named ['\"]([^'\"]+)", evidence)
-        package = decision["subject"].removeprefix("python3-").replace("-", "_").lower()
-        supported = {module.split(".")[0].replace("-", "_").lower() for module in modules}
-        if not supported or package not in supported:
-            return {"result": "REJECTED", "error":
-                    f"add_dependency requires a matching ModuleNotFoundError; imports={sorted(supported)}"}
-        if decision["replacement"].strip():
-            return {"result": "REJECTED", "error": "add_dependency requires an empty replacement"}
-        return {"result": "ACCEPTED", "error": ""}
-    if action == "remove_rule_argument":
-        argument = decision["subject"].strip()
-        rejected = re.findall(r"error:\s+unrecognized arguments?:\s*([^\\\n\"]+)", evidence)
-        if not rejected or not any(argument and argument in value for value in rejected):
-            return {"result": "REJECTED", "error":
-                    f"remove_rule_argument requires an exact unrecognized argument; errors={rejected[-3:]}"}
-        if decision["replacement"].strip():
-            return {"result": "REJECTED", "error": "remove_rule_argument requires an empty replacement"}
-        return {"result": "ACCEPTED", "error": ""}
-    if action in {"refresh_quilt_patch", "drop_quilt_patch"}:
-        name = decision["subject"].strip()
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.+~-]*\.patch", name):
-            return {"result": "REJECTED", "error": f"unsafe quilt patch name: {name!r}"}
-        if name not in evidence or not re.search(
-                rf"(?is){re.escape(name)}.*(?:FAILED|does not apply|subprocess returned exit status)", evidence):
-            return {"result": "REJECTED", "error": f"{action} requires a named patch application failure"}
-        if decision["replacement"].strip():
-            return {"result": "REJECTED", "error": f"{action} requires an empty replacement"}
-        return {"result": "ACCEPTED", "error": ""}
+    name = decision["subject"].strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.+~-]*\.patch", name):
+        return {"result": "REJECTED", "error": f"unsafe quilt patch name: {name!r}"}
+
+    if name not in evidence or not re.search(
+            rf"(?is){re.escape(name)}.*(?:FAILED|does not apply|subprocess returned exit status)", evidence):
+        return {"result": "REJECTED", "error": f"{action} requires a named patch application failure"}
+
+    if decision["replacement"].strip():
+        return {"result": "REJECTED", "error": f"{action} requires an empty replacement"}
+
+    return {"result": "ACCEPTED", "error": ""}
+
+
+def _packaging_path_error(*values: str) -> str:
+    """Reject absolute, traversing, or empty replacement paths in argument order."""
+    for value in values:
+        path = PurePosixPath(value)
+        if path.is_absolute() or ".." in path.parts or not path.parts:
+            return f"unsafe packaging path: {value!r}"
+
+    return ""
+
+
+def _validate_path_decision(decision: dict, evidence: str) -> dict:
+    """Require an evidenced missing path and a distinct safe replacement path."""
     old, new = decision["subject"].strip(), decision["replacement"].strip()
     if not old or old not in evidence:
         return {"result": "REJECTED", "error": "replace_packaging_path requires the missing path from evidence"}
-    for value in (old, new):
-        path = PurePosixPath(value)
-        if path.is_absolute() or ".." in path.parts or not path.parts:
-            return {"result": "REJECTED", "error": f"unsafe packaging path: {value!r}"}
+
+    error = _packaging_path_error(old, new)
+    if error:
+        return {"result": "REJECTED", "error": error}
+
     if old == new:
         return {"result": "REJECTED", "error": "replacement path is unchanged"}
+
     return {"result": "ACCEPTED", "error": ""}
+
+
+def validate_repair_decision(decision: dict, evidence: str) -> dict:
+    """Dispatch evidence validation while retaining the existing path-action fallback."""
+    validators = {
+        "no_fix": _validate_no_fix,
+        "add_dependency": _validate_dependency_decision,
+        "remove_rule_argument": _validate_argument_decision,
+        "refresh_quilt_patch": _validate_quilt_decision,
+        "drop_quilt_patch": _validate_quilt_decision,
+    }
+    validate = validators.get(decision["action"], _validate_path_decision)
+    return validate(decision, evidence)
 
 
 def normalize_repair_decision(decision: dict, tree: Path, evidence: str = "") -> dict:
