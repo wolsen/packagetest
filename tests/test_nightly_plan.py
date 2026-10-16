@@ -566,3 +566,53 @@ def test_offline_cli_publishes_matching_catalog_plan_and_workflow_outputs(
         ],
     }
     assert github_summary.read_text() == (output / "summary.md").read_text()
+
+
+@pytest.mark.parametrize('failure', [
+    module.subprocess.TimeoutExpired(['git', 'ls-remote'], 90),
+    OSError('connection unavailable'),
+])
+def test_expected_repository_errors_allow_packaging_fallback(monkeypatch, failure):
+    """Transport and process failures retain diagnostics and permit published source."""
+    def unavailable(*args, **kwargs):
+        """Represent an expected failure at the Git process boundary."""
+        raise failure
+
+    monkeypatch.setattr(module.subprocess, 'run', unavailable)
+    entry = module.freeze_packaging({
+        'source': 'demo', 'packaging_repository': 'https://example.invalid/demo',
+        'packaging_branch_candidates': ['main'],
+    })
+    assert entry['packaging_source_role'] == 'published-source'
+    assert 'Cannot query packaging repository' in entry['packaging_resolution_error']
+
+
+@pytest.mark.parametrize('upstream_ref', ['a' * 40, 'main'])
+def test_packaging_programming_errors_propagate_without_misclassifying_upstream(monkeypatch, upstream_ref):
+    """Unexpected packaging failures must not trigger fallback or erase upstream identity."""
+    def broken(*args, **kwargs):
+        """Represent an internal error rather than a repository availability failure."""
+        raise TypeError('invalid internal resolution state')
+
+    monkeypatch.setattr(module, '_resolve_upstream_branch', lambda *args: 'a' * 40)
+    monkeypatch.setattr(module, '_packaging_remote', broken)
+    entry = {'source': 'demo', 'upstream_repository': 'https://example.invalid/upstream',
+             'upstream_ref': upstream_ref, 'packaging_repository': 'https://example.invalid/demo',
+             'packaging_branch_candidates': ['main']}
+    with pytest.raises(TypeError, match='invalid internal resolution state'):
+        module.freeze(entry)
+
+    assert entry['upstream_sha'] == 'a' * 40
+    assert 'upstream_resolution_error' not in entry
+    assert 'packaging_source_kind' not in entry
+
+
+def test_missing_packaging_branch_allows_published_source_fallback(monkeypatch):
+    """An available repository without a configured branch is an expected fallback."""
+    monkeypatch.setattr(module, '_packaging_remote', lambda *args: {'other': 'a' * 40})
+    entry = module.freeze_packaging({
+        'source': 'demo', 'packaging_repository': 'https://example.invalid/demo',
+        'packaging_branch_candidates': ['main'],
+    })
+    assert entry['packaging_source_role'] == 'published-source'
+    assert 'None of the packaging branches exist' in entry['packaging_resolution_error']

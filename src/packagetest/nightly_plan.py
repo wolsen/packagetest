@@ -32,6 +32,10 @@ DEBIAN_PACKAGING_FALLBACK_WARNING = (
 )
 
 
+class PackagingResolutionError(ValueError):
+    """An unavailable repository or branch permits trying the next packaging origin."""
+
+
 def is_uca_ppa_source(entry: dict) -> bool:
     """Return whether the frozen source descriptor comes from a UCA PPA."""
     url = entry.get('archive_source', {}).get('url', '')
@@ -836,12 +840,16 @@ def _first_available_branch(branches: list[str], resolved: dict[str, str]) -> st
 
 def _packaging_remote(repository: str, refs: list[str]) -> dict[str, str]:
     """Resolve branch heads without prompting, retaining the last Git error line."""
-    result = subprocess.run(
-        ['git', 'ls-remote', '--exit-code', repository, *refs],
-        text=True, capture_output=True, timeout=90,
-        env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'})
+    try:
+        result = subprocess.run(
+            ['git', 'ls-remote', '--exit-code', repository, *refs],
+            text=True, capture_output=True, timeout=90,
+            env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'})
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        raise PackagingResolutionError(f'Cannot query packaging repository {repository}: {exc}') from exc
+
     if result.returncode:
-        raise ValueError(result.stderr.strip().splitlines()[-1]
+        raise PackagingResolutionError(result.stderr.strip().splitlines()[-1]
                          if result.stderr.strip() else f'git ls-remote exited {result.returncode}')
 
     return _head_refs(result.stdout)
@@ -863,13 +871,13 @@ class PackagingResolution:
     def resolve(self, repository: str | None, branches: list[str], role: str) -> None:
         """Pin the first available packaging branch and any declared companion branches."""
         if not repository or not repository.startswith('https://'):
-            raise ValueError(f'No usable {role} packaging repository')
+            raise PackagingResolutionError(f'No usable {role} packaging repository')
 
         refs = _packaging_refs(branches, self.upstream_branches, self.pristine_branch)
         resolved = _packaging_remote(repository, refs)
         branch = _first_available_branch(branches, resolved)
         if branch is None:
-            raise ValueError(f'None of the packaging branches exist: {branches}')
+            raise PackagingResolutionError(f'None of the packaging branches exist: {branches}')
 
         upstream = _first_available_branch(self.upstream_branches, resolved)
         self.entry.update(packaging_source_kind='git', packaging_source_role=role,
@@ -885,7 +893,7 @@ class PackagingResolution:
         try:
             self.resolve(repository, branches, role)
             return True
-        except Exception as exc:
+        except PackagingResolutionError as exc:
             self.errors.append(f'{label}: {exc}')
             return False
 
@@ -980,10 +988,9 @@ def freeze(entry: Catalog) -> Catalog:
             # Reviewed immutable source selection (e.g. a retired dependency).
             # prepare_source verifies the object exists in its full clone.
             entry['upstream_sha'] = ref
-            entry.pop('upstream_resolution_error', None)
-            return freeze_packaging(entry)
+        else:
+            entry['upstream_sha'] = _resolve_upstream_branch(repository, ref)
 
-        entry['upstream_sha'] = _resolve_upstream_branch(repository, ref)
         entry.pop('upstream_resolution_error', None)
     except Exception as exc:
         entry['upstream_resolution_error'] = str(exc)
