@@ -131,78 +131,60 @@ runs:
           --build outputs/result.json --autopkgtest test-results/result/result.json \
           --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
 
-    - name: Bundle the final candidate and evidence
+    - id: publication
+      name: Stage compact reports and conditional package payloads
       if: always()
       shell: bash
       env:
         SOURCE: ${{ inputs.source }}
       run: |
-        rm -rf bundles test-bundles
-        mkdir -p bundles test-bundles
-        sudo tar --exclude=work --exclude='source-preparation/remediation-source' --exclude='source-preparation/*/checkout' --exclude='source-preparation/*/venv' --exclude='*.qcow2' -czf "bundles/$SOURCE.tar.gz" -C outputs .
-        sudo tar -czf "test-bundles/$SOURCE.tar.gz" -C test-results .
-        sudo chmod a+r "bundles/$SOURCE.tar.gz" "test-bundles/$SOURCE.tar.gz"
+        sudo python3 scripts/publish-package-artifacts.py \
+          --source "$SOURCE" --outputs outputs --tests test-results \
+          --remediation "ai-remediation/$SOURCE" --output publication \
+          --github-output "$GITHUB_OUTPUT"
+        sudo chmod -R a+rX publication
 
     - uses: actions/upload-artifact@v4
-      if: always()
+      if: always() && steps.publication.outputs.producer == 'true'
       with:
         name: build-${{ inputs.target-id }}-${{ inputs.source }}
-        path: bundles/*.tar.gz
-        retention-days: 14
-        if-no-files-found: error
-    - uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: status-${{ inputs.target-id }}-build-${{ inputs.source }}
-        path: outputs/result.json
-        retention-days: 14
-        if-no-files-found: error
-    - uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: status-${{ inputs.target-id }}-autopkgtest-${{ inputs.source }}
-        path: test-results/result/result.json
-        retention-days: 14
-        if-no-files-found: error
-    - uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: autopkgtest-${{ inputs.target-id }}-${{ inputs.source }}
-        path: test-bundles/*.tar.gz
+        path: publication/producer/*.tar.gz
         retention-days: 14
         if-no-files-found: error
 
-    - id: upload_packaging_proposal
+    - id: upload_report
       uses: actions/upload-artifact@v4
-      if: always() && hashFiles('outputs/source-preparation/packaging-proposal/*') != ''
+      if: always()
       with:
-        name: packaging-proposal-${{ inputs.target-id }}-${{ inputs.source }}
-        path: outputs/source-preparation/packaging-proposal/
+        name: package-report-${{ inputs.target-id }}-${{ inputs.source }}
+        path: publication/report/
         retention-days: 14
         if-no-files-found: error
-    - name: Link the packaging proposal for human review
-      if: always() && steps.upload_packaging_proposal.outputs.artifact-url != ''
-      shell: bash
-      env:
-        ARTIFACT_URL: ${{ steps.upload_packaging_proposal.outputs.artifact-url }}
-        SOURCE: ${{ inputs.source }}
-      run: printf '\n[Download the source-evolution analysis and packaging proposal for `%s`](%s) — human review and target selection are required for any candidate patch or binary-package split.\n' "$SOURCE" "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
 
-    - id: upload_ai
+    - id: upload_diagnostics
       uses: actions/upload-artifact@v4
-      if: always() && inputs.builder-ready == 'true' && (steps.initial_build.outcome == 'failure' || steps.initial_test.outcome == 'failure')
+      if: always() && steps.publication.outputs.diagnostics == 'true'
       with:
-        name: ai-remediation-${{ inputs.target-id }}-${{ inputs.source }}
-        path: ai-remediation/${{ inputs.source }}/
+        name: diagnostics-${{ inputs.target-id }}-${{ inputs.source }}
+        path: publication/diagnostics/*.tar.gz
         retention-days: 14
-        if-no-files-found: warn
-    - name: Link the repair evidence and patches
-      if: always() && steps.upload_ai.outputs.artifact-url != ''
+        if-no-files-found: error
+
+    - name: Link the package report and proposals for human review
+      if: always() && steps.upload_report.outputs.artifact-url != ''
       shell: bash
       env:
-        ARTIFACT_URL: ${{ steps.upload_ai.outputs.artifact-url }}
+        ARTIFACT_URL: ${{ steps.upload_report.outputs.artifact-url }}
         SOURCE: ${{ inputs.source }}
-      run: printf '\n[Download AI prompts, patches, rebuild logs, and test evidence for `%s`](%s)\n' "$SOURCE" "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+      run: printf '\n[Download the results, source evolution, and packaging proposal for `%s`](%s) — human review and target selection are required for any candidate patch or binary-package split.\n' "$SOURCE" "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Link full failure diagnostics
+      if: always() && steps.upload_diagnostics.outputs.artifact-url != ''
+      shell: bash
+      env:
+        ARTIFACT_URL: ${{ steps.upload_diagnostics.outputs.artifact-url }}
+        SOURCE: ${{ inputs.source }}
+      run: printf '\n[Download build, test, and AI failure evidence for `%s`](%s)\n' "$SOURCE" "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
 
     - name: Enforce the final build and test result
       if: always()

@@ -43,7 +43,7 @@ def matches(name: str, pattern: str) -> bool:
 
 def safe_artifact_name(name: str) -> str:
     """Require one filesystem component before creating an artifact directory."""
-    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', name):
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._+-]*', name):
         raise ValueError(f'Unsafe artifact name: {name!r}')
 
     return name

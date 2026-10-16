@@ -57,19 +57,34 @@ Each `Build SOURCE` job runs autopkgtest immediately after producing and preserv
 
 Autopkgtest selects compatible binaries through each test’s dependency declarations. The runner does not install every binary simultaneously: Nova and Neutron contain conflicting alternatives. Exact candidate versions are pinned, and a dpkg hook checks the currently installed candidate subset after package operations, including variant switches performed by tests.
 
-Artifacts `build-TARGET-SOURCE` and `autopkgtest-TARGET-SOURCE` contain tar
-bundles of results and logs. Target-qualified `status-*` artifacts feed one
-static pipeline report per target. Retention is 14 days.
+Each source preparation publishes `prepared-source-TARGET-SOURCE`. Every package
+publication creates `package-report-TARGET-SOURCE`, containing both phase
+verdicts, readiness, evolution, proposals, and accepted repair evidence.
+`build-TARGET-SOURCE` is published only for an accepted producer and contains
+the minimal source/binary handoff bundle. Unaccepted, nonblocked packages
+publish one `diagnostics-TARGET-SOURCE` archive combining build, test, and AI
+evidence. Blocked consumers retain their reason in the compact report.
+
+The target summary downloads only the compact package reports through the
+paginated artifact inventory. It renders results and verified proposals into
+`TARGET-pipeline-summary`, whose `index.html` can be opened after extraction.
+See the [artifact contract](docs/contracts.md#package-artifact-publication) for
+layout, retention, and the per-run count bound.
 
 ## Experimental local AI failure analysis
 
-The pinned local model is prepared and smoke-tested after planning and before the first package level starts. Each package job first finishes its build and autopkgtest processes. When either gate fails, that same job restores the model cache and makes bounded Debian-packaging repair attempts. The `llama-cli` process exits before each rebuild starts, so model inference and sbuild or autopkgtest do not occupy memory at the same time on a runner. Every applicable patch is rebuilt from a fresh prepared source and rerun through autopkgtest. Only an attempt that passes both gates replaces the job's canonical build and test artifacts, so later dependency levels consume the repaired packages. Prompts, raw model output, proposed patches, validation results, rebuild logs, and test logs are uploaded as `ai-remediation-TARGET-SOURCE`.
+The pinned local model is prepared and smoke-tested after planning and before the first package level starts. Each package job first finishes its build and autopkgtest processes. When either gate fails, that same job restores the model cache and makes bounded Debian-packaging repair attempts. The `llama-cli` process exits before each rebuild starts, so model inference and sbuild or autopkgtest do not occupy memory at the same time on a runner. Every applicable patch is rebuilt from a fresh prepared source and rerun through autopkgtest. Only an attempt that passes both gates replaces the job's canonical build and test artifacts, so later dependency levels consume the repaired packages. Unresolved nonblocked packages retain prompts, raw model output, proposed patches, validation results, rebuild logs, and test logs together in `diagnostics-TARGET-SOURCE`.
 
 Inference stays on the GitHub runner. The experiment uses the CPU build of llama.cpp `b10964` and the official Apache-2.0 Qwen2.5-Coder-7B-Instruct Q4_K_M model. Both downloads have pinned revisions and SHA256 values. The production pipeline verifies the cached files and performs a smoke inference; a separate focused model-contract workflow exercises response parsing and patch validation whenever the repair implementation changes. Prompts are bounded to selected error logs and the failed package's prepared source and Debian packaging; the model does not receive GitHub credentials.
 
 The package-remediation defaults allow eight model calls, four rebuilds, eight validated repairs, and 45 minutes total; CLI/workflow arguments may lower these budgets. Source-preparation remediation has a separate budget. Later attempts receive the preceding validation or build/test result and retain earlier accepted changes when a rebuild exposes another missing dependency. Model output is treated as untrusted data: free-form commands are never executed, changes are restricted to `debian/`, `debian/changelog` and test-bypass changes are rejected, and a proposed diff must apply cleanly to the prepared source. An accepted diff is then applied during a fresh source preparation and must complete the real sbuild and autopkgtest gates.
 
-Every failed `Build SOURCE` job writes its repair table to the GitHub job summary. Its downloadable `ai-remediation-TARGET-SOURCE` artifact contains prompts, raw model responses, proposed patches, validation JSON, rebuild and autopkgtest logs, and a machine-readable result. A successful repair replaces the failed candidate before the `build-TARGET-SOURCE` and `autopkgtest-TARGET-SOURCE` artifacts are uploaded. An unresolved package retains its original failure evidence and fails its package job.
+When remediation runs, its repair table is written to the GitHub job summary.
+A successful repair replaces the failed candidate before producer publication;
+its compact report retains the accepted cumulative patch and repair outcome.
+An unresolved package keeps its full evidence in the combined diagnostic archive
+and fails its package job. Successful jobs retain structured test details and
+console output in their package report and GitHub job logs.
 
 The targets cannot be combined in one GitHub Actions run. Ubuntu Stonking runs
 nightly at 09:00 UTC and Resolute UCA runs at 10:00 UTC, which keeps each run's

@@ -96,7 +96,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT_PATTERN: ${{ steps.dependencies.outputs.pattern }}
-        run: python3 scripts/download-workflow-artifacts.py --pattern "$ARTIFACT_PATTERN" --output downloads --merge-multiple
+        run: python3 scripts/download-workflow-artifacts.py --pattern "$ARTIFACT_PATTERN" --output downloads --merge-multiple --allow-empty
       - name: Unpack same-run producers
         run: |
           mkdir -p inputs outputs

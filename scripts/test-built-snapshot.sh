@@ -105,9 +105,14 @@ message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
 print(f'::{command} title=Autopkgtest {result}::{message}')
 PY
 
-mkdir -p test-bundles
-sudo tar -czf "test-bundles/$source_name.tar.gz" -C test-results .
-sudo chmod a+r "test-bundles/$source_name.tar.gz"
+# Keep successful test console output available without a separate log artifact.
+if [[ -f "$result_root/autopkgtest/console.log" ]]; then
+  printf '\n::group::Autopkgtest console\n'
+  test_log_marker="$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+  printf '::stop-commands::%s\n' "$test_log_marker"
+  cat "$result_root/autopkgtest/console.log"
+  printf '\n::%s::\n::endgroup::\n' "$test_log_marker"
+fi
 
 # The raw autopkgtest code remains in result.json.  Coverage gaps are visible
 # but nonfatal; only classified correctness/infrastructure failures fail here.

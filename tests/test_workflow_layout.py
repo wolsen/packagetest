@@ -23,12 +23,12 @@ def test_each_build_matrix_runs_its_own_autopkgtest():
 
 def test_summary_artifact_contains_browsable_results_and_packaging_proposals():
     workflow = Path('.github/workflows/openstack-snapshot-target.yml').read_text()
-    assert 'ARTIFACT_PATTERN: packaging-proposal-${{ inputs.target-id }}-*' in workflow
-    assert '--output proposals --allow-empty' in workflow
+    assert 'ARTIFACT_PATTERN: package-report-${{ inputs.target-id }}-*' in workflow
+    assert '--output package-reports' in workflow
     assert 'python3 scripts/render-pipeline-report.py' in workflow
     assert '--plan nightly-plan/plan.json' in workflow
     assert '--results summary/results.json' in workflow
-    assert '--proposals proposals' in workflow
+    assert '--proposals package-reports' in workflow
     assert 'name: ${{ inputs.target-id }}-pipeline-summary' in workflow
     assert 'open `index.html`' in workflow
 
@@ -57,8 +57,8 @@ def test_local_ai_repairs_inside_each_package_job_before_publication():
     assert action.index('id: ai_cache') < action.index('id: remediation')
     assert action.index('scripts/remediate-package.py') < action.index(
         'name: build-${{ inputs.target-id }}-${{ inputs.source }}')
-    assert 'name: ai-remediation-${{ inputs.target-id }}-${{ inputs.source }}' in action
-    assert 'name: packaging-proposal-${{ inputs.target-id }}-${{ inputs.source }}' in action
+    assert 'name: diagnostics-${{ inputs.target-id }}-${{ inputs.source }}' in action
+    assert 'name: package-report-${{ inputs.target-id }}-${{ inputs.source }}' in action
     assert 'human review and target selection are required' in action
     assert 'scripts/final-package-verdict.py' in action
     assert 'qwen2.5-coder-7b-instruct-q4_k_m.gguf' in workflow
@@ -206,6 +206,9 @@ def test_packaging_engine_ci_splits_unit_and_packaging_component_tests():
 def test_integrated_test_step_records_blocked_build_and_evidence(tmp_path):
     (tmp_path / 'outputs').mkdir()
     (tmp_path / 'outputs/result.json').write_text('{"result":"FAILED"}\n')
+    console = tmp_path / 'test-results/result/autopkgtest/console.log'
+    console.parent.mkdir(parents=True)
+    console.write_text('retained test console\n')
     tools = tmp_path / 'bin'
     tools.mkdir()
     sudo = tools / 'sudo'
@@ -234,5 +237,25 @@ def test_integrated_test_step_records_blocked_build_and_evidence(tmp_path):
     report = json.loads((tmp_path / 'test-results/result/result.json').read_text())
     assert report['result'] == 'BLOCKED'
     assert report['ci'] == {'run_id': '123', 'run_attempt': '1'}
-    assert (tmp_path / 'test-bundles/sample.tar.gz').is_file()
+    assert not (tmp_path / 'test-bundles').exists()
+    assert 'retained test console' in completed.stdout
+    assert '::stop-commands::' in completed.stdout
     assert 'autopkgtest: BLOCKED' in summary.read_text()
+
+
+def test_package_publication_has_one_report_and_only_conditional_large_payloads():
+    """Guard the artifact budget and keep absent failed producers on the blocked path."""
+    import yaml
+
+    action = yaml.safe_load(Path('.github/actions/build-test-remediate/action.yml').read_text())
+    uploads = [step for step in action['runs']['steps']
+               if step.get('uses') == 'actions/upload-artifact@v4']
+    assert len(uploads) == 3
+    assert uploads[0]['with']['name'] == 'build-${{ inputs.target-id }}-${{ inputs.source }}'
+    assert uploads[1]['with']['name'] == 'package-report-${{ inputs.target-id }}-${{ inputs.source }}'
+    assert uploads[2]['with']['name'] == 'diagnostics-${{ inputs.target-id }}-${{ inputs.source }}'
+    assert "outputs.producer == 'true'" in uploads[0]['if']
+    assert "outputs.diagnostics == 'true'" in uploads[2]['if']
+    assert uploads[1]['if'] == 'always()'
+    reusable = Path('.github/workflows/build-dependency-level.yml').read_text()
+    assert '--output downloads --merge-multiple --allow-empty' in reusable

@@ -55,6 +55,7 @@ relationship replanning after repairs remains a limitation.
 | Quilt refresh | `failure_analysis.QuiltSection`, `QuiltPayload`, `QuiltSectionRefresh` | Validated sections, payload evidence, and isolated application probes |
 | Locked execution | `locked.LockedBuild`, `commands.CommandRunner` | Lock to validated source/binary artifacts |
 | Process capture | `commands.CommandCapture` | Process lifetime, deadline, output streams, and bounded log tails |
+| Package publication | `publish-package-artifacts.PackageArtifacts` | Final readiness to compact reports, accepted handoff payloads, and failure diagnostics |
 | Artifact handoff | `handoff.ProducerBundle`, `ProducerRepository`, `collect_producers` | Same-run producer identity, readiness, and byte verification |
 | Remediation evidence | `remediation_evidence` | Ordered, bounded logs and source excerpts |
 | Package remediation | `ProposalPlanner`, `CandidateExecutor`, `ArtifactPromoter` | Validated decisions, isolated build/test gates, and canonical artifact replacement |
@@ -160,3 +161,15 @@ signatures. Same-run handoff verifies identity and bytes but is not a signed
 public archive. No automatic signing, Launchpad upload, or regress-stack gate is
 connected. Current operational targets and schedules belong in the
 [nightly reference](HIBISCUS-PIPELINE.md), not duplicated here.
+
+## Artifact roles
+
+Prepared source bundles cross the preparation-to-build boundary. Accepted
+producer bundles carry only the identities and source/binary files needed for
+independent handoff verification. Compact package reports carry both phase
+verdicts, evolution, proposals, and accepted repairs to the aggregate renderer.
+Full build, test, and AI diagnostics share one failure archive; blocked consumers
+need only their report. Keeping these roles separate bounds artifact count and
+keeps summary downloads independent of large binary and test payloads. The
+[publication contract](docs/contracts.md#package-artifact-publication) defines
+conditions, layout, and the per-run artifact bound.

@@ -368,3 +368,49 @@ def test_repository_refuses_duplicate_binary_identity_and_cleans_up(tmp_path):
         build_repository(producers, destination)
 
     assert not destination.exists()
+
+
+@pytest.mark.packaging_component
+def test_consolidated_producer_archive_preserves_verified_handoff(tmp_path):
+    """A minimal published bundle still verifies binary bytes and frozen source components."""
+    from pathlib import Path
+    import runpy
+    import tarfile
+
+    root, lock, deb = bundle(tmp_path)
+    outputs = tmp_path / 'outputs'
+    outputs.mkdir()
+    generation = outputs / 'gen-sample'
+    root.rename(generation)
+    source = generation / 'artifacts/sample/source'
+    source.mkdir()
+    component = source / 'sample_1.0.orig.tar.gz'
+    component.write_bytes(b'pinned source component')
+    dsc = source / 'sample_1.0-1.dsc'
+    dsc.write_text('Source: sample\nVersion: 1.0-1\nChecksums-Sha256:\n'
+                   f' {sha256(component)} {component.stat().st_size} {component.name}\n')
+    lock['catalog_entry'] = {'source': 'sample', 'upstream_sha': 'a' * 40}
+    lock['packages'][0]['input'] = {'kind': 'prepared-snapshot', 'dsc_sha256': sha256(dsc),
+                                  'upstream_sha': 'a' * 40}
+    (generation / 'build-lock.json').write_text(json.dumps(lock))
+    manifest = json.loads((generation / 'generation-manifest.json').read_text())
+    manifest['lock_sha256'] = lock_digest(lock)
+    (generation / 'generation-manifest.json').write_text(json.dumps(manifest))
+    (outputs / 'result.json').write_text('{"source":"sample","result":"SUCCEEDED"}')
+    tests = tmp_path / 'test-results'
+    (tests / 'result').mkdir(parents=True)
+    (tests / 'result/result.json').write_text('{"source":"sample","result":"PASS"}')
+    publisher = runpy.run_path(str(Path('scripts/publish-package-artifacts.py').resolve()))['PackageArtifacts']
+    publication = tmp_path / 'publication'
+    publisher('sample', outputs, tests, tmp_path / 'no-remediation', publication).publish()
+    downloaded = tmp_path / 'consumer-inputs'
+    downloaded.mkdir()
+    with tarfile.open(publication / 'producer/sample.tar.gz') as archive:
+        archive.extractall(downloaded, filter='data')
+
+    producers = collect_producers(downloaded, {'sample': lock}, run_id='123', run_attempt='1', target=lock['target'])
+    assert producers['sample'][0]['sha256'] == sha256(generation / 'artifacts/sample/binary' / deb.name)
+    component = downloaded / 'gen-sample/artifacts/sample/source' / component.name
+    component.write_bytes(b'corrupt source component')
+    with pytest.raises(ValueError, match='corrupt artifact'):
+        collect_producers(downloaded, {'sample': lock}, run_id='123', run_attempt='1', target=lock['target'])

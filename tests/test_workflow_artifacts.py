@@ -109,6 +109,7 @@ def test_optional_empty_patterns_and_exact_producer_lists(tmp_path: Path) -> Non
     with pytest.raises(ValueError, match='No workflow artifacts'):
         client.download('status-*', tmp_path)
 
+    assert module['safe_artifact_name']('build-demo+plugin') == 'build-demo+plugin'
     assert module['matches']('build-a', '{build-a,build-b}')
     assert not module['matches']('build-c', '{build-a,build-b}')
 

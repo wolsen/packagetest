@@ -286,27 +286,27 @@ def _plan_resolution_evidence(plan: Catalog, catalog: Catalog, dependency_errors
     ]
 
 
+def _package_phase_report(directory: Path, phase: str, source: str) -> dict:
+    """Read an exact phase file, retaining missing outcomes without mixing package evidence."""
+    path = directory / f'{phase}.json'
+    if not path.is_file():
+        return {'result': 'MISSING', 'error': 'Job produced no package phase report'}
+
+    report = json.loads(path.read_text())
+    if report.get('source', source) != source:
+        raise ValueError(f'Package report source mismatch for {source}')
+
+    return report
+
+
 def _job_result_rows(sources: list[str], prefix: str, inputs: Path) -> list[dict]:
-    """Read one unique build and test report per source, preserving missing statuses."""
+    """Read final build and test outcomes from one compact report artifact per source."""
     rows = []
     for source in sources:
-        row = {"source": source}
-        for phase in ("build", "autopkgtest"):
-            paths = list(
-                (inputs / f"status-{prefix}{phase}-{source}").rglob(
-                    "result.json"
-                )
-            )
-            row[phase] = (
-                json.loads(paths[0].read_text())
-                if len(paths) == 1
-                else {
-                    "result": "MISSING",
-                    "error": "Job produced no unique status report",
-                }
-            )
-
-        rows.append(row)
+        directory = inputs / f'package-report-{prefix}{source}'
+        rows.append({'source': source,
+                     'build': _package_phase_report(directory, 'build', source),
+                     'autopkgtest': _package_phase_report(directory, 'autopkgtest', source)})
 
     return rows
 

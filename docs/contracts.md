@@ -168,10 +168,39 @@ distribution, required build dependency versions, and manifest records. Returned
 paths are reconstructed from the downloaded bundle. `build_repository` rechecks
 bytes when copying verified binaries into the disposable testbed repository.
 
+## Package artifact publication
+
+`scripts/publish-package-artifacts.py` stages final package evidence for the
+composite action. The action uploads these artifacts with 14-day retention:
+
+| Artifact | Condition | Contents |
+| --- | --- | --- |
+| `prepared-source-TARGET-SOURCE` | Source preparation completes or produces failure evidence | Immutable source files, manifest, resolution, and preparation proposals |
+| `package-report-TARGET-SOURCE` | Package publication runs | `build.json`, `autopkgtest.json`, readiness, evolution, proposals, repair outcome, and accepted cumulative repair patch |
+| `build-TARGET-SOURCE` | Final readiness is `READY` and agrees with the build/test outcomes | Generation manifest, build lock, readiness, and source/binary artifacts required by handoff verification |
+| `diagnostics-TARGET-SOURCE` | Package is unaccepted and its build is not dependency-blocked | Combined build, test, and AI evidence, excluding disposable workspaces, recovered source baselines, and VM disks |
+
+The report preserves complete structured verdicts. Successful jobs retain their
+full console output in GitHub job logs; they do not publish separate test or AI
+log archives. Blocked consumers retain their reason in the report without
+republishing prepared sources or creating a full diagnostic archive. A repaired
+success retains its accepted cumulative patch and repair summary in the report.
+
+Producer and diagnostic payloads are mutually exclusive. For `N` source packages,
+`R` accepted producers, and `F` nonblocked failures, a completed target run
+publishes `2N + R + F + 3` artifacts, including discovery, finalized plan, and
+pipeline summary. The upper bound is `3N + 3`.
+
+The summary downloads only `package-report-*` artifacts. It reads exact
+`build.json` and `autopkgtest.json` files and discovers proposals within those
+same report directories. Missing phase files remain visible as `MISSING`, and
+mismatched source identities are rejected. Large producer and failure archives
+are not inputs to summary generation.
+
 ## Workflow artifact retrieval
 
-Pattern downloads for prepared sources, producer bundles, statuses, and
-packaging proposals use `scripts/download-workflow-artifacts.py`. The downloader
+Pattern downloads for prepared sources, accepted producer bundles, and
+combined package reports use `scripts/download-workflow-artifacts.py`. The downloader
 reads every 100-item page of the current run's GitHub REST artifact inventory
 before selecting matches. It accepts a glob or the planner's flat brace list
 of exact producer artifact names. Named single-artifact downloads use the
@@ -182,7 +211,9 @@ matches, invalid ZIP paths, links, conflicting merged files, and service digest
 mismatches fail retrieval. Each archive is extracted into temporary staging
 before publication. Producer archives can merge unique top-level bundle files;
 other downloads preserve one directory per artifact. A matching artifact must
-exist unless `--allow-empty` is supplied for optional packaging proposals.
+exist unless `--allow-empty` is supplied for producer selection. An absent
+producer bundle then reaches the build's explicit missing-dependency check and
+is recorded as `BLOCKED`; it does not become an artifact-download error.
 
 The workflow provides `GH_TOKEN` with Actions read access. The token is attached
 only to GitHub API requests and removed from redirected blob-storage requests.

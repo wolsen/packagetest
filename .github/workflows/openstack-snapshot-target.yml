@@ -291,25 +291,20 @@ jobs:
         with:
           name: nightly-plan-${{ inputs.target-id }}
           path: nightly-plan
-      - name: Download all package statuses through the paginated inventory
+      - name: Download compact package reports through the paginated inventory
         env:
           GH_TOKEN: ${{ github.token }}
-          ARTIFACT_PATTERN: status-${{ inputs.target-id }}-*
-        run: python3 scripts/download-workflow-artifacts.py --pattern "$ARTIFACT_PATTERN" --output statuses
-      - name: Download proposed packaging changes
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ARTIFACT_PATTERN: packaging-proposal-${{ inputs.target-id }}-*
-        run: python3 scripts/download-workflow-artifacts.py --pattern "$ARTIFACT_PATTERN" --output proposals --allow-empty
+          ARTIFACT_PATTERN: package-report-${{ inputs.target-id }}-*
+        run: python3 scripts/download-workflow-artifacts.py --pattern "$ARTIFACT_PATTERN" --output package-reports
       - name: Aggregate every requested source without hiding missing jobs
-        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --summary-inputs statuses --output summary
+        run: python3 scripts/nightly-plan.py --catalog nightly-plan/catalog.json --summary-inputs package-reports --output summary
       - name: Render static pipeline report
         run: |
           python3 scripts/render-pipeline-report.py \
             --catalog nightly-plan/catalog.json \
             --plan nightly-plan/plan.json \
             --results summary/results.json \
-            --proposals proposals \
+            --proposals package-reports \
             --output summary \
             --target-id "${{ inputs.target-id }}" \
             --target-kind "${{ needs.plan.outputs.target_kind }}" \

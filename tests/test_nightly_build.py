@@ -131,3 +131,22 @@ def test_dependency_only_preflight_never_prepares_source(tmp_path, monkeypatch):
     state = {'result': 'PREPARING', 'stage': 'dependency-handoff'}
     assert module._execute_build(args, state) == 0
     assert state['result'] == 'READY'
+
+
+def test_absent_unaccepted_producer_is_recorded_as_dependency_block(tmp_path, monkeypatch):
+    """Omitting failed producer archives must preserve the dependency-only blocked verdict."""
+    from argparse import Namespace
+    from packagetest import nightly_build as module
+
+    inputs = module.BuildInputs(
+        'consumer', {}, {'suite': 'noble', 'architecture': 'amd64'},
+        {'run_id': '1', 'run_attempt': '1'},
+        {'consumer': {'source': 'consumer'}, 'producer': {'source': 'producer'}},
+        frozenset({'producer'}))
+    monkeypatch.setattr(module, '_build_inputs', lambda args: inputs)
+    state = {'result': 'PREPARING', 'stage': 'dependency-handoff'}
+    with pytest.raises(ValueError, match='Missing dependency builds'):
+        module._execute_build(Namespace(inputs=tmp_path), state)
+
+    assert state['result'] == 'BLOCKED'
+    assert state['stage'] == 'dependency-handoff'
