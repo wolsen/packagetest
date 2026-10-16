@@ -1,11 +1,4 @@
 {
-  "scripts/analyze-packaging-failure.py:aggregate": 9,
-  "scripts/analyze-packaging-failure.py:main": 6,
-  "scripts/analyze-packaging-failure.py:run": 18,
-  "scripts/analyze-packaging-failure.py:write_summary": 7,
-  "scripts/model-contract-test.py:main": 16,
-  "scripts/package-readiness.py:main": 7,
-  "scripts/plan-failure-analysis.py:main": 6,
   "src/packagetest/commands.py:CommandRunner.run": 17,
   "src/packagetest/failure_summary.py:_print_command_trace": 13,
   "src/packagetest/failure_summary.py:summarize": 16,

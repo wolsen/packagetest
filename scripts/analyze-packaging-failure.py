@@ -123,7 +123,86 @@ class OllamaRunner:
         }
 
 
+class AdvisoryAnalysis:
+    """Keep prior response and validation evidence across two advisory attempts."""
+
+    def __init__(self, repository: Path, output: Path,
+                 runner: LlamaRunner | OllamaRunner, prompt: str) -> None:
+        """Initialize one analysis without applying any proposed change."""
+        self.repository = repository
+        self.output = output
+        self.runner = runner
+        self.prompt = prompt
+        self.prior_output = ""
+        self.validation = {"result": "NOT_RUN", "error": ""}
+
+    def execute(self) -> list[dict]:
+        """Always retain both the initial and revision attempt outcomes."""
+        return [self._attempt(number) for number in (1, 2)]
+
+    def _attempt(self, number: int) -> dict:
+        """Persist one inference and preserve partial evidence on any failure."""
+        current_prompt = self.prompt if number == 1 else revision_prompt(self.prompt, self.prior_output, self.validation)
+        (self.output / f"attempt-{number}.prompt.txt").write_text(current_prompt)
+        attempt = {"number": number, "result": "MODEL_ERROR"}
+        try:
+            output, inference = self.runner.generate(current_prompt, number)
+            self.prior_output = output
+            (self.output / f"attempt-{number}.output.txt").write_text(output)
+            self._validate_output(output, inference, number, attempt)
+        except Exception as exc:
+            attempt["error"] = str(exc)
+            (self.output / f"attempt-{number}.output.txt").write_text(self.prior_output)
+            write_json(self.output / f"attempt-{number}.validation.json", {
+                "result": "MODEL_ERROR", "error": str(exc), "paths": []})
+            self.validation = {"result": "MODEL_ERROR", "error": str(exc), "paths": []}
+
+        return attempt
+
+    def _validate_output(self, output: str, inference: dict, number: int, attempt: dict) -> None:
+        """Record parsed patch validation without claiming build correctness."""
+        parsed = parse_model_response(output)
+        patch_path = self.output / f"attempt-{number}.patch"
+        patch_path.write_text(parsed.patch)
+        self.validation = validate_patch(parsed.patch, self.repository) if parsed.patch else {
+            "result": "NO_PATCH", "paths": [], "error": "model proposed no patch"
+        }
+        write_json(self.output / f"attempt-{number}.validation.json", self.validation)
+        attempt.update(
+            result=self.validation["result"], diagnosis=parsed.diagnosis,
+            patch_file=patch_path.name, validation_file=f"attempt-{number}.validation.json",
+            inference=inference, **{key: value for key, value in self.validation.items() if key != "result"},
+        )
+
+
+def _analysis_outcome(attempts: list[dict]) -> tuple[int | None, str]:
+    """Prefer the last applicable patch, then a diagnosis, then an error verdict."""
+    applicable = [item for item in attempts if item["result"] == "APPLIES"]
+    selected = applicable[-1]["number"] if applicable else None
+    return selected, _outcome_label(selected, attempts)
+
+
+def _outcome_label(selected: int | None, attempts: list[dict]) -> str:
+    """Distinguish advisory patches from useful diagnoses and failed inference."""
+    if selected:
+        return "PATCH_PROPOSED"
+
+    return "DIAGNOSIS_ONLY" if any(item.get("diagnosis") for item in attempts) else "ANALYSIS_ERROR"
+
+
+def _model_checksum(args: argparse.Namespace) -> str | None:
+    """Prefer the supplied pin, otherwise hash an available local model file."""
+    if args.model_sha256:
+        return args.model_sha256
+
+    if args.model and args.model.is_file():
+        return hashlib.sha256(args.model.read_bytes()).hexdigest()
+
+    return None
+
+
 def run(args: argparse.Namespace) -> dict:
+    """Run a two-attempt advisory analysis and publish its evidence."""
     repository = args.repository.resolve()
     args.output.mkdir(parents=True, exist_ok=True)
     evidence = safe_evidence_text(args.evidence)
@@ -131,47 +210,16 @@ def run(args: argparse.Namespace) -> dict:
     prompt = base_prompt(args.source, args.phase, evidence, repo_context)
     runner = (OllamaRunner(args.ollama_url, args.model_name, args.timeout)
               if args.ollama_url else LlamaRunner(args.llama_cli, args.model, args.timeout))
-    attempts = []
-    prior_output = ""
-    validation = {"result": "NOT_RUN", "error": ""}
-    for number in (1, 2):
-        current_prompt = prompt if number == 1 else revision_prompt(prompt, prior_output, validation)
-        (args.output / f"attempt-{number}.prompt.txt").write_text(current_prompt)
-        attempt = {"number": number, "result": "MODEL_ERROR"}
-        try:
-            output, inference = runner.generate(current_prompt, number)
-            prior_output = output
-            (args.output / f"attempt-{number}.output.txt").write_text(output)
-            parsed = parse_model_response(output)
-            patch_path = args.output / f"attempt-{number}.patch"
-            patch_path.write_text(parsed.patch)
-            validation = validate_patch(parsed.patch, repository) if parsed.patch else {
-                "result": "NO_PATCH", "paths": [], "error": "model proposed no patch"
-            }
-            write_json(args.output / f"attempt-{number}.validation.json", validation)
-            attempt.update(
-                result=validation["result"], diagnosis=parsed.diagnosis,
-                patch_file=patch_path.name, validation_file=f"attempt-{number}.validation.json",
-                inference=inference, **{key: value for key, value in validation.items() if key != "result"},
-            )
-        except Exception as exc:
-            attempt["error"] = str(exc)
-            (args.output / f"attempt-{number}.output.txt").write_text(prior_output)
-            write_json(args.output / f"attempt-{number}.validation.json", {
-                "result": "MODEL_ERROR", "error": str(exc), "paths": []})
-            validation = {"result": "MODEL_ERROR", "error": str(exc), "paths": []}
-        attempts.append(attempt)
-
-    applicable = [item for item in attempts if item["result"] == "APPLIES"]
-    selected = applicable[-1]["number"] if applicable else None
-    outcome = "PATCH_PROPOSED" if selected else ("DIAGNOSIS_ONLY" if any(a.get("diagnosis") for a in attempts) else "ANALYSIS_ERROR")
+    analysis = AdvisoryAnalysis(repository, args.output, runner, prompt)
+    attempts = analysis.execute()
+    selected, outcome = _analysis_outcome(attempts)
     report = {
         "schema_version": 1, "source": args.source, "original_phase": args.phase,
         "original_result": args.original_result, "result": outcome, "advisory": True,
         "build_validated": False, "selected_attempt": selected, "attempts": attempts,
         "model": {
             "name": args.model_name,
-            "sha256": args.model_sha256 or (hashlib.sha256(args.model.read_bytes()).hexdigest() if args.model and args.model.is_file() else None),
+            "sha256": _model_checksum(args),
         },
         "ci": {"run_id": os.environ.get("GITHUB_RUN_ID"), "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
                "checkout_sha": os.environ.get("GITHUB_SHA")},
@@ -182,20 +230,26 @@ def run(args: argparse.Namespace) -> dict:
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as stream:
             stream.write((args.output / "summary.md").read_text())
+
     return report
 
 
+def _attempt_row(attempt: dict) -> str:
+    """Render one advisory attempt with affected paths and inference duration."""
+    paths = ", ".join(f"`{item}`" for item in attempt.get("paths", [])) or "—"
+    duration = attempt.get("inference", {}).get("duration_seconds", "—")
+    return (f"| {attempt['number']} | {attempt['result']} | {paths} | {duration} s |")
+
+
 def write_summary(path: Path, report: dict) -> None:
+    """Write the advisory verdict, diagnosis, and validation limitations."""
     lines = [
         f"# Local AI analysis: {report['source']}", "",
         f"Original phase: **{report['original_phase']}** ({report['original_result']}).  ",
         f"Outcome: **{report['result']}**. This result is advisory.", "",
         "| Attempt | Result | Proposed files | Inference time |", "|---:|---|---|---:|",
     ]
-    for attempt in report["attempts"]:
-        paths = ", ".join(f"`{item}`" for item in attempt.get("paths", [])) or "—"
-        duration = attempt.get("inference", {}).get("duration_seconds", "—")
-        lines.append(f"| {attempt['number']} | {attempt['result']} | {paths} | {duration} s |")
+    lines.extend(_attempt_row(attempt) for attempt in report["attempts"])
     selected = report.get("selected_attempt")
     lines.extend(["", "## Diagnosis", ""])
     diagnosis = next((a.get("diagnosis") for a in reversed(report["attempts"]) if a.get("diagnosis")), "No usable diagnosis was returned.")
@@ -205,19 +259,37 @@ def write_summary(path: Path, report: dict) -> None:
         lines.append(f"Attempt {selected} applies cleanly to the triggering checkout. **Build correctness is unverified.**")
     else:
         lines.append("Neither proposed patch applied cleanly. No patch should be used without manual repair.")
+
     lines.append("The downloadable artifact preserves both prompts, raw responses, patches, and validation records.")
     path.write_text("\n".join(lines) + "\n")
 
 
-def aggregate(input_dir: Path, output: Path) -> int:
+def _load_reports(input_dir: Path) -> list[dict]:
+    """Collect readable schema-v1 advisory results, ignoring unrelated artifacts."""
     reports = []
     for path in input_dir.rglob("result.json"):
-        try:
-            report = json.loads(path.read_text())
-            if report.get("schema_version") == 1 and report.get("advisory") is True:
-                reports.append(report)
-        except (ValueError, OSError):
-            pass
+        report = _read_advisory_report(path)
+        if report is not None:
+            reports.append(report)
+
+    return reports
+
+
+def _read_advisory_report(path: Path) -> dict | None:
+    """Recognize an advisory report without failing on unreadable or invalid JSON."""
+    try:
+        report = json.loads(path.read_text())
+        if report.get("schema_version") == 1 and report.get("advisory") is True:
+            return report
+    except (ValueError, OSError):
+        pass
+
+    return None
+
+
+def aggregate(input_dir: Path, output: Path) -> int:
+    """Combine advisory results into a sorted report and workflow summary."""
+    reports = _load_reports(input_dir)
     reports.sort(key=lambda item: item["source"])
     output.mkdir(parents=True, exist_ok=True)
     write_json(output / "results.json", reports)
@@ -229,15 +301,25 @@ def aggregate(input_dir: Path, output: Path) -> int:
     for report in reports:
         selected = report.get("selected_attempt")
         lines.append(f"| `{report['source']}` | {report['original_phase']} | {report['result']} | {selected or '—'} | not run |")
+
     lines.extend(["", "A clean application is only a syntax/integration check. The model is not considered good enough for autonomous repairs until selected patches pass package rebuild and autopkgtest review."])
     (output / "summary.md").write_text("\n".join(lines) + "\n")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as stream:
             stream.write((output / "summary.md").read_text())
+
     return 0
 
 
+def _validate_analysis_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Require failure evidence and one complete model backend configuration."""
+    required = (args.source, args.phase, args.evidence)
+    if not all(required) or (not args.ollama_url and (not args.llama_cli or not args.model)):
+        parser.error("analysis requires source, phase, evidence, and either Ollama or llama.cpp")
+
+
 def main() -> int:
+    """Validate command arguments and dispatch analysis or aggregation."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--aggregate", type=Path)
     parser.add_argument("--source")
@@ -255,9 +337,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.aggregate:
         return aggregate(args.aggregate, args.output)
-    required = (args.source, args.phase, args.evidence)
-    if not all(required) or (not args.ollama_url and (not args.llama_cli or not args.model)):
-        parser.error("analysis requires source, phase, evidence, and either Ollama or llama.cpp")
+
+    _validate_analysis_args(parser, args)
     run(args)
     return 0
 

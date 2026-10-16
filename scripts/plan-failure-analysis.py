@@ -12,7 +12,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from packagetest.failure_analysis import select_direct_failures, write_json
 
 
+def _write_summary(path: Path, failures: list[dict]) -> None:
+    """Explain the selected direct failures, including the empty-plan case."""
+    summary = ["# Local AI failure-analysis plan", "", f"{len(failures)} direct failures selected; blocked dependents are excluded.", ""]
+    if failures:
+        summary.extend(["| Source | Phase | Result |", "|---|---|---|"])
+        summary.extend(f"| `{row['source']}` | {row['phase']} | {row['result']} |" for row in failures)
+    else:
+        summary.append("No direct build or autopkgtest failures require analysis.")
+
+    path.write_text("\n".join(summary) + "\n")
+
+
 def main() -> int:
+    """Select bounded failures and publish their workflow matrix and summary."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("results", type=Path)
     parser.add_argument("--output", type=Path, default=Path("failure-analysis-plan"))
@@ -23,22 +36,18 @@ def main() -> int:
     matrix = {"include": failures}
     write_json(args.output / "matrix.json", matrix)
     write_json(args.output / "failures.json", failures)
-    summary = ["# Local AI failure-analysis plan", "", f"{len(failures)} direct failures selected; blocked dependents are excluded.", ""]
-    if failures:
-        summary.extend(["| Source | Phase | Result |", "|---|---|---|"])
-        summary.extend(f"| `{row['source']}` | {row['phase']} | {row['result']} |" for row in failures)
-    else:
-        summary.append("No direct build or autopkgtest failures require analysis.")
-    (args.output / "summary.md").write_text("\n".join(summary) + "\n")
+    _write_summary(args.output / "summary.md", failures)
     github_output = os.environ.get("GITHUB_OUTPUT")
     if github_output:
         with open(github_output, "a") as stream:
             stream.write(f"enabled={'true' if failures else 'false'}\n")
             stream.write("matrix=" + json.dumps(matrix, separators=(",", ":")) + "\n")
+
     step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if step_summary:
         with open(step_summary, "a") as stream:
             stream.write((args.output / "summary.md").read_text())
+
     return 0
 
 
