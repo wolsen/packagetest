@@ -1172,8 +1172,18 @@ def _add_control_dependency(text: str, field: str, package: str) -> str:
         lines[end - 1] += "\n"
 
     insert = _dependency_insert_position(lines, start, end, package)
+    _dependency_separator(lines, insert - 1)
     lines.insert(insert, f" {package},\n")
     return "".join(lines)
+
+
+def _dependency_separator(lines: list[str], index: int) -> None:
+    """Separate a newly inserted dependency from an inline or final uncommaed entry."""
+    previous = lines[index].rstrip()
+    if previous and not previous.endswith((",", ":")):
+        previous += ","
+
+    lines[index] = previous + "\n"
 
 
 def _render_argument_removal(decision: dict, tree: Path) -> str:
@@ -1571,6 +1581,28 @@ def _check_source_application(
     return completed
 
 
+def _validated_source_application(
+    patch: str, paths: list[str], tree: Path, apply: bool
+) -> subprocess.CompletedProcess[str]:
+    """Apply in disposable storage and check semantic policy before mutating a real tree."""
+    from .repair_policy import validate_tree_edits
+
+    with tempfile.TemporaryDirectory(prefix="packagetest-policy-") as temporary:
+        # Do not touch the original until every effective file passes policy.
+        proposed = Path(temporary) / "source"
+        shutil.copytree(tree, proposed, symlinks=True)
+        completed = _check_source_application(patch, paths, proposed, True)
+        if completed.returncode:
+            return completed
+
+        try:
+            validate_tree_edits(tree, proposed, paths)
+        except (ValueError, SyntaxError, UnicodeError, OSError) as exc:
+            return subprocess.CompletedProcess(completed.args, 1, "", str(exc))
+
+    return _check_source_application(patch, paths, tree, True) if apply else completed
+
+
 def _source_patch_result(patch: str, paths: list[str], tree: Path, apply: bool) -> dict:
     """Return policy rejection or application evidence without changing the report schema."""
     result = {"result": "REJECTED", "paths": paths, "error": ""}
@@ -1579,7 +1611,7 @@ def _source_patch_result(patch: str, paths: list[str], tree: Path, apply: bool) 
         result["error"] = error
         return result
 
-    completed = _check_source_application(patch, paths, tree, apply)
+    completed = _validated_source_application(patch, paths, tree, apply)
     if completed.returncode:
         result["error"] = (completed.stderr or completed.stdout).strip()[-4000:]
         return result

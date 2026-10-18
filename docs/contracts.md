@@ -192,14 +192,61 @@ Inspection after an accepted prefix sees its applied upstream changes. A broken
 existing quilt stack must first be repaired through the mechanical refresh/drop
 interface; generic edits cannot bypass that stack or modify its patch files.
 
-Python test edits must preserve qualified test names and assertion counts;
-changing an existing test file also requires an added regression test. Lintian
-exceptions require an explanatory comment and a literal package/tag/file entry
-matching the current diagnostic. Architecture mismatch overrides are rejected.
-These checks constrain proposals; they cannot prove behavioral equivalence,
-assertion quality, or that a version requirement was not weakened. General
-proposals carry `human_review_required: true` in decision validation for later
-review. That flag does not bypass or pause execution gates.
+The semantic admission rules are implemented in `repair_policy`. They run against
+complete before/after files during exact-edit rendering and again at the
+independent `validate_source_patch` gate. The patch gate first applies the outer
+diff in disposable storage. New quilt payloads affecting policy files are applied
+in another disposable source view, including earlier newly generated patches in
+the proposed series. Policy rejection leaves the original source untouched,
+including when `apply=True` was requested. Source code remains inert during
+validation; Git and Debian's source tool only apply patches.
+
+| Boundary | Accepted automatically | Rejected for automatic application |
+| --- | --- | --- |
+| Existing Python tests | Original syntax and execution setup preserved; additional nonvacuous assertions and independent regression functions | Changed assertions, fixture inputs, decorators, defaults, helpers, constants, class inheritance, removed tests, or shadowing definitions |
+| New Python regressions | Direct assertions or unconditional unittest assertion contexts | Literal/self comparisons, Boolean literal escape hatches, assertions only inside uncalled helpers or conditional branches, dynamic skips, early returns, or exception suppression |
+| Test collection and tooling | Unchanged effective configuration | Collection hooks, discovery filters, tox commands, coverage exclusions, or pytest/lint tool settings changed |
+| Debian dependencies | Additional dependency clauses; tighter Debian version bounds; fewer alternatives in the same stanza and field | Removed clauses or substitutions, expanded alternatives, relaxed pins/floors/ceilings, moved dependencies, or changed multiarch/architecture/profile scope |
+| Python requirements | Existing PEP 508 name, extras, marker, URL, and specifiers retained; additional constraints or dependencies | Lost specifiers, changed activation/source identity, removed requirements/includes, or new opaque pip options/includes |
+| Packaging checks | Existing check recipes, make settings, and autopkgtest commands retained | Ignored exit status, empty test overrides, changed check recipes, make conditionals/settings, test restrictions, or autopkgtest discovery |
+
+Debian comparisons use `dpkg --compare-versions`, including epochs, prereleases,
+and revision suffixes; comparator errors are rejected rather than treated as
+equal bounds. PEP 440 constraints are compared conservatively by keeping
+each original specifier; replacing `>=2` with `>=3` requires review, while retaining
+`>=2` and adding `<5` is accepted. Supported Python metadata locations are
+requirements/constraints text files, setuptools `setup.cfg` fields, and standard
+`pyproject.toml` project/build-system dependency arrays. Executable `setup.py`
+changes and changes to unsupported dependency-backend tables require review.
+Opaque existing pip includes remain unchanged; included files still receive their
+own validation when edited through recognized requirements/constraints paths.
+
+An existing test expectation correction, such as replacing exact equality with
+a lower-bound assertion, requires review even if the model adds a regression.
+This includes legitimate corrections to outdated tests. The rejected decision,
+raw model response, and validation reason remain in attempt evidence; the model
+can revise the proposal within its existing budget. No automatic approval is
+created, and no interactive approval mechanism is introduced.
+
+Lintian exceptions still require an explanatory comment and a literal
+package/tag/file entry matching the current diagnostic during model edit
+rendering. The independent patch gate also enforces literal file contexts, explanation comments, and the
+architecture-mismatch prohibition; it has no failure-log argument and therefore
+does not recheck diagnostic binding. Source-format/options and maintainer-hook
+changes are rejected at both boundaries. Context-only quilt refreshes still
+validate effective protected files. Changes to a protected transformation,
+removal of a test/dependency/configuration patch, reordered series entries, or
+insertion before the existing stack require review. New repairs append to the
+series. General proposals retain `human_review_required: true` in decision
+validation; that diagnostic flag does not bypass or pause execution gates.
+
+These rules establish structural preservation for recognized files, not semantic
+proof for arbitrary programs. Production code, dynamically generated metadata,
+custom test runners, assertion side effects, opaque includes, and arbitrary shell
+behavior can affect checks without an obvious static signature. New assertions
+are not proof of useful regression coverage. Independent rebuild/autopkgtest gates
+and review remain necessary. The admission rules do not change which classified
+autopkgtest outcomes the executor accepts.
 
 Inference permits 2,048 output tokens in a 16,384-token context. Package sessions
 retain their eight model-call, four rebuild, eight validated-repair, and 45-minute

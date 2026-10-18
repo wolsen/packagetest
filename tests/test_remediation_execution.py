@@ -337,3 +337,25 @@ def test_ineffective_patch_is_rolled_back_before_a_different_proposal(failed_run
     assert "+Architecture: any" not in patches[1]
     assert "+Build-Depends-Indep: python3-pbr, python3-futurist" in patches[1]
     assert read_report(failed_run)["progress"]["rebuilds"] == 2
+
+
+def test_dependency_weakening_is_feedback_without_a_build_or_promotion(failed_run, monkeypatch):
+    before = "Build-Depends-Indep: python3-pbr"
+    responses = iter([
+        generic_decision(before, "Build-Depends-Indep: python3-futurist"),
+        generic_decision(before, "Build-Depends-Indep: python3-pbr, python3-futurist"),
+    ])
+    prompts = []
+
+    def generate(*args):
+        prompts.append(args[2])
+        return json.dumps(next(responses)), {}
+
+    monkeypatch.setattr(remediation, "llama_generate", generate)
+    successful_gates(monkeypatch)
+    assert remediation.run(failed_run) == 0
+    report = read_report(failed_run)
+    assert report["attempts"][0]["result"] == "RENDER_REJECTED"
+    assert "Dependency removal" in prompts[1]
+    assert report["progress"]["rebuilds"] == 1
+    assert report["attempts"][1]["result"] == "REPAIRED"

@@ -13,6 +13,7 @@ on:
       - "src/packagetest/remediation_evidence.py"
       - "src/packagetest/remediation.py"
       - "src/packagetest/repair_agent.py"
+      - "src/packagetest/repair_policy.py"
       - "src/packagetest/source_remediation.py"
       - "src/packagetest/contracts.py"
   workflow_dispatch:

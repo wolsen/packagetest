@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import difflib
 import hashlib
 import json
@@ -16,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from .contracts import object_mapping, records, required_text, text_field
+from .repair_policy import validate_file_edit
 
 MAX_RESPONSE_BYTES = 48 * 1024
 MAX_FILE_BYTES = 256 * 1024
@@ -429,114 +429,6 @@ def _verify_materialized_stack(tree: Path) -> None:
         )
 
 
-def _test_assertions(text: str) -> dict[str, int]:
-    """Count existing named Python test assertions as a conservative regression guard."""
-    return _named_tests(ast.parse(text), "")
-
-
-def _named_tests(tree: ast.AST, prefix: str) -> dict[str, int]:
-    """Keep class and function scope so identically named methods cannot hide deletions."""
-    result: dict[str, int] = {}
-    for node in ast.iter_child_nodes(tree):
-        result.update(_node_tests(node, prefix))
-
-    return result
-
-
-def _node_tests(node: ast.AST, prefix: str) -> dict[str, int]:
-    """Record qualified test names and descend through their enclosing definitions."""
-    if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-        name = prefix + node.name
-        nested = _named_tests(node, name + ".")
-        if isinstance(
-            node, (ast.FunctionDef, ast.AsyncFunctionDef)
-        ) and node.name.startswith("test"):
-            nested[name] = sum(_is_assertion(child) for child in ast.walk(node))
-
-        return nested
-
-    return _named_tests(node, prefix)
-
-
-def _is_assertion(node: ast.AST) -> bool:
-    """Recognize Python assert statements and unittest-style assertion calls."""
-    if isinstance(node, ast.Assert):
-        return True
-
-    return (
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr.startswith("assert")
-    )
-
-
-def _is_test_file(name: str) -> bool:
-    """Identify Python test modules whose existing coverage must remain active."""
-    return name.endswith(".py") and "test" in name.lower()
-
-
-def _lost_assertions(before: dict[str, int], after: dict[str, int]) -> bool:
-    """Require every existing named test to retain at least its original assertions."""
-    return any(after.get(name, -1) < count for name, count in before.items())
-
-
-def _override_lines(text: str) -> list[str]:
-    """Select active override declarations without treating comments as policy changes."""
-    return [
-        line for line in text.splitlines() if line.strip() and not line.startswith("#")
-    ]
-
-
-def _validate_test_edit(name: str, before: str, after: str) -> None:
-    """Preserve named tests and assertion counts, requiring a new regression for changed tests."""
-    if not _is_test_file(name):
-        return
-
-    old, new = _test_assertions(before), _test_assertions(after)
-    if _lost_assertions(old, new):
-        raise ValueError(
-            "A repair cannot remove existing tests or reduce their assertion counts"
-        )
-
-    if before and not new.keys() - old.keys():
-        raise ValueError("Changing existing tests requires an added regression test")
-
-
-def _validate_override(name: str, before: str, after: str, evidence: str) -> None:
-    """Allow only explained file-specific Lintian exceptions tied to the observed diagnostic."""
-    if not name.endswith(".lintian-overrides"):
-        return
-
-    if not any(line.startswith("# ") for line in after.splitlines()):
-        raise ValueError("Lintian overrides require an explanatory comment")
-
-    for line in set(_override_lines(after)) - set(_override_lines(before)):
-        _validate_override_line(line, evidence)
-
-
-def _validate_override_line(line: str, evidence: str) -> None:
-    """Reject broad exceptions and architecture-mismatch suppression even when a build would pass."""
-    match = re.fullmatch(
-        r"[a-z0-9+.-]+(?::| binary:) ([a-z0-9-]+) \[([a-zA-Z0-9_./+-]+)\]", line
-    )
-    if match is None:
-        raise ValueError(
-            "Lintian overrides must name one package, tag, and literal file context"
-        )
-
-    tag, path = match.groups()
-    _relative_path(path)
-    if tag == "arch-independent-package-contains-binary-or-object":
-        raise ValueError(
-            "Correct package architecture instead of overriding an architecture mismatch"
-        )
-
-    if f"{tag} [{path}]" not in evidence:
-        raise ValueError(
-            "Lintian override must match a tag and file in the current failure"
-        )
-
-
 def _editable_path(root: Path, name: str) -> Path:
     """Protect identity, quilt bookkeeping, and maintenance hooks from generic edits."""
     path = safe_path(root, name)
@@ -564,8 +456,7 @@ def _edit_file(root: Path, edit: TextEdit, evidence: str) -> tuple[str | None, s
     after = _replacement(before, edit)
     _validate_content(after)
 
-    _validate_test_edit(edit.path, before or "", after)
-    _validate_override(edit.path, before or "", after, evidence)
+    validate_file_edit(edit.path, before or "", after, evidence=evidence)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(after, encoding="utf-8")
     return before, after

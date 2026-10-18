@@ -1,7 +1,6 @@
 """Exercise source repair evidence and deterministic preparation retries."""
 
 import json
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -92,8 +91,8 @@ def test_cumulative_refresh_uses_upstream_tree_and_normalized_context(tmp_path):
 
 
 @pytest.mark.parametrize('state', ['context-drift', 'superseded', 'unrepairable'])
-def test_deterministic_repair_reaches_preparation_without_model(tmp_path, monkeypatch, state):
-    """Exercise refresh, supersession, and error reporting through the CLI boundary."""
+def test_deterministic_test_fixture_repairs_require_review(tmp_path, monkeypatch, state):
+    """Keep protected test fixture adaptations out of source preparation through the CLI."""
     from packagetest import remediation as helper
 
     work = tmp_path / 'initial'
@@ -141,64 +140,27 @@ def test_deterministic_repair_reaches_preparation_without_model(tmp_path, monkey
     ])
     monkeypatch.delenv('GITHUB_STEP_SUMMARY', raising=False)
     original_run = subprocess.run
-    preparations = []
-
     def prepare_candidate(command, **kwargs):
-        """Use real patch tools while replacing the expensive source-build boundary."""
-        if command[:3] != [sys.executable, '-m', 'packagetest.prepared_source']:
-            return original_run(command, **kwargs)
+        """Keep real patch checks while rejecting unexpected source preparation."""
+        if command[:3] == [sys.executable, '-m', 'packagetest.prepared_source']:
+            pytest.fail('Protected test fixture changes must not reach preparation')
 
-        candidate = Path(command[command.index('--work') + 1])
-        candidate.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(tree, candidate)
-        proposal = Path(command[command.index('--remediation-patch') + 1])
-        assert helper.validate_source_patch(proposal.read_text(), candidate, apply=True)['result'] == 'APPLIED'
-        series = candidate / 'debian/patches/series'
-
-        if state == 'context-drift':
-            # The refreshed patch must satisfy dpkg-source's zero-fuzz policy.
-            result = original_run(
-                ['patch', '--batch', '--fuzz=0', '-p1', '-i', str(candidate / 'debian/patches/offline-test.patch')],
-                cwd=candidate, capture_output=True, text=True,
-            )
-            assert result.returncode == 0, result.stdout + result.stderr
-            assert "@mock.patch('socket.getaddrinfo')" in (candidate / 'test_image.py').read_text()
-        else:
-            assert series.read_text().startswith('# Superseded upstream')
-            assert (candidate / 'test_image.py').read_text() == contents[state]
-
-        candidate_output = Path(command[command.index('--output') + 1])
-        candidate_output.mkdir()
-        (candidate_output / 'prepared-source.json').write_text('{}')
-        preparations.append(candidate)
-        return subprocess.CompletedProcess(command, 0)
+        return original_run(command, **kwargs)
 
     monkeypatch.setattr(module.subprocess, 'run', prepare_candidate)
-    result = module.main()
+    assert module.main() == 1
     saved = json.loads((report / 'result.json').read_text())
-    attempt = saved['attempts'][0]
     assert len(saved['attempts']) == 1
+    attempt = saved['attempts'][0]
     assert (patches / 'series').read_text() == 'offline-test.patch\n'
-
+    assert saved['result'] == 'UNRESOLVED'
+    assert not (output / 'prepared-source.json').exists()
     if state == 'unrepairable':
-        assert result == 1
-        assert preparations == []
         assert 'requires unified patch sections' in attempt['error']
-        assert 'QuiltPatchSuperseded' not in attempt['error']
-        assert saved['result'] == 'UNRESOLVED'
-        return
-
-    assert result == 0
-    assert len(preparations) == 1
-    assert saved['selected_attempt'] == 'D1'
-    assert attempt['result'] == 'REPAIRED'
-    assert (output / 'prepared-source.json').is_file()
-    expected_action = 'refresh_quilt_patch' if state == 'context-drift' else 'drop_quilt_patch'
-    assert attempt['decision']['action'] == expected_action
-
-    if state == 'superseded':
-        assert attempt['classification'] == 'superseded-upstream'
-        assert 'old patch payload no longer exists' in attempt['classification_evidence']
+    elif state == 'superseded':
+        assert 'Dropping a test' in attempt['error']
+    else:
+        assert 'Test decorators' in attempt['error']
 
 
 @pytest.mark.parametrize('outcome', ['no_fix', 'rejected', 'prepared', 'preparation_failed'])

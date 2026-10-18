@@ -47,6 +47,9 @@ def _dpkg_compare(left: str, right: str, op: str) -> bool:
         "Version comparison stderr:\n%s",
         completed.stderr if completed.stderr else "<empty>",
     )
+    if completed.returncode not in (0, 1):
+        raise ValueError("Cannot compare Debian versions: " + completed.stderr.strip())
+
     return completed.returncode == 0
 
 

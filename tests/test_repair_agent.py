@@ -130,7 +130,7 @@ def test_upstream_edit_becomes_quilt_and_applies_without_touching_original(sourc
 
 @pytest.mark.packaging_component
 def test_new_upstream_regression_file_is_in_quilt_patch(source):
-    decision = proposal("test_worker.py", "", "def test_pending():\n    assert True\n")
+    decision = proposal("test_worker.py", "", "from worker import pending\n\ndef test_pending():\n    assert pending([1]) == 1\n")
     patch = render_edit_repair(decision, source)
     assert validate_source_patch(patch, source, apply=True)["result"] == "APPLIED"
     materialize_source(source)
@@ -156,14 +156,14 @@ def test_cumulative_upstream_edits_use_already_applied_quilt_preimages(source):
 def test_regression_guard_preserves_qualified_tests_and_assertions(source, after):
     before = "class A:\n    def test_value(self):\n        assert True\nclass B:\n    def test_value(self):\n        assert True\n"
     (source / "test_worker.py").write_text(before)
-    with pytest.raises(ValueError, match="remove existing tests"):
+    with pytest.raises(ValueError, match="test|Test"):
         render_edit_repair(proposal("test_worker.py", before, after), source)
 
 
-def test_changing_test_expectation_requires_regression(source):
+def test_changing_test_expectation_requires_review(source):
     before = "def test_value():\n    assert current == 2024\n"
     (source / "test_worker.py").write_text(before)
-    with pytest.raises(ValueError, match="added regression"):
+    with pytest.raises(ValueError, match="review"):
         render_edit_repair(proposal("test_worker.py", "== 2024", ">= 2024"), source)
 
 
@@ -183,8 +183,8 @@ def test_explained_matching_override_preserves_unrelated_existing_declarations(s
 
 
 def test_nested_quilt_patch_still_passes_test_bypass_policy(source):
-    patch = render_edit_repair(proposal("test_worker.py", "", "import unittest\n@unittest.skip('failure')\ndef test_value():\n    assert True\n"), source)
-    assert validate_source_patch(patch, source)["result"] == "REJECTED"
+    with pytest.raises(ValueError, match="skipping"):
+        render_edit_repair(proposal("test_worker.py", "", "import unittest\n@unittest.skip('failure')\ndef test_value():\n    assert True\n"), source)
 
 
 def test_inspection_feedback_is_bounded_even_with_heavily_escaped_text(source):

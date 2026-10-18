@@ -76,6 +76,7 @@ flowchart LR
 | Package publication | `publish-package-artifacts.PackageArtifacts` | Final readiness to compact reports, accepted handoff payloads, and failure diagnostics |
 | Artifact handoff | `handoff.ProducerBundle`, `ProducerRepository`, `collect_producers` | Same-run producer identity, readiness, and byte verification |
 | Remediation evidence | `remediation_evidence` | Ordered, bounded logs and source excerpts |
+| Repair admission | `repair_policy` | Whole-file test, dependency, and check preservation at rendering and independent patch application boundaries |
 | Local model investigation | `repair_agent.SourceInspector`, `PatchPlan`, `TextEdit` | Bounded read-only evidence and exact edits converted into reviewable Debian patches |
 | Package remediation | `ProposalPlanner`, `CandidateExecutor`, `ArtifactPromoter` | Validated decisions, isolated build/test gates, and canonical artifact replacement |
 | Retry coordination | `RemediationRun`, `RepairProgress`, `RemediationSession` | Current failure evidence, attempt records, unchanged-evidence retries, and budgets |

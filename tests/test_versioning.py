@@ -54,3 +54,12 @@ def test_upstream_version_to_debian_version_rewrites_prereleases():
     assert upstream_version_to_debian_version("31.0.0b1") == "31.0.0~b1-0ubuntu1"
     assert upstream_version_to_debian_version("31.0.0rc1") == "31.0.0~rc1-0ubuntu1"
     assert upstream_version_to_debian_version("31.1.0") == "31.1.0-0ubuntu1"
+
+
+@patch("packagetest.versioning.subprocess.run")
+def test_debian_compare_rejects_comparator_errors(mock_run):
+    import pytest
+    mock_run.return_value = _completed(2)
+    with pytest.raises(ValueError, match="Cannot compare Debian versions"):
+        debian_compare("invalid", "1")
+    assert mock_run.call_count == 1

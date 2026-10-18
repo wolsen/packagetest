@@ -269,8 +269,11 @@ Use 1-8 edited files, one exact unique before block per file. Empty before means
 Preserve final newlines. Upstream code edits are converted by the harness into a new quilt patch; do not edit
 quilt bookkeeping or debian/patches directly. Inspect the materialized source to obtain exact preimages.
 Packaging metadata edits may use debian/control, install manifests, or other regular packaging files.
-Preserve ownership, source identity, tests, and assertions. Include focused regression tests for behavioral
-changes, exercising the failure and valid boundary cases. Changes to existing tests require an added regression.
+Preserve ownership, source identity, test assertions, fixtures, helpers, and existing test control flow.
+Existing test bodies may only gain nonvacuous assertions; add independent regression functions for behavioral
+changes. Changing an existing test expectation requires human review and is rejected for automatic application.
+Keep existing dependency clauses, version constraints, markers, extras, and architecture/profile scopes.
+Dependency additions and tighter Debian bounds are allowed. Do not alter test discovery or check recipes.
 Do not remove or skip a failing test, reduce coverage, weaken a version floor, hide a failed command, or add a
 blanket Lintian override. A justified Lintian exception must have an explanatory comment and one literal file
 context matching the current error; architecture mismatches must be corrected rather than overridden.

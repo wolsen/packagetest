@@ -106,7 +106,7 @@ Depends:
  ${python3:Depends},
 """
     (tmp_path / "debian/control").write_text(control)
-    (tmp_path / "debian/rules").write_text("cmd \\\n\t--output file \\\n\t--format yaml \\\n\t--namespace sample\n")
+    (tmp_path / "debian/rules").write_text("override_dh_install:\n\tcmd \\\n\t--output file \\\n\t--format yaml \\\n\t--namespace sample\n")
     dependency = render_source_repair({
         "action": "add_dependency", "subject": "python3-futurist", "replacement": "", "evidence": "missing"
     }, tmp_path)
@@ -345,7 +345,7 @@ def test_quilt_refresh_omits_drifted_test_section_after_runtime_is_upstream(tmp_
         render_source_repair(decision, tmp_path)
 
 
-def test_quilt_refresh_removes_drifted_python_test_function(tmp_path):
+def test_quilt_refresh_cannot_rewrite_a_test_deletion_transformation(tmp_path):
     (tmp_path / "debian/patches").mkdir(parents=True)
     (tmp_path / "debian/patches/series").write_text("broken-test.patch\n")
     (tmp_path / "debian/patches/broken-test.patch").write_text("""Description: remove broken test
@@ -376,8 +376,8 @@ def test_quilt_refresh_removes_drifted_python_test_function(tmp_path):
         "replacement": "", "evidence": "broken-test.patch Hunk #1 FAILED",
     }
     patch = render_source_repair(decision, tmp_path)
-    assert validate_source_patch(patch, tmp_path, apply=True)["result"] == "APPLIED"
-    refreshed = (tmp_path / "debian/patches/broken-test.patch").read_text()
+    assert validate_source_patch(patch, tmp_path, apply=True)["result"] == "REJECTED"
+    refreshed = patch
     assert "def test_trace" in refreshed
     assert "-        payload = bytes(stream.read())" in refreshed
     assert " def test_retained" in refreshed
@@ -450,7 +450,7 @@ def test_quilt_refresh_classifies_substantially_upstream_section(tmp_path):
 def test_replaces_missing_upstream_path_only_when_candidate_exists(tmp_path):
     (tmp_path / "debian").mkdir()
     (tmp_path / "debian/rules").write_text(
-        "oslo-config-generator --config-file=aodh/cmd/aodh-config-generator.conf\n")
+        "override_dh_install:\n\toslo-config-generator --config-file=aodh/cmd/aodh-config-generator.conf\n")
     (tmp_path / "etc/aodh").mkdir(parents=True)
     (tmp_path / "etc/aodh/aodh-config-generator.conf").write_text("[DEFAULT]\n")
     evidence = ("ConfigFilesNotFoundError: Failed to find some config files: "
@@ -461,14 +461,14 @@ def test_replaces_missing_upstream_path_only_when_candidate_exists(tmp_path):
     }
     assert validate_repair_decision(decision, evidence)["result"] == "ACCEPTED"
     patch = render_source_repair(decision, tmp_path)
-    assert "+oslo-config-generator --config-file=etc/aodh/aodh-config-generator.conf" in patch
+    assert "+\toslo-config-generator --config-file=etc/aodh/aodh-config-generator.conf" in patch
     assert validate_source_patch(patch, tmp_path)["result"] == "APPLIES"
 
 
 def test_normalizes_reversed_missing_and_existing_paths(tmp_path):
     (tmp_path / "debian").mkdir()
     (tmp_path / "debian/rules").write_text(
-        "oslo-config-generator --config-file=aodh/cmd/aodh-config-generator.conf\n")
+        "override_dh_install:\n\toslo-config-generator --config-file=aodh/cmd/aodh-config-generator.conf\n")
     (tmp_path / "etc/aodh").mkdir(parents=True)
     (tmp_path / "etc/aodh/aodh-config-generator.conf").write_text("[DEFAULT]\n")
     reversed_decision = {
@@ -559,30 +559,32 @@ def test_patch_validation_uses_disposable_copy_and_restricts_paths(tmp_path):
 
 def test_source_patch_is_limited_to_debian_and_can_be_applied(tmp_path):
     (tmp_path / "debian").mkdir()
-    (tmp_path / "debian/control").write_text("old\n")
+    (tmp_path / "debian/control").write_text("Source: sample\nArchitecture: all\n")
     patch = """diff --git a/debian/control b/debian/control
 --- a/debian/control
 +++ b/debian/control
-@@ -1 +1 @@
--old
-+new
+@@ -1,2 +1,2 @@
+ Source: sample
+-Architecture: all
++Architecture: any
 """
     assert validate_source_patch(patch, tmp_path)["result"] == "APPLIES"
     assert validate_source_patch(patch, tmp_path, apply=True)["result"] == "APPLIED"
-    assert (tmp_path / "debian/control").read_text() == "new\n"
+    assert (tmp_path / "debian/control").read_text() == "Source: sample\nArchitecture: any\n"
 
 
 def test_source_patch_applies_when_tree_is_relative(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     tree = Path("outputs/source-preparation/sample")
     (tree / "debian").mkdir(parents=True)
-    (tree / "debian/control").write_text("old\n")
+    (tree / "debian/control").write_text("Source: sample\nArchitecture: all\n")
     patch = """diff --git a/debian/control b/debian/control
 --- a/debian/control
 +++ b/debian/control
-@@ -1 +1 @@
--old
-+new
+@@ -1,2 +1,2 @@
+ Source: sample
+-Architecture: all
++Architecture: any
 """
     assert validate_source_patch(patch, tree)["result"] == "APPLIES"
 
@@ -784,3 +786,14 @@ def test_evidence_reader_excludes_links_oversized_and_nontext_members(tmp_path):
     assert 'huge.log' not in evidence
     assert 'linked.log' not in evidence
     assert not (tmp_path / 'result.json').exists()
+
+
+@pytest.mark.parametrize('dependencies', ['python3-pbr', 'python3-pbr (>= 1)', '\n python3-pbr', '\n python3-pbr,'])
+def test_dependency_addition_separates_existing_final_entry(tmp_path, dependencies):
+    (tmp_path / 'debian').mkdir()
+    path = tmp_path / 'debian/control'
+    path.write_text(f'Source: sample\nBuild-Depends: {dependencies}\n\nPackage: sample\nArchitecture: all\n')
+    decision = {'action': 'add_dependency', 'scope': 'build', 'subject': 'python3-futurist', 'replacement': '', 'evidence': 'missing import'}
+    patch = render_source_repair(decision, tmp_path)
+    assert validate_source_patch(patch, tmp_path, apply=True)['result'] == 'APPLIED'
+    assert 'python3-futurist,' in path.read_text()

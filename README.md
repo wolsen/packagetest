@@ -68,11 +68,11 @@ across source, scripts, and tests. Formatting covers source and scripts.
 class, function, and method, including private helpers, constructors, and nested
 functions. Tests are exempt from docstring enforcement.
 
-Strict mypy checks cover the 26 modules listed in `pyproject.toml`, including
+Strict mypy checks cover the 27 modules listed in `pyproject.toml`, including
 prepared-source manifests, both dependency resolvers, final planning, nightly
 build coordination, verified producer handoff, snapshot construction, and command
-capture, and bounded model repair plans. JSON enters these paths as `object` and is validated before use. Other
-modules are still outside the strict gate; importing them does not imply that
+capture, bounded model repair plans, and repair admission policy. JSON enters
+these paths as `object` and is validated before use. Other modules are still outside the strict gate; importing them does not imply that
 mypy checks their implementation. Add modules to the explicit list as they are
 converted, and keep `strict`, unreachable-code warnings, and missing-import type
 checks enabled. See [the contract reference](docs/contracts.md#typed-metadata-boundaries)
