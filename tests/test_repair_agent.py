@@ -259,3 +259,36 @@ def test_source_preparation_uses_general_inspection_without_a_rebuild(source, tm
 def test_generated_files_cannot_introduce_binary_content(source):
     with pytest.raises(ValueError, match="Binary"):
         render_edit_repair(proposal("debian/new-file", "", "binary\0payload\n"), source)
+
+
+@pytest.mark.parametrize("decision", [
+    {"action": "inspect", "requests": [{"op": "read", "path": "module.py"}]},
+    proposal(),
+    {"action": "no_fix", "subject": "", "replacement": "", "evidence": "no supported repair"},
+])
+def test_response_accepts_llama_cli_banner_prompt_preview_and_exit(decision):
+    output = ('Loading model...\nmodel : local.gguf\n'
+              '> Investigate the failure.\nREAD-ONLY INVESTIGATION:\n'
+              '{"action":"inspect","requests":[{"op":"read","path":"relative/file.py","st ... (truncated)\n'
+              '```json\n' + json.dumps(decision) + '\n```\n\nExiting...\n')
+    assert parse_response(output) == decision
+
+
+@pytest.mark.parametrize("output", [
+    '{"wrapper":{"action":"inspect","requests":[]}}',
+    '[{"action":"inspect","requests":[]}]',
+    '{"action":"unsupported"}\n```json\n{"action":"inspect"}\n```',
+    '{"action":"inspect","requests":[]}\n{"action":"no_fix"',
+    '{"action":"inspect","requests":[]}\n{"action":"unsupported"}',
+    '```json\n{"action":"inspect","requests":[]}\n```\n{"action":"unsupported"}',
+    '```json\n{"action":"inspect"}\n```\n```json\n{"action":"no_fix"}\n```',
+    'banner\n{"action":"inspect","requests":[{"op":"read","op":"list"}]}\nExiting...',
+])
+def test_response_rejects_nested_ambiguous_duplicate_and_invalid_final_objects(output):
+    with pytest.raises(ValueError):
+        parse_response(output)
+
+
+def test_response_rejects_oversized_transport_output():
+    with pytest.raises(ValueError, match="48 KiB"):
+        parse_response(' ' * (48 * 1024) + '{"action":"inspect"}')

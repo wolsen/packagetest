@@ -183,6 +183,10 @@ class SourceDiscovery:
             mapped, dependencies
         )
         entry.pop("upstream_dependency_resolution_error", None)
+        failures = _unsatisfied_archive_requirements(mapped)
+        if failures:
+            entry["upstream_dependency_resolution_error"] = "; ".join(failures)
+
         entry["packaging_build_dependencies"] = list(
             entry.get("build_dependencies", [])
         )
@@ -213,6 +217,30 @@ def resolve_upstream_dependency_closure(
         freeze_entry=freeze_entry or freeze,
         inspect_entry=inspect_entry or inspect_revision,
     ).discover()
+
+
+def _unsatisfied_archive_requirements(records: list[Catalog]) -> list[str]:
+    """Reject proven external version conflicts while allowing candidate providers."""
+    return [
+        f"{record['file']}:{record['line']}: {record['requirement']}: "
+        f"{record['archive_binary']} {record.get('archive_version')}: "
+        f"{record.get('archive_decision_reason', 'archive requirement is unsatisfied')}"
+        for record in records
+        if record.get("archive_binary") and record.get("archive_satisfies") is False
+    ]
+
+
+def _validate_archive_requirements(entries: Iterable[Catalog]) -> None:
+    """Prevent direct or offline scheduling from bypassing discovery's archive gate."""
+    failures = [
+        f"{entry['source']}: {failure}"
+        for entry in entries
+        for failure in _unsatisfied_archive_requirements(
+            entry.get("upstream_dependency_requirements", [])
+        )
+    ]
+    if failures:
+        raise ValueError("Unsatisfied archive dependencies:\n" + "\n".join(failures))
 
 
 def _archive_addition_eligible(record: Catalog, packaged: set[str]) -> bool:
@@ -446,6 +474,9 @@ class CatalogScheduler:
         self, max_waves: int = 12, candidate_dependencies: Iterable[CandidateRule] = ()
     ) -> tuple[Catalog, Catalog]:
         """Schedule selected sources with explicit bootstrap and mandatory-edge policies."""
+        _validate_archive_requirements(
+            self.entries[source] for source in sorted(self.selected)
+        )
         self._bootstrap_outside_selection()
         self._break_cycles()
         self._require_candidates(candidate_dependencies)

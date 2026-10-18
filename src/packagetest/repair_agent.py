@@ -100,19 +100,59 @@ def parse_response(output: str) -> dict[str, object]:
     if len(output.encode()) > MAX_RESPONSE_BYTES:
         raise ValueError("Model response exceeds 48 KiB")
 
-    text = _strip_fences(output)
-
-    try:
-        value = object_mapping(
-            json.loads(text, object_pairs_hook=_unique_object), "model response"
-        )
-    except json.JSONDecodeError:
-        return dict(parse_repair_decision(output))
-
+    text = _response_payload(output)
+    value = _response_object(text)
     if text_field(value, "action") in {"inspect", "propose_patch"}:
         return value
 
-    return dict(parse_repair_decision(output))
+    return dict(parse_repair_decision(json.dumps(value)))
+
+
+def _response_payload(output: str) -> str:
+    """Remove CLI prompt previews and isolate a single fenced answer when present."""
+    # llama.cpp can echo a truncated prompt containing protocol examples. Those
+    # examples are transport noise, never candidate instructions for the agent.
+    text = output.rsplit("... (truncated)\n", 1)[-1]
+    fences = list(
+        re.finditer(r"^```(?:json)?[ \t]*\n(.*?)^```[ \t]*$", text, re.M | re.S)
+    )
+    if len(fences) > 1:
+        raise ValueError("Model response contains multiple fenced answers")
+
+    if fences:
+        if re.search(r"[\[{]", text[: fences[0].start()]):
+            raise ValueError("Unexpected JSON before fenced model response")
+
+        suffix = text[fences[0].end() :].strip()
+        if suffix not in {"", "Exiting..."}:
+            raise ValueError("Unexpected content after fenced model response")
+
+        return fences[0].group(1).strip()
+
+    return text.strip()
+
+
+def _response_object(text: str) -> dict[str, object]:
+    """Decode outer JSON values without treating nested requests as new decisions."""
+    decoder = json.JSONDecoder(object_pairs_hook=_unique_object)
+    matches: list[dict[str, object]] = []
+    offset = 0
+    while offset < len(text):
+        match = re.search(r"[\[{]", text[offset:])
+        if match is None:
+            break
+
+        value, end = decoder.raw_decode(text, offset + match.start())
+        candidate = object_mapping(value, "model response")
+        if "action" in candidate:
+            matches.append(candidate)
+
+        offset = end
+
+    if len(matches) != 1:
+        raise ValueError("Model response requires exactly one action object")
+
+    return matches[0]
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -125,15 +165,6 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
         result[key] = value
 
     return result
-
-
-def _strip_fences(output: str) -> str:
-    """Accept one conventional Markdown code fence without scanning arbitrary embedded objects."""
-    text = output.strip()
-    if text.startswith("```") and text.endswith("```"):
-        return text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-
-    return text
 
 
 @dataclass(frozen=True)

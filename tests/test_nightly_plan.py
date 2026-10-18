@@ -616,3 +616,79 @@ def test_missing_packaging_branch_allows_published_source_fallback(monkeypatch):
     })
     assert entry['packaging_source_role'] == 'published-source'
     assert 'None of the packaging branches exist' in entry['packaging_resolution_error']
+
+
+def test_discovery_rejects_unsatisfied_archive_requirement_before_preparation():
+    from packagetest.upstream_dependencies import parse_requirement_file
+
+    data = {'packages': [{'source': 'consumer', 'build_dependencies': []}],
+            'archive_python_packages': [
+                {'distribution': 'cmd2', 'binary': 'python3-cmd2',
+                 'source': 'python-cmd2', 'version': '3.2.0+ds-1ubuntu1'}]}
+
+    def inspect(entry):
+        return (parse_requirement_file('cmd2>=4.0.0\n', filename='requirements.txt', kind='runtime'),
+                ['requirements.txt'])
+
+    enriched, selected, _, errors = module.resolve_upstream_dependency_closure(
+        data, ['consumer'], freeze_entry=lambda entry: dict(entry, upstream_sha='a' * 40),
+        inspect_entry=inspect)
+    assert selected == ['consumer']
+    assert len(errors) == 1
+    assert 'cmd2>=4.0.0' in errors[0]['error']
+    assert 'python3-cmd2 3.2.0+ds-1ubuntu1' in errors[0]['error']
+    assert enriched['packages'][0]['planned_archive_dependency_additions'] == []
+    with pytest.raises(ValueError, match='Unsatisfied archive dependencies'):
+        module.plan_catalog(enriched)
+
+
+def test_scheduling_archive_gate_preserves_candidate_provider_path():
+    data = {'packages': [
+        {'source': 'consumer', 'build_dependencies': ['provider'],
+         'upstream_dependency_requirements': [{'source': 'provider', 'archive_satisfies': False}]},
+        {'source': 'provider', 'build_dependencies': []},
+    ]}
+    _, plan = module.plan_catalog(data)
+    assert plan['waves'] == [['provider'], ['consumer']]
+
+
+def test_tox_test_extras_become_versioned_archive_additions():
+    from packagetest.upstream_dependencies import inspect_revision
+
+    data = {'packages': [{'source': 'consumer', 'build_dependencies': [], 'build_depends': 'debhelper-compat (= 13)'}],
+            'archive_python_packages': [
+                {'distribution': 'cloud-client', 'binary': 'python3-cloud-client',
+                 'source': 'cloud-client', 'version': '30.1.0-3'},
+                {'distribution': 'locking', 'binary': 'python3-locking',
+                 'source': 'locking', 'version': '0.4.1-2'}]}
+    files = {'tox.ini': '[testenv]\nextras = cloud\n', 'pyproject.toml': '''
+[project.optional-dependencies]
+cloud = ["cloud-client>=2.8.1", "locking>=0.4.1"]
+docs = ["sphinx>=7"]
+'''}
+
+    def freeze(entry):
+        return dict(entry, upstream_repository='https://github.com/example/sample', upstream_sha='a' * 40)
+
+    def inspect(entry):
+        return inspect_revision(entry, fetch=lambda url: files.get(url.rsplit('/', 1)[-1]))
+
+    enriched, _, _, errors = module.resolve_upstream_dependency_closure(
+        data, ['consumer'], freeze_entry=freeze, inspect_entry=inspect)
+    assert errors == []
+    additions = enriched['packages'][0]['planned_archive_dependency_additions']
+    assert {r['binary']: r['requirement'] for r in additions} == {
+        'python3-cloud-client': 'cloud-client>=2.8.1', 'python3-locking': 'locking>=0.4.1'}
+    assert all(r['kind'] == 'test' for r in additions)
+
+
+def test_archive_gate_only_blocks_selected_proven_conflicts():
+    data = catalog()
+    data['packages'][0]['upstream_dependency_requirements'] = [
+        {'archive_binary': 'python3-external', 'archive_satisfies': False,
+         'file': 'requirements.txt', 'line': 1, 'requirement': 'external>=4', 'archive_version': '3.0-1'}]
+    _, plan = module.plan_catalog(data, ['d'])
+    assert plan['sources'] == ['d']
+    data['packages'][0]['upstream_dependency_requirements'][0]['archive_satisfies'] = None
+    _, plan = module.plan_catalog(data)
+    assert plan['sources'] == ['a', 'b', 'c', 'd']

@@ -6,6 +6,7 @@ import re
 import time
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
+from configparser import ConfigParser
 from typing import NotRequired, TypedDict
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -16,7 +17,12 @@ from packaging.version import InvalidVersion, Version
 
 from .contracts import object_list, object_mapping, string_list, text_field
 
-DEPENDENCY_FILES = ("requirements.txt", "test-requirements.txt", "pyproject.toml")
+DEPENDENCY_FILES = (
+    "requirements.txt",
+    "test-requirements.txt",
+    "pyproject.toml",
+    "tox.ini",
+)
 TEST_GROUP_NAMES = {"test", "tests", "testing"}
 ARCHIVE_DISTRIBUTION_ALIASES = {
     "pyyaml": "yaml",
@@ -186,7 +192,9 @@ def _string_requirements(
     return records
 
 
-def parse_pyproject(text: str) -> list[RequirementRecord]:
+def parse_pyproject(
+    text: str, *, test_extras: frozenset[str] = frozenset()
+) -> list[RequirementRecord]:
     """Read runtime, build-system, and named test requirements from TOML tables."""
     data = tomllib.loads(text)
     records: list[RequirementRecord] = []
@@ -202,11 +210,12 @@ def parse_pyproject(text: str) -> list[RequirementRecord]:
             build.get("requires", []), filename="pyproject.toml", kind="build-system"
         )
     )
+    selected = TEST_GROUP_NAMES | test_extras | _native_tox_extras(data)
     optional = object_mapping(
         project.get("optional-dependencies", {}), "optional-dependencies"
     )
     for group, values in optional.items():
-        if normalize_distribution(group) in TEST_GROUP_NAMES:
+        if normalize_distribution(group) in selected:
             records.extend(
                 _string_requirements(
                     values, filename="pyproject.toml", kind="test", group=group
@@ -279,8 +288,7 @@ def inspect_revision(
     if not entry.get("upstream_sha"):
         raise MetadataFetchError(f"{entry['source']} has no immutable upstream SHA")
 
-    records = []
-    present = []
+    contents: dict[str, str] = {}
     for filename in DEPENDENCY_FILES:
         url = raw_url(
             text_field(entry, "upstream_repository"),
@@ -288,24 +296,58 @@ def inspect_revision(
             filename,
         )
         text = fetch(url)
-        if text is None:
-            continue
+        if text is not None:
+            contents[filename] = text
 
-        present.append(filename)
-        records.extend(_parse_dependency_file(filename, text))
+    extras = _tox_test_extras(contents.get("tox.ini", ""))
+    records: list[RequirementRecord] = []
+    for filename, text in contents.items():
+        records.extend(_parse_dependency_file(filename, text, extras))
 
-    return records, present
+    return records, list(contents)
 
 
-def _parse_dependency_file(filename: str, text: str) -> list[RequirementRecord]:
-    """Choose the metadata parser and requirement kind for a known file."""
-    if filename == "requirements.txt":
-        return parse_requirement_file(text, filename=filename, kind="runtime")
+def _literal_extras(value: str) -> frozenset[str]:
+    """Accept literal tox extra names without executing substitutions or factors."""
+    names = value.replace(",", " ").split()
+    for name in names:
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name) is None:
+            raise MetadataFetchError(
+                f"Cannot statically resolve tox test extra: {name}"
+            )
 
-    if filename == "test-requirements.txt":
-        return parse_requirement_file(text, filename=filename, kind="test")
+    return frozenset(normalize_distribution(name) for name in names)
 
-    return parse_pyproject(text)
+
+def _tox_test_extras(text: str) -> frozenset[str]:
+    """Read extras inherited by tests from tox's shared test environment."""
+    config = ConfigParser(interpolation=None, inline_comment_prefixes=("#",))
+    config.read_string(text)
+    return _literal_extras(config.get("testenv", "extras", fallback=""))
+
+
+def _native_tox_extras(data: Mapping[str, object]) -> frozenset[str]:
+    """Read shared extras from native tox TOML or its legacy embedded INI."""
+    tool = object_mapping(data.get("tool", {}), "tool")
+    tox = object_mapping(tool.get("tox", {}), "tool.tox")
+    base = object_mapping(tox.get("env_run_base", {}), "tool.tox.env_run_base")
+    extras = string_list(base.get("extras", []), "tool.tox.env_run_base.extras")
+    legacy = text_field(tox, "legacy_tox_ini")
+    return _literal_extras(" ".join(extras)) | _tox_test_extras(legacy)
+
+
+def _parse_dependency_file(
+    filename: str, text: str, extras: frozenset[str]
+) -> list[RequirementRecord]:
+    """Choose a parser while using tox solely to select optional test groups."""
+    if filename == "tox.ini":
+        return []
+
+    if filename == "pyproject.toml":
+        return parse_pyproject(text, test_extras=extras)
+
+    kind = "runtime" if filename == "requirements.txt" else "test"
+    return parse_requirement_file(text, filename=filename, kind=kind)
 
 
 def _distribution_names(entry: Mapping[str, object]) -> set[str]:

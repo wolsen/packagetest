@@ -180,6 +180,11 @@ General repairs use this envelope:
 
 `PatchPlan` requires a verbatim quotation from the current failure and 1–8 unique
 file edits. Responses are limited to 48 KiB; duplicate JSON fields are rejected.
+The parser accepts a single action object in plain output or a JSON Markdown
+fence, including llama.cpp banners, its truncated prompt preview, and its exit
+message. Prompt examples are discarded before decoding. Multiple actions,
+nested action envelopes, duplicate fields, and malformed final responses are
+rejected; the parser does not fall back to an earlier proposed action.
 A nonempty `before` must occur exactly once. Empty `before` creates a previously
 absent file. Files remain nonempty UTF-8 text ending in a newline. Direct edits
 cannot change changelog, source format, source options, maintainer hooks, or
@@ -270,7 +275,28 @@ they do not measure model repair accuracy on real package failures.
 ref and metadata readers pin and inspect each selected source once. Required
 candidates and unsatisfied upstream requirements expand the selection; inspection
 failures remain per-source evidence. Packaging source preference and archive
-version decisions are unchanged by scheduling.
+version decisions are preserved by scheduling.
+
+Discovery reads `requirements.txt`, `test-requirements.txt`, `pyproject.toml`, and
+`tox.ini` at the same pinned upstream SHA. Alongside named test groups, optional
+project dependency groups selected by shared tox test-environment `extras`
+become test requirements. Supported selectors are INI `[testenv] extras`,
+embedded `[tool.tox] legacy_tox_ini`, and native
+`[tool.tox.env_run_base] extras`. Names are normalized; requirement strings,
+version constraints, markers, and originating group names are retained. A
+separate documentation environment's extras are not selected. Dynamic tox
+substitutions and factors in shared extras produce a discovery error rather
+than a guessed requirement. Environment-specific overrides and executable
+metadata are outside this static discovery interface.
+
+When a mapped external archive binary provably fails an upstream requirement,
+discovery records the requirement location, binary, version, and comparison
+reason as a per-source resolution failure. Source preparation rejects that
+source before attempting a build. Direct and offline scheduling reject the same
+conflict from saved catalog evidence. A candidate source that can be built in
+this run remains a dependency edge, so an older published candidate version
+does not cause this external-provider rejection. Unknown or unmapped providers
+remain explicit evidence; they are not reported as proven version conflicts.
 
 `CatalogScheduler` owns graph state for one scheduling pass. It records dependencies
 outside the selection as archive bootstrap edges, removes internal cycle edges,

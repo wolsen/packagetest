@@ -31,7 +31,7 @@ def test_contract_exercises_inspection_quilt_and_independent_invariant(tmp_path,
 
     def generate(*args):
         prompts.append(args[2])
-        return json.dumps(next(responses)), {}
+        return "Loading model...\n```json\n" + json.dumps(next(responses)) + "\n```\nExiting...\n", {}
 
     monkeypatch.setattr(remediation, "llama_generate", generate)
     result = contract._run_investigation_case(Namespace(output=tmp_path, llama_cli=tmp_path / "llama", model=tmp_path / "model"))

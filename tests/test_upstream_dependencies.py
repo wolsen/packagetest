@@ -217,3 +217,61 @@ def test_metadata_fetch_rejects_empty_retry_budget_before_network_access(monkeyp
     for settings in ({'attempts': 0}, {'attempts': -1}, {'timeout': 0}):
         with pytest.raises(ValueError, match='must be positive'):
             metadata.fetch_optional('https://example.invalid/requirements.txt', **settings)
+
+
+def test_inspection_selects_tox_test_extras_from_same_immutable_revision():
+    from packagetest.upstream_dependencies import inspect_revision
+
+    files = {
+        'tox.ini': '[testenv]\nextras =\n cloud_api, locking # both required by tests\n[testenv:docs]\nextras = docs\n',
+        'pyproject.toml': '''
+[project.optional-dependencies]
+cloud-api = ["kubernetes>=2.8.1; python_version >= '3.10'"]
+locking = ["sherlock>=0.4.1"]
+docs = ["sphinx>=7"]
+test = ["stestr>=4"]
+''',
+    }
+    seen = []
+
+    def fetch(url):
+        seen.append(url)
+        return files.get(url.rsplit('/', 1)[-1])
+
+    records, present = inspect_revision({
+        'source': 'sample', 'upstream_repository': 'https://github.com/example/sample',
+        'upstream_sha': 'a' * 40,
+    }, fetch=fetch)
+    assert all('/' + 'a' * 40 + '/' in url for url in seen)
+    assert set(present) == {'tox.ini', 'pyproject.toml'}
+    assert {r['distribution'] for r in records} == {'kubernetes', 'sherlock', 'stestr'}
+    assert all(r['kind'] == 'test' and r['file'] == 'pyproject.toml' for r in records)
+    assert records[0]['requirement'] == "kubernetes>=2.8.1; python_version >= '3.10'"
+    assert records[0]['group'] == 'cloud-api'
+
+
+def test_native_and_embedded_tox_test_extras_are_discovered():
+    native = parse_pyproject('''
+[tool.tox.env_run_base]
+extras = ["cloud-api"]
+[project.optional-dependencies]
+cloud-api = ["kubernetes>=2.8.1", "sherlock>=0.4.1"]
+docs = ["sphinx>=7"]
+''')
+    embedded = parse_pyproject('''
+[tool.tox]
+legacy_tox_ini = "[testenv]\\nextras = cloud-api\\n"
+[project.optional-dependencies]
+cloud-api = ["kubernetes>=2.8.1", "sherlock>=0.4.1"]
+''')
+    assert native == embedded
+    assert [r['requirement'] for r in native] == ['kubernetes>=2.8.1', 'sherlock>=0.4.1']
+
+
+def test_unresolved_tox_substitutions_are_reported_instead_of_guessed():
+    import pytest
+
+    from packagetest.upstream_dependencies import MetadataFetchError
+
+    with pytest.raises(MetadataFetchError, match='statically resolve'):
+        parse_pyproject('[tool.tox.env_run_base]\nextras = ["{env:TEST_EXTRAS}"]\n')
